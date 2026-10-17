@@ -1,0 +1,28 @@
+[Unit]
+Description=Mumble-Funk development server (port 64739)
+After=network.target
+
+[Service]
+Type=simple
+User=mumble-funk
+Group=mumble-funk
+WorkingDirectory=/var/lib/mumble-funk
+ExecStart=/opt/mumble-funk/current/mumble-server -ini /etc/mumble-funk/server.ini -fg
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=mumble-funk
+StateDirectoryMode=0750
+LogsDirectory=mumble-funk
+LogsDirectoryMode=0750
+StandardOutput=append:/var/log/mumble-funk/server.log
+StandardError=inherit
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mumble-funk /var/log/mumble-funk
+
+[Install]
+WantedBy=multi-user.target

@@ -6,6 +6,11 @@ Sie vergibt kein Senderecht und verändert die Sprachweiterleitung nicht.
 Eine normale Mumble-Installation aus dem Ubuntu-Paketarchiv enthält diese
 Erweiterung nicht: Zum Testen wird der hier gebaute Server benötigt.
 
+Für einen dauerhaften Parallelbetrieb unter Ubuntu 24.04 mit systemd auf Port
+**64739** verwende die [Installationsanleitung](installation-ubuntu24.md).
+Das spätere Beispiel hier auf Port 64749 ist ein separater, manuell gestarteter
+Kurztest und wird dafür nicht zusätzlich benötigt.
+
 ## Was aufgezeichnet wird
 
 Jede Zeile der Ergebnisdatei ist ein eigenständiges JSON-Objekt (JSONL).
