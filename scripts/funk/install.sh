@@ -2,7 +2,9 @@
 # Only deploys our instance. Never runs apt or cmake --install.
 set -euo pipefail
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-templates="$repo/scripts/funk/ubuntu24"
+templates="$repo/scripts/funk/ubuntu"
+# shellcheck source=scripts/funk/platform.sh
+source "$repo/scripts/funk/platform.sh"
 root=
 if [[ ${1:-} == --stage && $# == 3 ]]; then
     # Test-only: generate a directory tree without users, services or host writes.
@@ -14,9 +16,7 @@ elif [[ $# == 0 ]]; then
     # OS-provided file, not part of the repository.
     # shellcheck source=/dev/null
     . /etc/os-release
-    [[ $ID == ubuntu && $VERSION_ID == 24.04 ]] || {
-        echo 'Dieses Installationsskript ist für Ubuntu 24.04 vorgesehen.' >&2; exit 1;
-    }
+    funk_require_supported_os "${ID:-}" "${VERSION_ID:-}" || exit 1
     exec 9>/run/lock/mumble-funk-install.lock
     flock -n 9 || { echo 'Eine andere Funkserver-Installation läuft bereits.' >&2; exit 1; }
     binary="$repo/build/funk/mumble-server"

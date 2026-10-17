@@ -18,6 +18,23 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 class InstallationTests(unittest.TestCase):
+    def test_supported_operating_systems(self):
+        # Point releases use VERSION_ID=24.04/26.04, not the display version.
+        cases = [("ubuntu", "24.04", True), ("ubuntu", "26.04", True),
+                 ("ubuntu", "22.04", False), ("ubuntu", "25.10", False),
+                 ("ubuntu", "28.04", False), ("debian", "26.04", False),
+                 ("linuxmint", "26.04", False), ("", "", False),
+                 ("ubuntu", "", False), ("", "26.04", False)]
+        for os_id, version_id, supported in cases:
+            with self.subTest(os_id=os_id, version_id=version_id):
+                result = subprocess.run([
+                    "bash", "-c", 'source "$1"; funk_require_supported_os "$2" "$3"',
+                    "platform-test", str(REPO / "scripts/funk/platform.sh"), os_id, version_id,
+                ], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0 if supported else 1)
+                if not supported:
+                    self.assertIn("Ubuntu 24.04 LTS und 26.04 LTS", result.stderr)
+
     def test_staged_repeat_preserves_configuration_database_and_standard_server(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -93,7 +110,7 @@ class InstallationTests(unittest.TestCase):
                 for port in (64738, 64739):
                     state = root / str(port)
                     state.mkdir()
-                    config = (REPO / "scripts/funk/ubuntu24/server.ini").read_text()
+                    config = (REPO / "scripts/funk/ubuntu/server.ini").read_text()
                     config = config.replace("/var/lib/mumble-funk", str(state))
                     config = config.replace("/var/log/mumble-funk", str(state))
                     config = config.replace("0.0.0.0", "127.0.0.1").replace("port=64739", f"port={port}")

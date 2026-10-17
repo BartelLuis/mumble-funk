@@ -6,8 +6,8 @@ Sie vergibt kein Senderecht und verändert die Sprachweiterleitung nicht.
 Eine normale Mumble-Installation aus dem Ubuntu-Paketarchiv enthält diese
 Erweiterung nicht: Zum Testen wird der hier gebaute Server benötigt.
 
-Für einen dauerhaften Parallelbetrieb unter Ubuntu 24.04 mit systemd auf Port
-**64739** verwende die [Installationsanleitung](installation-ubuntu24.md).
+Für einen dauerhaften Parallelbetrieb unter Ubuntu 24.04 oder 26.04 mit systemd auf Port
+**64739** verwende die [Installationsanleitung](installation-ubuntu.md).
 Das spätere Beispiel hier auf Port 64749 ist ein separater, manuell gestarteter
 Kurztest und wird dafür nicht zusätzlich benötigt.
 
@@ -98,8 +98,10 @@ Bereits geschriebene Dateien bleiben zur Auswertung erhalten.
 
 Die folgenden Schritte starten einen separaten Testserver auf Port **64749**
 mit eigener Datenbank. Ein vorhandener Server auf Port 64738 wird nicht ersetzt.
-Die Anleitung verwendet Ubuntu 22.04/24.04; der automatische Test wurde in der
-Codex-Umgebung auf Debian 13 mit Qt 5.15.15 ausgeführt.
+Die Abhängigkeiten entsprechen der Installationslösung für Ubuntu 24.04/26.04.
+Der ursprüngliche automatische Diagnosetest wurde in der Codex-Umgebung auf
+Debian 13 mit Qt 5.15.15 ausgeführt; aktuelle Installationsprüfungen sind in der
+[Ubuntu-Anleitung](installation-ubuntu.md) beschrieben.
 
 ### 1. Werkzeuge und Quellcode bereitstellen
 
