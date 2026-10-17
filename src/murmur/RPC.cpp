@@ -69,6 +69,7 @@ void Server::setUserState(User *pUser, Channel *cChannel, bool mute, bool deaf, 
 		pUser->bDeaf     = deaf;
 		pUser->bMute     = mute;
 		pUser->bSuppress = suppressed;
+		updateSimplexPermission(*static_cast< ServerUser * >(pUser));
 	}
 
 	pUser->bPrioritySpeaker = prioritySpeaker;

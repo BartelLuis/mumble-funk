@@ -212,3 +212,61 @@ then remains immutable. `diagnosticChannelName` is updated on the main thread
 under a write lock on `qrwlVoiceThread`; readers hold its read lock. These name
 snapshots avoid reading normally editable names concurrently from the voice
 thread. Queue records contain no user/channel pointers or borrowed audio spans.
+
+### Optional SimplexController (Funk v0.2)
+
+`m_simplex` and its configuration are immutable for the lifetime of a running
+virtual server. The controller/logger are created before the UDP thread starts;
+shutdown stops that thread and the expiry timer before destroying them. No
+controller or logger exists with `simplex=false`. The original receiver routing
+and rate-limit path remain active in that case.
+
+UDP and tunneled TCP enter `processMsg` holding `qrwlVoiceThread` for reading.
+`SimplexController::begin` locks its own mutex and returns a move-only
+`Transmission` guard. **Keep that guard until every outgoing packet has been
+sent or queued.** Releasing the mutex just after the ownership decision would
+allow a terminator's successor to overtake the preceding forwarding operation.
+The mutex serializes the short routing/send operations across channels, although
+ownership is independent per channel. There is no sleep, file I/O or audio codec
+work under this mutex. Original per-user bandwidth accounting has its own mutex.
+
+The enabled path only calls `AudioReceiverBuffer::addReceiver` for current
+channel members. In particular, it never enters the whisper path that upgrades
+the voice read lock to a write lock. Such an upgrade while holding the controller
+mutex could deadlock against control-plane invalidation. The normal existing
+encoding and send loops are reused with unchanged opaque audio payloads.
+
+Control paths (disconnect, channel change, mute/suppress and ACL suppression)
+acquire the voice **write** lock before invalidating the connection's lease.
+`clearACLCache` additionally holds this write lock only in enabled mode, before
+`qmCache`; both are released before `clearWhisperTargetCache` acquires its own
+write lock. Callers must not already hold the non-recursive voice lock. The
+main-thread expiry timer acquires only the controller mutex and never accesses
+live user/channel objects. The order is voice lock -> optional cache lock ->
+controller mutex -> nonblocking log queue attempt. Nothing in the controller or
+logger acquires the voice/cache lock in the reverse order.
+
+The controller stores value records keyed by the immutable connection identifier
+(shared with PTT diagnostics), not session-reusable user pointers. Names are the
+immutable login snapshots. Disconnect removes the record; memory is proportional
+to authenticated connections that have sent packets and occupied channels, not
+the number of transmissions. Expiry checks the current owner/heartbeat with a
+monotonic clock rather than scheduling callbacks against an old lease. The timer
+runs every 50 ms; acquisition also checks expiry of the destination channel.
+
+Rejected attempts are latched independently of channel ownership. Advancing
+packets continue the rejection even after the channel becomes free. Only a valid
+normal-path marker or the configured per-user quiet interval re-arms an attempt.
+Out-of-order and duplicate payload frames cannot refresh or release a lease.
+A legacy empty terminator at the latest frame number is allowed for an active
+attempt. Sequence resets are accepted after the quiet interval. These rules are
+conservative inference, not authentication of a physical PTT event. A long
+network gap or arbitrary delayed frames after a reset remain ambiguous.
+
+`SimplexLogger` owns a separate background thread. Producers use `try_lock` and a
+4096-record queue; rejected submissions are counted. The writer swaps batches
+under the queue mutex, then performs JSON serialization, append/flush and rotation
+outside it. It never accesses the server or controller. File failure disables
+logging only. Counts are summarized per attempt, not logged on every rejected
+packet. Diagnostic records can be lost under load; they must not be used as the
+source of truth for enforcing ownership.

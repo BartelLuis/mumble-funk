@@ -37,6 +37,15 @@ public:
 	QString voiceDiagnosticsFile = QStringLiteral("voice-diagnostics");
 	int voiceDiagnosticsTimeout  = 500;
 	int voiceDiagnosticsMaxSize  = 10 * 1024 * 1024;
+	bool simplex                 = false;
+	int simplexTimeout           = 500;
+	int simplexRetryTimeout      = 1000;
+	bool simplexDiagnostics      = false;
+	QString simplexLogFile       = QStringLiteral("simplex");
+	int simplexLogMaxSize        = 10 * 1024 * 1024;
+	bool simplexLogGrants        = true;
+	bool simplexLogDenials       = true;
+	bool simplexLogReleases      = true;
 	int iMaxBandwidth;
 	unsigned int iMaxUsers;
 	unsigned int iMaxUsersPerChannel;

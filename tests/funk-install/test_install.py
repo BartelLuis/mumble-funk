@@ -50,9 +50,11 @@ class InstallationTests(unittest.TestCase):
             config = root / "etc/mumble-funk/server.ini"
             self.assertIn("port=64739\n", config.read_text())
             self.assertIn("voicediagnostics=false\n", config.read_text())
+            self.assertIn("#simplex=false\n", config.read_text())
             self.assertNotIn("@PASSWORD@", config.read_text())
             self.assertEqual(config.stat().st_mode & 0o777, 0o640)
-            config.write_text(config.read_text().replace("voicediagnostics=false", "voicediagnostics=true"))
+            config.write_text(config.read_text().replace("voicediagnostics=false", "voicediagnostics=true")
+                              .replace("#simplex=false", "simplex=true"))
             protected[config] = config.read_bytes()
             db = root / "var/lib/mumble-funk/server.sqlite"
             db.write_bytes(b"EXISTING CUSTOM DATABASE")
@@ -116,6 +118,9 @@ class InstallationTests(unittest.TestCase):
                     config = config.replace("0.0.0.0", "127.0.0.1").replace("port=64739", f"port={port}")
                     config = config.replace("@PASSWORD@", "test-only")
                     config = config.replace("voicediagnostics=false", f"voicediagnostics={'true' if port == 64739 else 'false'}")
+                    config = config.replace("#simplex=false", f"simplex={'true' if port == 64739 else 'false'}")
+                    config = config.replace("#simplexdiagnostics=false", "simplexdiagnostics=true")
+                    config = config.replace("#simplexlogfile=", "simplexlogfile=")
                     (state / "server.ini").write_text(config)
                     log = open(state / "server.log", "wb")
                     handles.append(log)
@@ -147,6 +152,10 @@ class InstallationTests(unittest.TestCase):
                 for handle in handles:
                     handle.close()
             self.assertTrue(list((root / "64739").glob("voice.*.jsonl")))
+            self.assertFalse(list((root / "64738").glob("simplex.*.jsonl")))
+            self.assertIn("Simplex enabled:", (root / "64739/server.log").read_text())
+            self.assertNotIn("Simplex enabled:", (root / "64738/server.log").read_text())
+            self.assertIn("simplex_log_started", (root / "64739/simplex.1.jsonl").read_text())
             for port in (64738, 64739):
                 self.assertGreater((root / str(port) / "server.log").stat().st_size, 0)
 

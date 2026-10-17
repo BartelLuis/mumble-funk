@@ -106,6 +106,37 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 
 	readParams();
 	initialize();
+	if (getConf("simplex", Meta::mp.simplex).toBool()) {
+		if (getConf("simplexdiagnostics", Meta::mp.simplexDiagnostics).toBool()) {
+			SimplexLogger::Config config;
+			const QString prefix = getConf("simplexlogfile", Meta::mp.simplexLogFile).toString();
+			config.path          = QFileInfo(Meta::mp.qsAbsSettingsFilePath)
+							  .absoluteDir()
+							  .absoluteFilePath(prefix + QStringLiteral(".%1.jsonl").arg(iServerNum));
+			config.server   = iServerNum;
+			config.grants   = getConf("simplexloggrants", Meta::mp.simplexLogGrants).toBool();
+			config.denials  = getConf("simplexlogdenials", Meta::mp.simplexLogDenials).toBool();
+			config.releases = getConf("simplexlogreleases", Meta::mp.simplexLogReleases).toBool();
+			config.maxBytes = getConf("simplexlogmaxsize", Meta::mp.simplexLogMaxSize).toInt();
+			m_simplexLogger = std::make_unique< SimplexLogger >(config);
+			log(QStringLiteral("Simplex diagnostics requested: %1").arg(config.path));
+		}
+		m_simplex =
+			std::make_unique< SimplexController >(getConf("simplextimeout", Meta::mp.simplexTimeout).toInt(),
+												  getConf("simplexretrytimeout", Meta::mp.simplexRetryTimeout).toInt(),
+												  [this](const SimplexController::Event &event) {
+													  if (m_simplexLogger)
+														  m_simplexLogger->submit(event);
+												  });
+		m_simplexTimer = new QTimer(this);
+		m_simplexTimer->setTimerType(Qt::PreciseTimer);
+		connect(m_simplexTimer, &QTimer::timeout, this, [this] { m_simplex->expire(); });
+		m_simplexTimer->start(50);
+		log(QStringLiteral(
+				"Simplex enabled: current channel only; timeout=%1 ms, retry=%2 ms; restart required for changes")
+				.arg(m_simplex->timeoutMs())
+				.arg(m_simplex->retryMs()));
+	}
 	if (getConf("voicediagnostics", Meta::mp.voiceDiagnostics).toBool()) {
 		VoiceDiagnostics::Config config;
 		const QString prefix = getConf("voicediagnosticsfile", Meta::mp.voiceDiagnosticsFile).toString();
@@ -332,6 +363,12 @@ Server::~Server() {
 #endif
 
 	stopThread();
+	if (m_simplexTimer)
+		m_simplexTimer->stop();
+	if (m_simplex)
+		m_simplex->shutdown();
+	m_simplex.reset();
+	m_simplexLogger.reset();
 	m_voiceDiagnostics.reset();
 
 	foreach (QSocketNotifier *qsn, qlUdpNotifier)
@@ -1216,6 +1253,13 @@ void Server::recordVoicePacket(const ServerUser &user, const Mumble::Protocol::A
 	m_voiceDiagnostics->submit(std::move(record));
 }
 
+void Server::updateSimplexPermission(const ServerUser &user) {
+	// Caller holds qrwlVoiceThread for write; no packet can pass the changed permission.
+	if (m_simplex && (user.bMute || user.bSuppress || user.bSelfMute)) {
+		m_simplex->invalidate(user.diagnosticConnection, QStringLiteral("permission_lost"));
+	}
+}
+
 void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, AudioReceiverBuffer &buffer,
 						Mumble::Protocol::UDPAudioEncoder< Mumble::Protocol::Role::Server > &encoder) {
 	ZoneScoped;
@@ -1225,11 +1269,33 @@ void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, Au
 	// this function.
 	// This function is currently called from Server::msgUDPTunnel, Server::run and
 	// Server::message
-	if (u->sState != ServerUser::Authenticated || u->bMute || u->bSuppress || u->bSelfMute)
+	if (u->sState != ServerUser::Authenticated || !u->cChannel)
 		return;
 
-	// Check the voice data rate limit.
-	{
+	SimplexController::Transmission transmission;
+	if (m_simplex) {
+		SimplexController::Packet packet;
+		packet.context.connection = u->diagnosticConnection;
+		packet.context.session    = u->uiSession;
+		packet.context.channel    = u->cChannel->iId;
+		packet.context.user       = u->diagnosticUserName;
+		packet.frame              = audioData.frameNumber;
+		packet.target             = audioData.targetOrContext;
+		packet.payload            = !audioData.payload.empty();
+		packet.last               = audioData.isLastFrame;
+		packet.udp                = &buffer == &m_udpAudioReceivers;
+		packet.eligible           = !u->bMute && !u->bSuppress && !u->bSelfMute;
+		if (packet.eligible) {
+			packet.eligible =
+				u->bwr.addFrame(static_cast< int >(20 + 8 + 4 + audioData.payload.size()), iMaxBandwidth / 8);
+		}
+		transmission = m_simplex->begin(packet);
+		if (!transmission.allowed)
+			return;
+	} else {
+		if (u->bMute || u->bSuppress || u->bSelfMute)
+			return;
+		// Original rate limit and forwarding remain in effect when simplex is off.
 		BandwidthRecord *bw = &u->bwr;
 
 		// IP + UDP + Crypt + Data
@@ -1243,7 +1309,14 @@ void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, Au
 
 	buffer.clear();
 
-	if (audioData.targetOrContext == Mumble::Protocol::ReservedTargetIDs::SERVER_LOOPBACK) {
+	if (m_simplex) {
+		// No linked channels, listener proxies, whisper or loopback in radio mode.
+		// Avoid the normal whisper path's voice-lock upgrade while holding our guard.
+		for (User *receiver : u->cChannel->qlUsers) {
+			buffer.addReceiver(*u, *static_cast< ServerUser * >(receiver), Mumble::Protocol::AudioContext::NORMAL,
+							   audioData.containsPositionalData);
+		}
+	} else if (audioData.targetOrContext == Mumble::Protocol::ReservedTargetIDs::SERVER_LOOPBACK) {
 		buffer.forceAddReceiver(*u, Mumble::Protocol::AudioContext::NORMAL, audioData.containsPositionalData);
 	} else if (audioData.targetOrContext == Mumble::Protocol::ReservedTargetIDs::REGULAR_SPEECH) {
 		Channel *c = u->cChannel;
@@ -1546,7 +1619,7 @@ void Server::newClient() {
 		}
 
 		ServerUser *u = new ServerUser(this, sock);
-		if (m_voiceDiagnostics) {
+		if (m_voiceDiagnostics || m_simplex) {
 			u->diagnosticConnection = ++m_nextDiagnosticConnection;
 		}
 		u->haAddress = ha;
@@ -1744,6 +1817,8 @@ void Server::connectionClosed(QAbstractSocket::SocketError err, const QString &r
 		QWriteLocker wl(&qrwlVoiceThread);
 
 		qhUsers.remove(u->uiSession);
+		if (m_simplex)
+			m_simplex->disconnect(u->diagnosticConnection);
 		if (m_voiceDiagnostics && u->was_authenticated) {
 			VoiceDiagnosticRecord record = diagnosticContext(*u);
 			record.kind                  = VoiceDiagnosticRecord::Kind::Disconnected;
@@ -2064,6 +2139,10 @@ void Server::userEnterChannel(User *p, Channel *c, MumbleProto::UserState &mpus)
 
 	{
 		QWriteLocker wl(&qrwlVoiceThread);
+		if (m_simplex) {
+			m_simplex->invalidate(static_cast< ServerUser * >(p)->diagnosticConnection,
+								  QStringLiteral("channel_changed"));
+		}
 		c->addUser(p);
 		if (m_voiceDiagnostics) {
 			// Read names only on the main thread; publish the snapshot under the voice lock.
@@ -2196,6 +2275,9 @@ void Server::clearACLCache(User *p) {
 	MumbleProto::PermissionQuery mppq;
 
 	{
+		// In radio mode, publish permission loss and release the lease atomically
+		// with respect to the voice path. Release before clearWhisperTargetCache().
+		QWriteLocker voiceLock(m_simplex ? &qrwlVoiceThread : nullptr);
 		QMutexLocker qml(&qmCache);
 
 		if (p) {
@@ -2228,6 +2310,7 @@ void Server::clearACLCache(User *p) {
 				mpus.set_suppress(true);
 				sendAll(mpus);
 			}
+			updateSimplexPermission(*user);
 		};
 
 		if (p) {

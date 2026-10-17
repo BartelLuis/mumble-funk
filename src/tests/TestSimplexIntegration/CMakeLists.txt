@@ -1,0 +1,7 @@
+add_executable(TestSimplexIntegration TestSimplexIntegration.cpp)
+set_target_properties(TestSimplexIntegration PROPERTIES AUTOMOC ON)
+target_link_libraries(TestSimplexIntegration PRIVATE shared Qt5::Test)
+target_compile_definitions(TestSimplexIntegration PRIVATE MUMBLE_SERVER_PATH="$<TARGET_FILE:mumble-server>")
+add_dependencies(TestSimplexIntegration mumble-server)
+add_test(NAME TestSimplexIntegration COMMAND $<TARGET_FILE:TestSimplexIntegration>)
+set_tests_properties(TestSimplexIntegration PROPERTIES TIMEOUT 120)

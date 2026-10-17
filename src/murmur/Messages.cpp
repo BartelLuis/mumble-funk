@@ -969,6 +969,7 @@ void Server::msgUserState(ServerUser *uSource, MumbleProto::UserState &msg) {
 
 		if (msg.has_self_mute()) {
 			pDstServerUser->bSelfMute = msg.self_mute();
+			updateSimplexPermission(*pDstServerUser);
 			if (!pDstServerUser->bSelfMute) {
 				msg.set_self_deaf(false);
 				pDstServerUser->bSelfDeaf = false;
@@ -1022,6 +1023,7 @@ void Server::msgUserState(ServerUser *uSource, MumbleProto::UserState &msg) {
 		}
 		if (msg.has_suppress())
 			pDstServerUser->bSuppress = msg.suppress();
+		updateSimplexPermission(*pDstServerUser);
 
 		if (msg.has_priority_speaker())
 			pDstServerUser->bPrioritySpeaker = msg.priority_speaker();

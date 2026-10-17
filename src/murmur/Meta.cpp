@@ -311,6 +311,15 @@ void MetaParams::read(QString fname) {
 	voiceDiagnosticsFile = typeCheckedFromSettings("voicediagnosticsfile", voiceDiagnosticsFile);
 	voiceDiagnosticsTimeout    = typeCheckedFromSettings("voicediagnosticstimeout", voiceDiagnosticsTimeout);
 	voiceDiagnosticsMaxSize    = typeCheckedFromSettings("voicediagnosticsmaxsize", voiceDiagnosticsMaxSize);
+	simplex                    = typeCheckedFromSettings("simplex", simplex);
+	simplexTimeout             = typeCheckedFromSettings("simplextimeout", simplexTimeout);
+	simplexRetryTimeout        = typeCheckedFromSettings("simplexretrytimeout", simplexRetryTimeout);
+	simplexDiagnostics         = typeCheckedFromSettings("simplexdiagnostics", simplexDiagnostics);
+	simplexLogFile             = typeCheckedFromSettings("simplexlogfile", simplexLogFile);
+	simplexLogMaxSize          = typeCheckedFromSettings("simplexlogmaxsize", simplexLogMaxSize);
+	simplexLogGrants           = typeCheckedFromSettings("simplexloggrants", simplexLogGrants);
+	simplexLogDenials          = typeCheckedFromSettings("simplexlogdenials", simplexLogDenials);
+	simplexLogReleases         = typeCheckedFromSettings("simplexlogreleases", simplexLogReleases);
 	iMaxTextMessageLength      = typeCheckedFromSettings("textmessagelength", iMaxTextMessageLength);
 	iMaxImageMessageLength     = typeCheckedFromSettings("imagemessagelength", iMaxImageMessageLength);
 	legacyPasswordHash         = typeCheckedFromSettings("legacypasswordhash", legacyPasswordHash);
@@ -445,6 +454,19 @@ void MetaParams::read(QString fname) {
 	qmConfig.insert(QStringLiteral("voicediagnosticsfile"), voiceDiagnosticsFile);
 	qmConfig.insert(QStringLiteral("voicediagnosticstimeout"), QString::number(voiceDiagnosticsTimeout));
 	qmConfig.insert(QStringLiteral("voicediagnosticsmaxsize"), QString::number(voiceDiagnosticsMaxSize));
+	qmConfig.insert(QStringLiteral("simplex"), simplex ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("simplextimeout"), QString::number(simplexTimeout));
+	qmConfig.insert(QStringLiteral("simplexretrytimeout"), QString::number(simplexRetryTimeout));
+	qmConfig.insert(QStringLiteral("simplexdiagnostics"),
+					simplexDiagnostics ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("simplexlogfile"), simplexLogFile);
+	qmConfig.insert(QStringLiteral("simplexlogmaxsize"), QString::number(simplexLogMaxSize));
+	qmConfig.insert(QStringLiteral("simplexloggrants"),
+					simplexLogGrants ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("simplexlogdenials"),
+					simplexLogDenials ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("simplexlogreleases"),
+					simplexLogReleases ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QLatin1String("textmessagelength"), QString::number(iMaxTextMessageLength));
 	qmConfig.insert(QLatin1String("legacypasswordhash"),
 					legacyPasswordHash ? QLatin1String("true") : QLatin1String("false"));

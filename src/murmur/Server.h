@@ -19,6 +19,8 @@
 #include "HostAddress.h"
 #include "Mumble.pb.h"
 #include "MumbleProtocol.h"
+#include "SimplexController.h"
+#include "SimplexLogger.h"
 #include "Timer.h"
 #include "User.h"
 #include "Version.h"
@@ -103,6 +105,10 @@ protected:
 	QNetworkAccessManager *qnamNetwork;
 	// Created before the voice thread starts; destroyed after it stops. No live replacement.
 	std::unique_ptr< VoiceDiagnostics > m_voiceDiagnostics;
+	std::unique_ptr< SimplexLogger > m_simplexLogger;
+	std::unique_ptr< SimplexController > m_simplex;
+	QTimer *m_simplexTimer = nullptr;
+	void updateSimplexPermission(const ServerUser &user);
 	std::uint64_t m_nextDiagnosticConnection = 0;
 	void recordVoicePacket(const ServerUser &user, const Mumble::Protocol::AudioData &audio,
 						   VoiceDiagnosticRecord::Transport transport);

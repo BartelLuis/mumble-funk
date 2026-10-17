@@ -39,6 +39,10 @@ set(MURMUR_SOURCES
 	"ServerUser.h"
 	"VoiceDiagnostics.cpp"
 	"VoiceDiagnostics.h"
+	"SimplexController.cpp"
+	"SimplexController.h"
+	"SimplexLogger.cpp"
+	"SimplexLogger.h"
 
 	"${SHARED_SOURCE_DIR}/ACL.cpp"
 	"${SHARED_SOURCE_DIR}/ACL.h"
