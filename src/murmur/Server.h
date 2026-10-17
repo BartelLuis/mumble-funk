@@ -22,7 +22,10 @@
 #include "Timer.h"
 #include "User.h"
 #include "Version.h"
+#include "VoiceDiagnostics.h"
 #include "VolumeAdjustment.h"
+
+#include <memory>
 
 #ifndef Q_MOC_RUN
 #	include <boost/function.hpp>
@@ -98,6 +101,11 @@ protected:
 	bool bRunning;
 
 	QNetworkAccessManager *qnamNetwork;
+	// Created before the voice thread starts; destroyed after it stops. No live replacement.
+	std::unique_ptr< VoiceDiagnostics > m_voiceDiagnostics;
+	std::uint64_t m_nextDiagnosticConnection = 0;
+	void recordVoicePacket(const ServerUser &user, const Mumble::Protocol::AudioData &audio,
+						   VoiceDiagnosticRecord::Transport transport);
 
 #ifdef USE_ZEROCONF
 	Zeroconf *zeroconf;

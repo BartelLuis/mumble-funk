@@ -33,6 +33,10 @@ public:
 	QList< QHostAddress > qlBind;
 	unsigned short usPort;
 	int iTimeout;
+	bool voiceDiagnostics        = false;
+	QString voiceDiagnosticsFile = QStringLiteral("voice-diagnostics");
+	int voiceDiagnosticsTimeout  = 500;
+	int voiceDiagnosticsMaxSize  = 10 * 1024 * 1024;
 	int iMaxBandwidth;
 	unsigned int iMaxUsers;
 	unsigned int iMaxUsersPerChannel;

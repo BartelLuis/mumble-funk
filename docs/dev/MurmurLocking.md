@@ -195,3 +195,20 @@ be held before accessing the object itself.
 - `ServerUser->csCrypt` (Locked via `User->qmCrypt` mutex.)
 - `ServerUser->bwr` (Internal locking inside `BandwidthRecord`. All methods can be called without extra synchronization.)
 - `Server->acCache` (Locked via `Server->qmCache` mutex.)
+
+### Optional voice diagnostics
+
+`Server->m_voiceDiagnostics` is created before the voice thread starts and is
+destroyed after `stopThread()`. Configuration changes require a restart; the
+pointer is never replaced while packets are processed. UDP and TCP copy only
+value metadata into its bounded queue while the existing user/channel lifetime
+locks are held. The queue uses its own mutex with `try_lock` for producers;
+failed submissions are counted. The writer never acquires `qrwlVoiceThread` and
+never holds the queue mutex during file I/O. Only the writer owns stream state.
+
+`ServerUser->diagnosticConnection` is assigned before publication.
+`diagnosticUserName` is written before the authenticated `sState` is published and
+then remains immutable. `diagnosticChannelName` is updated on the main thread
+under a write lock on `qrwlVoiceThread`; readers hold its read lock. These name
+snapshots avoid reading normally editable names concurrently from the voice
+thread. Queue records contain no user/channel pointers or borrowed audio spans.

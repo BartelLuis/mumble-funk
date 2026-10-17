@@ -28,6 +28,7 @@
 #endif
 
 #include <atomic>
+#include <cstdint>
 #include <vector>
 
 // Unfortunately, this needs to be "large enough" to hold
@@ -115,6 +116,10 @@ public:
 	std::atomic< State > sState;
 	std::atomic< bool > was_authenticated{ false };
 	ClientType m_clientType;
+	// Unique within one diagnostic run, even when uiSession is reused.
+	std::uint64_t diagnosticConnection = 0;
+	QString diagnosticUserName;
+	QString diagnosticChannelName;
 	operator QString() const;
 
 	float dUDPPingAvg, dUDPPingVar;

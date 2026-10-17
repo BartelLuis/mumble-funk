@@ -17,6 +17,7 @@ include(qt-utils)
 option(ice "Build support for Ice RPC." ON)
 
 find_pkg(Qt5 COMPONENTS Sql REQUIRED)
+find_package(Threads REQUIRED)
 
 set(MURMUR_SOURCES
 	"main.cpp"
@@ -36,6 +37,8 @@ set(MURMUR_SOURCES
 	"ServerDB.h"
 	"ServerUser.cpp"
 	"ServerUser.h"
+	"VoiceDiagnostics.cpp"
+	"VoiceDiagnostics.h"
 
 	"${SHARED_SOURCE_DIR}/ACL.cpp"
 	"${SHARED_SOURCE_DIR}/ACL.h"
@@ -78,7 +81,7 @@ target_include_directories(mumble-server PRIVATE
 	${SHARED_SOURCE_DIR}
 )
 
-target_link_libraries(mumble-server PRIVATE shared Qt5::Sql)
+target_link_libraries(mumble-server PRIVATE shared Qt5::Sql Threads::Threads)
 
 if(static)
 	# MariaDB and MySQL

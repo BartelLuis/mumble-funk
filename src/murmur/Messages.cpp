@@ -444,6 +444,10 @@ void Server::msgAuthenticate(ServerUser *uSource, MumbleProto::Authenticate &msg
 
 	userEnterChannel(uSource, lc, mpus);
 
+	if (uSource->diagnosticConnection != 0) {
+		// Immutable after publication through sState; regular names can be edited on the main thread.
+		uSource->diagnosticUserName = uSource->qsName.left(256);
+	}
 	uSource->sState            = ServerUser::Authenticated;
 	uSource->was_authenticated = true;
 

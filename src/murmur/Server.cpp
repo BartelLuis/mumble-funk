@@ -29,6 +29,8 @@
 #include "Utils.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <QtCore/QSet>
 #include <QtCore/QXmlStreamAttributes>
 #include <QtCore/QtEndian>
@@ -43,6 +45,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <exception>
+#include <utility>
 #include <vector>
 
 #ifdef Q_OS_WIN
@@ -102,6 +106,23 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 
 	readParams();
 	initialize();
+	if (getConf("voicediagnostics", Meta::mp.voiceDiagnostics).toBool()) {
+		VoiceDiagnostics::Config config;
+		const QString prefix = getConf("voicediagnosticsfile", Meta::mp.voiceDiagnosticsFile).toString();
+		config.filePath      = QFileInfo(Meta::mp.qsAbsSettingsFilePath)
+							  .absoluteDir()
+							  .absoluteFilePath(prefix + QStringLiteral(".%1.jsonl").arg(iServerNum));
+		config.server    = iServerNum;
+		config.timeoutMs = getConf("voicediagnosticstimeout", Meta::mp.voiceDiagnosticsTimeout).toInt();
+		config.maxBytes  = getConf("voicediagnosticsmaxsize", Meta::mp.voiceDiagnosticsMaxSize).toInt();
+		try {
+			m_voiceDiagnostics = std::make_unique< VoiceDiagnostics >(config);
+			log(QStringLiteral("Voice diagnostics requested: %1 (configuration changes require restart)")
+					.arg(config.filePath));
+		} catch (const std::exception &error) {
+			log(QStringLiteral("Voice diagnostics could not start: %1").arg(QString::fromUtf8(error.what())));
+		}
+	}
 
 	foreach (const QHostAddress &qha, qlBind) {
 		SslServer *ss = new SslServer(this);
@@ -311,6 +332,7 @@ Server::~Server() {
 #endif
 
 	stopThread();
+	m_voiceDiagnostics.reset();
 
 	foreach (QSocketNotifier *qsn, qlUdpNotifier)
 		delete qsn;
@@ -982,6 +1004,9 @@ void Server::run() {
 					switch (m_udpDecoder.getMessageType()) {
 						case Mumble::Protocol::UDPMessageType::Audio: {
 							Mumble::Protocol::AudioData audioData = m_udpDecoder.getAudioData();
+							if (m_voiceDiagnostics) {
+								recordVoicePacket(*u, audioData, VoiceDiagnosticRecord::Transport::UDP);
+							}
 
 							// Allow all voice packets through by default.
 							bool ok = true;
@@ -1160,6 +1185,35 @@ void Server::addListener(QHash< ServerUser *, VolumeAdjustment > &listeners, Ser
 	if (it == listeners.end() || it->factor < volumeAdjustment.factor) {
 		listeners[&user] = volumeAdjustment;
 	}
+}
+
+namespace {
+VoiceDiagnosticRecord diagnosticContext(const ServerUser &user) {
+	VoiceDiagnosticRecord record;
+	record.connection  = user.diagnosticConnection;
+	record.session     = user.uiSession;
+	record.userName    = user.diagnosticUserName;
+	record.channelName = user.diagnosticChannelName;
+	if (user.cChannel) {
+		record.channel = static_cast< int >(user.cChannel->iId);
+	}
+	return record;
+}
+} // namespace
+
+void Server::recordVoicePacket(const ServerUser &user, const Mumble::Protocol::AudioData &audio,
+							   VoiceDiagnosticRecord::Transport transport) {
+	if (user.sState != ServerUser::Authenticated || !user.cChannel) {
+		return;
+	}
+	VoiceDiagnosticRecord record = diagnosticContext(user);
+	record.transport             = transport;
+	record.target                = audio.targetOrContext;
+	record.frame                 = audio.frameNumber;
+	record.codec                 = static_cast< int >(audio.usedCodec);
+	record.payloadBytes          = audio.payload.size();
+	record.last                  = audio.isLastFrame;
+	m_voiceDiagnostics->submit(std::move(record));
 }
 
 void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, AudioReceiverBuffer &buffer,
@@ -1492,7 +1546,10 @@ void Server::newClient() {
 		}
 
 		ServerUser *u = new ServerUser(this, sock);
-		u->haAddress  = ha;
+		if (m_voiceDiagnostics) {
+			u->diagnosticConnection = ++m_nextDiagnosticConnection;
+		}
+		u->haAddress = ha;
 		HostAddress(sock->localAddress()).toSockaddr(&u->saiTcpLocalAddress);
 
 		connect(u, &ServerUser::connectionClosed, this, &Server::connectionClosed);
@@ -1687,6 +1744,11 @@ void Server::connectionClosed(QAbstractSocket::SocketError err, const QString &r
 		QWriteLocker wl(&qrwlVoiceThread);
 
 		qhUsers.remove(u->uiSession);
+		if (m_voiceDiagnostics && u->was_authenticated) {
+			VoiceDiagnosticRecord record = diagnosticContext(*u);
+			record.kind                  = VoiceDiagnosticRecord::Kind::Disconnected;
+			m_voiceDiagnostics->submit(std::move(record));
+		}
 		qhHostUsers[u->haAddress].remove(u);
 
 		quint16 port = (u->saiUdpAddress.ss_family == AF_INET6)
@@ -1754,6 +1816,9 @@ void Server::message(Mumble::Protocol::TCPMessageType type, const QByteArray &qb
 				static_cast< std::size_t >(qbaMsg.size())))) {
 			if (m_tcpTunnelDecoder.getMessageType() == Mumble::Protocol::UDPMessageType::Audio) {
 				Mumble::Protocol::AudioData audioData = m_tcpTunnelDecoder.getAudioData();
+				if (m_voiceDiagnostics) {
+					recordVoicePacket(*u, audioData, VoiceDiagnosticRecord::Transport::TCP);
+				}
 				// Allow all voice packets through by default.
 				bool ok = true;
 				// ...Unless we're in Opus mode. In Opus mode, only Opus packets are allowed.
@@ -2000,6 +2065,15 @@ void Server::userEnterChannel(User *p, Channel *c, MumbleProto::UserState &mpus)
 	{
 		QWriteLocker wl(&qrwlVoiceThread);
 		c->addUser(p);
+		if (m_voiceDiagnostics) {
+			// Read names only on the main thread; publish the snapshot under the voice lock.
+			static_cast< ServerUser * >(p)->diagnosticChannelName = c->qsName.left(256);
+		}
+		if (m_voiceDiagnostics && static_cast< ServerUser * >(p)->sState == ServerUser::Authenticated) {
+			VoiceDiagnosticRecord record = diagnosticContext(*static_cast< ServerUser * >(p));
+			record.kind                  = VoiceDiagnosticRecord::Kind::ChannelChanged;
+			m_voiceDiagnostics->submit(std::move(record));
+		}
 
 		bool mayspeak = ChanACL::hasPermission(static_cast< ServerUser * >(p), c, ChanACL::Speak, nullptr);
 		bool sup      = p->bSuppress;

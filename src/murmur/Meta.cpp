@@ -304,10 +304,14 @@ void MetaParams::read(QString fname) {
 		qlBind << QHostAddress(QHostAddress::Any);
 	}
 
-	qsPassword            = typeCheckedFromSettings("serverpassword", qsPassword);
-	usPort                = static_cast< unsigned short >(typeCheckedFromSettings("port", static_cast< uint >(usPort)));
-	iTimeout              = typeCheckedFromSettings("timeout", iTimeout);
-	iMaxTextMessageLength = typeCheckedFromSettings("textmessagelength", iMaxTextMessageLength);
+	qsPassword           = typeCheckedFromSettings("serverpassword", qsPassword);
+	usPort               = static_cast< unsigned short >(typeCheckedFromSettings("port", static_cast< uint >(usPort)));
+	iTimeout             = typeCheckedFromSettings("timeout", iTimeout);
+	voiceDiagnostics     = typeCheckedFromSettings("voicediagnostics", voiceDiagnostics);
+	voiceDiagnosticsFile = typeCheckedFromSettings("voicediagnosticsfile", voiceDiagnosticsFile);
+	voiceDiagnosticsTimeout    = typeCheckedFromSettings("voicediagnosticstimeout", voiceDiagnosticsTimeout);
+	voiceDiagnosticsMaxSize    = typeCheckedFromSettings("voicediagnosticsmaxsize", voiceDiagnosticsMaxSize);
+	iMaxTextMessageLength      = typeCheckedFromSettings("textmessagelength", iMaxTextMessageLength);
 	iMaxImageMessageLength     = typeCheckedFromSettings("imagemessagelength", iMaxImageMessageLength);
 	legacyPasswordHash         = typeCheckedFromSettings("legacypasswordhash", legacyPasswordHash);
 	kdfIterations              = typeCheckedFromSettings("kdfiterations", -1);
@@ -436,6 +440,11 @@ void MetaParams::read(QString fname) {
 	qmConfig.insert(QLatin1String("password"), qsPassword);
 	qmConfig.insert(QLatin1String("port"), QString::number(usPort));
 	qmConfig.insert(QLatin1String("timeout"), QString::number(iTimeout));
+	qmConfig.insert(QStringLiteral("voicediagnostics"),
+					voiceDiagnostics ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("voicediagnosticsfile"), voiceDiagnosticsFile);
+	qmConfig.insert(QStringLiteral("voicediagnosticstimeout"), QString::number(voiceDiagnosticsTimeout));
+	qmConfig.insert(QStringLiteral("voicediagnosticsmaxsize"), QString::number(voiceDiagnosticsMaxSize));
 	qmConfig.insert(QLatin1String("textmessagelength"), QString::number(iMaxTextMessageLength));
 	qmConfig.insert(QLatin1String("legacypasswordhash"),
 					legacyPasswordHash ? QLatin1String("true") : QLatin1String("false"));
