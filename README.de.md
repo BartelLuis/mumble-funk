@@ -2,6 +2,15 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
+**Vorbereitung auf `dev`:** Dieser Branch beginnt mit Simplex v0.2 und ergänzt
+zunächst nur Planungsdokumentation. Einen `stable`-Branch und einen gemeinsamen
+Ubuntu-/Docker-Veröffentlichungsprozess gibt es **noch nicht**. Bestehende
+Installationen verwenden weiterhin ihre dokumentierten Branches.
+
+[Entwicklungsstruktur](docs/funk/development.md) ·
+[Release- und Integrationsplan](docs/funk/release-plan.md) ·
+[GitHub-Zusammenarbeit und Schutz](docs/funk/github-collaboration.md)
+
 Mumble-Funk ist ein unabhängiger Open-Source-Fork des Mumble-Servers auf Basis von
 **Mumble Server 1.5.939**. Er ergänzt einen optionalen Funkmodus: Pro Kanal darf
 nur ein berechtigter Benutzer gleichzeitig senden. Alle Regeln setzt der Server

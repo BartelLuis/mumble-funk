@@ -2,6 +2,15 @@
 
 **Server-side simplex radio communication for Mumble**
 
+**Development preparation (`dev`):** this branch starts from Simplex v0.2 and
+currently adds planning documentation only. A `stable` branch and the unified
+Ubuntu/Docker release process are **not available yet**. Existing installations
+continue to use their documented branches.
+
+[Development structure (Deutsch)](docs/funk/development.md) ·
+[Release and integration plan](docs/funk/release-plan.md) ·
+[GitHub collaboration and protection plan](docs/funk/github-collaboration.md)
+
 Mumble-Funk is an independent, open-source fork of the Mumble server, based on
 **Mumble Server 1.5.939**. It adds optional radio-style channel access: one user
 transmits at a time, and the server enforces the rule for unchanged Mumble clients.
@@ -51,7 +60,8 @@ directory already exists, use its update instructions instead of cloning over it
 
 | Item | Current status |
 | --- | --- |
-| Development branch | [`funk-v0.1`](https://github.com/Shawna7han/mumble-funk/tree/funk-v0.1) |
+| Development preparation | [`dev`](https://github.com/Shawna7han/mumble-funk/tree/dev), initially documentation only |
+| Existing Simplex / Ubuntu branch | [`funk-v0.1`](https://github.com/Shawna7han/mumble-funk/tree/funk-v0.1), unchanged |
 | Server baseline | Mumble 1.5.939, official tag `v1.5.939` |
 | Radio engine | Simplex v0.2, implemented; core default off, **new automated installations enable it** |
 | Supported installation targets | Ubuntu Server **24.04 LTS** and **26.04 LTS** |
