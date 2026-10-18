@@ -132,22 +132,9 @@ public:
 		if (udp.state() == QAbstractSocket::UnconnectedState) {
 			if (!udp.bind(QHostAddress(QHostAddress::LocalHost), 0))
 				return false;
-			// Real clients establish the UDP peer with a connectivity ping before speech.
-			Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > pingEncoder(version);
-			Mumble::Protocol::PingData ping;
-			ping.timestamp       = 42;
-			const auto pingBytes = pingEncoder.encodePingPacket(ping);
-			if (!sendEncrypted(QByteArray(reinterpret_cast< const char * >(pingBytes.data()),
-										  static_cast< int >(pingBytes.size())))
-				|| !udp.waitForReadyRead(2000))
-				return false;
-			QByteArray response(static_cast< int >(udp.pendingDatagramSize()), '\0');
-			if (udp.readDatagram(response.data(), response.size()) != response.size())
-				return false;
-			QByteArray plain(response.size() - 4, '\0');
-			if (!crypt.decrypt(reinterpret_cast< const unsigned char * >(response.constData()),
-							   reinterpret_cast< unsigned char * >(plain.data()),
-							   static_cast< unsigned int >(response.size())))
+			// Establish connectivity with a matching authenticated ping, not merely
+			// the first datagram (which may be unrelated audio from the other sender).
+			if (!udpBarrier())
 				return false;
 		}
 		return sendEncrypted(bytes);
@@ -180,7 +167,8 @@ public:
 				if (!crypt.decrypt(reinterpret_cast< const unsigned char * >(encrypted.constData()),
 								   reinterpret_cast< unsigned char * >(plain.data()),
 								   static_cast< unsigned int >(encrypted.size())))
-					return false;
+					continue; // Like a real client, discard unauthenticated/duplicate unrelated audio.
+				// A matching authenticated ping is still required; timeout remains a failure.
 				Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Client > decoder(version);
 				if (decoder.decode(gsl::span< const Mumble::Protocol::byte >(
 						reinterpret_cast< const Mumble::Protocol::byte * >(plain.constData()),

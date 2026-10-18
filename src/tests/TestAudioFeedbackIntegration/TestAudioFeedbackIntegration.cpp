@@ -1,4 +1,4 @@
-// Copyright The Mumble Developers. All rights reserved.
+// Copyright The Mumble-Funk Contributors. All rights reserved.
 // Use of this source code is governed by a BSD-style license in the LICENSE file.
 #include "../TestSimplexIntegration/Harness.h"
 #include <array>
@@ -17,6 +17,8 @@ private slots:
 	void independentChannels();
 	void customTone_data();
 	void customTone();
+	void legacyNonceIsNotProtocolVersion();
+	void reusedSession();
 };
 void TestAudioFeedbackIntegration::privateTone_data() {
 	QTest::addColumn< bool >("udp");
@@ -147,7 +149,8 @@ void TestAudioFeedbackIntegration::cancelAndReconnect() {
 	QTest::qWait(40);
 	Client replacement;
 	QVERIFY(replacement.login(f.port, "Replacement"));
-	QVERIFY(replacement.audio(400).isEmpty()); // no old tone delivered even if protocol session is reused
+	QVERIFY(
+		replacement.audio(400).isEmpty()); // no old tone delivered on reconnect; explicit reuse is tested separately
 }
 void TestAudioFeedbackIntegration::independentChannels() {
 	Fixture f;
@@ -245,6 +248,73 @@ void TestAudioFeedbackIntegration::customTone() {
 		QVERIFY(peak > 0.1 && peak < 0.23);
 		QVERIFY(crosses > 70);
 	}
+}
+void TestAudioFeedbackIntegration::legacyNonceIsNotProtocolVersion() {
+	Fixture f;
+	QVERIFY(f.start("true", 5000, 5000, false, "audiofeedback=true\n"));
+	Client a, b, observer;
+	QVERIFY(a.login(f.port, "A"));
+	QVERIFY(b.login(f.port, "B"));
+	QVERIFY(observer.login(f.port, "Observer"));
+	// A valid encrypted packet's first nonce byte can equal the protobuf ping header.
+	// The unauthenticated ping probe must not change decoding of legacy plaintext.
+	for (Client *client : { &a, &b }) {
+		auto iv = client->crypt.getEncryptIV();
+		iv[0]   = 0;
+		QVERIFY(client->crypt.setEncryptIV(iv));
+		MumbleProto::CryptSetup sync;
+		sync.set_client_nonce(iv);
+		QVERIFY(client->send(Type::CryptSetup, sync));
+		QVERIFY(client->barrier());
+		QVERIFY(client->udp.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	}
+	QVERIFY(a.speak(true));
+	QVERIFY(observer.expect(a));
+	b.audio();
+	QVERIFY(b.speak(true));
+	QVERIFY(b.udpBarrier());
+	const auto tone = b.audio(350, 13);
+	QCOMPARE(tone.size(), 13);
+	for (const auto &packet : tone)
+		QCOMPARE(packet.session, b.session);
+	QVERIFY(observer.audio().isEmpty());
+}
+void TestAudioFeedbackIntegration::reusedSession() {
+	Fixture f;
+	QVERIFY(f.start("true", 5000, 5000, false, "audiofeedback=true\nusers=2\n"));
+	Client a, b;
+	QVERIFY(a.login(f.port, "A"));
+	QVERIFY(b.login(f.port, "B"));
+	QVERIFY(a.speak());
+	b.audio();
+	QVERIFY(b.speak());
+	QVERIFY(b.barrier());
+	QVERIFY(!b.audio(25, 1).isEmpty());
+	const auto oldSession = b.session;
+	auto removed          = [&](unsigned int session) {
+        QByteArray data;
+        return a.receive(Type::UserRemove, data, [session](const QByteArray &bytes) {
+            MumbleProto::UserRemove message;
+            return message.ParseFromArray(bytes.data(), bytes.size()) && message.session() == session;
+        });
+	};
+	b.socket.abort();
+	QVERIFY(removed(oldSession));
+	// The server's pool has 2*users IDs. Consume the two unused IDs, then reuse B's.
+	bool reused = false;
+	for (int i = 0; i < 4; ++i) {
+		Client replacement;
+		QVERIFY(replacement.login(f.port, "Replacement" + std::to_string(i)));
+		if (replacement.session == oldSession) {
+			reused = true;
+			QVERIFY(replacement.audio(400).isEmpty());
+			break;
+		}
+		const auto session = replacement.session;
+		replacement.socket.abort();
+		QVERIFY(removed(session));
+	}
+	QVERIFY2(reused, "The test must actually reuse the disconnected session number");
 }
 QTEST_MAIN(TestAudioFeedbackIntegration)
 #include "TestAudioFeedbackIntegration.moc"

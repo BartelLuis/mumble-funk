@@ -1061,6 +1061,9 @@ void Server::run() {
 					}
 				}
 				len -= 4;
+				// The unauthenticated ping probe may infer a different protocol from a
+				// ciphertext nonce byte. Authenticated audio must use its user's version.
+				m_udpDecoder.setProtocolVersion(u->m_version);
 
 				if (m_udpDecoder.decode(gsl::span< Mumble::Protocol::byte >(buffer, static_cast< std::size_t >(len)))) {
 					switch (m_udpDecoder.getMessageType()) {
