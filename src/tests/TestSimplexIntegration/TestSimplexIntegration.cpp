@@ -13,7 +13,70 @@ private slots:
 	void alternateRoutes_data();
 	void alternateRoutes();
 	void restartAndLoggingDisabled();
+	void udpNonceProtocol_data();
+	void udpNonceProtocol();
+	void udpFenceDiscardsUnauthenticatedDatagram();
 };
+
+void TestSimplexIntegration::udpNonceProtocol_data() {
+	QTest::addColumn< bool >("modern");
+	QTest::addColumn< bool >("simplex");
+	QTest::addColumn< bool >("knownPeer");
+	for (bool modern : { false, true })
+		for (bool simplex : { false, true })
+			for (bool known : { false, true }) {
+				const auto name = QString("%1-%2-%3")
+					.arg(modern ? "modern" : "legacy")
+					.arg(simplex ? "simplex" : "normal")
+					.arg(known ? "known-peer" : "first-datagram");
+				QTest::newRow(qPrintable(name)) << modern << simplex << known;
+			}
+}
+
+void TestSimplexIntegration::udpNonceProtocol() {
+	QFETCH(bool, modern);
+	QFETCH(bool, simplex);
+	QFETCH(bool, knownPeer);
+	Fixture f;
+	QVERIFY(f.start(simplex ? "true" : "false", 5000, 5000, false));
+	Client sender, observer;
+	QVERIFY(sender.login(f.port, "NonceSender", modern));
+	QVERIFY(observer.login(f.port, "NonceObserver", modern));
+	QVERIFY(sender.udp.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	const auto resync = [&](unsigned char lowByte) {
+		auto iv = sender.crypt.getEncryptIV();
+		iv[0] = static_cast< char >(lowByte);
+		if (!sender.crypt.setEncryptIV(iv)) return false;
+		MumbleProto::CryptSetup setup;
+		setup.set_client_nonce(iv);
+		return sender.send(Type::CryptSetup, setup) && sender.barrier();
+	};
+	if (knownPeer) {
+		QVERIFY(resync(64));
+		QVERIFY(sender.udpBarrier());
+	}
+	// OCB increments the nonce before encryption: low byte 0 becomes 1, which
+	// equals the protobuf ping header. This is authenticated LEGACY audio too.
+	QVERIFY(resync(0));
+	QVERIFY(sender.speak(true));
+	QVERIFY2(observer.expect(sender), "Authenticated audio was decoded with the unauthenticated ping probe's version");
+	QVERIFY(sender.speak(false, true));
+	QVERIFY(observer.expect(sender, true, true));
+}
+
+void TestSimplexIntegration::udpFenceDiscardsUnauthenticatedDatagram() {
+	Fixture f;
+	QVERIFY(f.start("true", 5000, 5000, false));
+	Client client;
+	QVERIFY(client.login(f.port, "FenceClient", true));
+	QVERIFY(client.udp.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	QUdpSocket unrelated;
+	const QByteArray noise(16, 'x');
+	QCOMPARE(unrelated.writeDatagram(noise, QHostAddress::LocalHost, client.udp.localPort()), qint64(noise.size()));
+	QVERIFY(client.udp.waitForReadyRead(2000));
+	// Discarding an invalid packet must not satisfy or abort the real ping fence.
+	QVERIFY(client.udpBarrier());
+}
 
 void TestSimplexIntegration::ownership_data() {
 	QTest::addColumn< QString >("setting");

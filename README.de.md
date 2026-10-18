@@ -2,14 +2,14 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
-**Vorbereitung auf `dev`:** Dieser Branch beginnt mit Simplex v0.2 und ergänzt
-zunächst nur Planungsdokumentation. Einen `stable`-Branch und einen gemeinsamen
-Ubuntu-/Docker-Veröffentlichungsprozess gibt es **noch nicht**. Bestehende
-Installationen verwenden weiterhin ihre dokumentierten Branches.
+**Gemeinsamer Stable-Kandidat; Versionsvorschlag `funk-v0.2.1`.** Ubuntu und Docker
+verwenden auf `stable` denselben Quellstand. Die Simplex-Engine bleibt v0.2 und
+experimentell. Die abschließende Docker-Abnahme auf dem Rechner des Kollegen und
+die Freigabe stehen noch aus; es gibt keinen neuen Release oder Versionstag.
+`dev` ist für Weiterentwicklung vorgesehen, `master` bleibt vorerst Standardbranch.
 
-[Entwicklungsstruktur](docs/funk/development.md) ·
-[Release- und Integrationsplan](docs/funk/release-plan.md) ·
-[GitHub-Zusammenarbeit und Schutz](docs/funk/github-collaboration.md)
+[Prüfbericht der Integration](docs/funk/STABLE-INTEGRATION-STATUS.md) ·
+[Entwicklungsstruktur](docs/funk/development.md) · [Releaseplan](docs/funk/release-plan.md)
 
 Mumble-Funk ist ein unabhängiger Open-Source-Fork des Mumble-Servers auf Basis von
 **Mumble Server 1.5.939**. Er ergänzt einen optionalen Funkmodus: Pro Kanal darf
@@ -28,6 +28,20 @@ zuverlässiger Betrieb unter allen Netzbedingungen ist damit noch nicht belegt.
 [Automatische Installation](docs/funk/setup.md) ·
 [Simplex aktivieren und testen](docs/funk/simplex.md)
 
+## Ubuntu oder Docker?
+
+Beide Wege bauen denselben Git-Commit; `git rev-parse HEAD` zeigt seine eindeutige
+Kennung. Neue Installationen aktivieren Simplex mit 500 ms Timeout und 500 ms
+Retry-Timeout. Unveränderte Mumla-/Windows-Mumble-Clients verbinden sich damit.
+Audio-Feedback v0.3 wird nicht mitgeliefert.
+
+- [Ubuntu-Setup](docs/funk/setup.md): Ubuntu Server 24.04 oder 26.04 LTS, Dienst
+  `mumble-funk`, üblicherweise 64739 TCP/UDP.
+- [Docker-Installation](docs/funk/docker.md): Container intern 64739 TCP/UDP;
+  beim Parallelbetrieb Host-Port 64740 wählen.
+- [Bestehenden Docker-Server sicher auf Stable umstellen](docs/funk/docker-stable-migration.md):
+  Sicherung, gleicher Projektname und gleiche Volumes, Prüfung und Rückkehr.
+
 ## Schnellinstallation — Ubuntu 24.04 / 26.04 LTS
 
 Als normaler Benutzer mit **sudo-Rechten** starten, nicht als root. Erforderlich
@@ -37,7 +51,7 @@ und 8 GiB freier Speicher.
 ```bash
 sudo apt update && sudo apt install -y git
 
-git clone --branch funk-v0.1 --recurse-submodules \
+git clone --branch stable --recurse-submodules \
   https://github.com/Shawna7han/mumble-funk.git
 
 cd mumble-funk

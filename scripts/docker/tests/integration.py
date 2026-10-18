@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Real Docker/Compose tests. Creates only uniquely named disposable test resources."""
+import argparse
+import contextlib
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import socket
+import sqlite3
+import ssl
+import subprocess
+import tarfile
+import tempfile
+import time
+
+REPO = Path(__file__).resolve().parents[3]
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--probe',type=Path,required=True)
+    parser.add_argument('--native-server',type=Path,required=True)
+    parser.add_argument('--host-port',type=int,help='Explicit free TCP/UDP host port, e.g. 64740')
+    parser.add_argument('--image',default='mumble-funk-docker:local')
+    parser.add_argument('--runtime-file',type=Path,help='Development-only read-only helper mount; omit for final image verification')
+    parser.add_argument('--previous-image',help='Optional older local image for a real image-update retention test')
+    args=parser.parse_args()
+    project='funk-docker-check-'+str(os.getpid())
+    restored=project+'-restored'
+    upgrade=project+'-upgrade'
+    env=os.environ.copy()
+    for key in ('DOCKER_CONTEXT','DOCKER_TLS','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH'):
+        env.pop(key,None)
+    env['DOCKER_HOST']='unix:///var/run/docker.sock'
+    def command(argv,check=True,input=None,project_name=project):
+        current=env.copy();current['COMPOSE_PROJECT_NAME']=project_name
+        current['FUNK_HOST_PORT']=str(port)
+        result=subprocess.run(argv,cwd=REPO,env=current,input=input,capture_output=True)
+        if check and result.returncode:
+            raise RuntimeError(' '.join(map(str,argv[:6]))+'\n'+result.stderr.decode(errors='replace'))
+        return result
+    def docker(*argv,**kwargs):return command(['docker',*argv],**kwargs)
+    def compose(*argv,**kwargs):return docker('compose',*argv,**kwargs)
+    def probe(password=None):
+        result=command([str(args.probe),str(port)],input=((password if password is not None else values['serverpassword'])+'\n').encode())
+        assert b'encrypted UDP' in result.stdout
+    def healthy(project_name=project):
+        deadline=time.monotonic()+30
+        while time.monotonic()<deadline:
+            result=compose('exec','-T','mumble-funk','funk-container','health',check=False,project_name=project_name)
+            if result.returncode==0:return
+            time.sleep(.1)
+        raise RuntimeError('Container did not become healthy: '+compose('logs').stdout.decode(errors='replace'))
+    def information(project_name=project):return json.loads(compose('exec','-T','mumble-funk','funk-container','info','--json',project_name=project_name).stdout)
+    def certificate():
+        context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT);context.check_hostname=False;context.verify_mode=ssl.CERT_NONE
+        with socket.create_connection(('127.0.0.1',port),timeout=3) as raw:
+            with context.wrap_socket(raw,server_hostname='localhost') as tls:
+                return tls.getpeercert(binary_form=True)
+    def fingerprint(project_name=project):
+        code="import sqlite3,hashlib;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');tables=[(name,db.execute('SELECT * FROM \"'+name+'\" ORDER BY rowid').fetchall()) for (name,) in db.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='slog' ORDER BY name\")];print(hashlib.sha256(repr(tables).encode()).hexdigest())"
+        return compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',code,project_name=project_name).stdout.strip()
+    # Reserve the same high host port for both protocols; never stop existing listeners.
+    for _ in range(100):
+        with socket.socket() as tcp:
+            tcp.bind(('127.0.0.1',args.host_port or 0));port=tcp.getsockname()[1]
+        with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as udp:
+            try:udp.bind(('0.0.0.0',port));break
+            except OSError:
+                if args.host_port:raise
+                continue
+    else:raise RuntimeError('No free TCP/UDP port')
+    projects=[project,restored]+([upgrade] if args.previous_image else [])
+    owned_projects=[]
+    with tempfile.TemporaryDirectory(dir=os.environ.get('FUNK_TEST_WORKDIR')) as directory:
+        directory=Path(directory);native=None;logfile=None
+        if args.runtime_file:
+            override=directory/'runtime.compose.yaml'
+            override.write_text('services:\n  mumble-funk:\n    volumes:\n      - '+json.dumps(str(args.runtime_file.resolve())+':/usr/local/bin/funk-container:ro')+'\n')
+            env['COMPOSE_FILE']=str(REPO/'compose.yaml')+os.pathsep+str(override)
+        try:
+            for name in projects:
+                if docker('ps','--all','--quiet','--filter','label=com.docker.compose.project='+name).stdout.strip():
+                    raise RuntimeError('Refusing existing test project: '+name)
+                if docker('image','inspect',name+':local',check=False).returncode==0:
+                    raise RuntimeError('Refusing existing image tag: '+name)
+                owned_projects.append(name)
+                docker('tag',args.image,name+':local')
+            compose('config','--quiet')
+            # A foreign process using the desired host port must survive an attempted start.
+            with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as occupied:
+                occupied.bind(('0.0.0.0',port))
+                result=compose('up','-d','--no-build',check=False)
+                assert result.returncode!=0,'Occupied UDP port unexpectedly published'
+                assert occupied.getsockname()[1]==port
+            compose('down')
+            # Also protect foreign TCP listeners.
+            with socket.socket() as occupied:
+                occupied.bind(('0.0.0.0',port));occupied.listen()
+                assert compose('up','-d','--no-build',check=False).returncode!=0
+                assert occupied.getsockname()[1]==port
+            compose('down')
+            compose('up','-d','--no-build');healthy()
+            values=information();assert values['simplex']=='true';assert values['simplextimeout']=='500';assert values['simplexretrytimeout']=='500'
+            assert len(values['serverpassword'])==48
+            cid=compose('ps','--quiet','mumble-funk').stdout.decode().strip()
+            inspection=json.loads(docker('inspect',cid).stdout)[0]
+            assert inspection['Config']['User']=='10001:10001'
+            assert inspection['HostConfig']['ReadonlyRootfs']
+            assert inspection['HostConfig']['CapDrop']==['ALL']
+            assert inspection['HostConfig']['RestartPolicy']['Name']=='unless-stopped'
+            assert set(inspection['HostConfig']['PortBindings'])=={'64739/tcp','64739/udp'}
+            for bindings in inspection['HostConfig']['PortBindings'].values():assert all(int(b['HostPort'])==port for b in bindings)
+            mode=compose('exec','-T','mumble-funk','stat','-c','%a','/etc/mumble-funk/server.ini').stdout.strip()
+            assert mode==b'600'
+            assert compose('exec','-T','mumble-funk','sh','-c','command -v g++ || command -v cmake',check=False).returncode!=0
+            probe();cert=certificate()
+            logs=compose('logs').stdout
+            assert b'Simplex enabled:' in logs and values['serverpassword'].encode() not in logs
+            assert b"Password for 'SuperUser'" not in logs
+            # Offline database + audio fixture: exercise retention of the full SQLite file and future assets.
+            compose('stop')
+            code="import sqlite3;from pathlib import Path;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');db.execute('CREATE TABLE docker_preserved(value TEXT)');db.execute(\"INSERT INTO docker_preserved VALUES ('accounts-channels-acls-preserved')\");db.execute(\"INSERT INTO users(server_id,user_id,name) VALUES(1,42,'PersistedUser')\");db.execute(\"INSERT INTO channels(server_id,channel_id,parent_id,name,inheritacl) VALUES(1,42,0,'PersistedChannel',1)\");db.execute(\"INSERT INTO acl(server_id,channel_id,priority,user_id,apply_here,apply_sub,grantpriv,revokepriv) VALUES(1,42,0,42,1,1,14,0)\");db.commit();db.close();Path('/var/lib/mumble-funk/audio/future.txt').write_text('future persistent audio directory')"
+            compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',code)
+            admin_password='test-only-'+os.urandom(24).hex()
+            result=compose('run','--rm','--no-deps','-T','mumble-funk','admin-password',input=((admin_password+'\n')*2).encode())
+            assert admin_password.encode() not in result.stdout+result.stderr
+            check_admin="import sqlite3;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');assert db.execute('SELECT pw FROM users WHERE server_id=1 AND user_id=0').fetchone()[0]"
+            compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',check_admin)
+            first=fingerprint()
+            compose('up','-d','--force-recreate','--no-build');healthy();assert certificate()==cert;assert information()==values
+            compose('stop');assert fingerprint()==first
+            compose('run','--rm','--no-deps','-T','mumble-funk','set','simplexdiagnostics','false')
+            compose('up','-d','--no-build');healthy();probe()
+            assert information()['simplexdiagnostics']=='false'
+            compose('restart');healthy();assert certificate()==cert;probe()
+            # Offline operations must refuse while the server holds its inherited lock.
+            assert compose('exec','-T','mumble-funk','funk-container','backup',check=False).returncode!=0
+            backup_path=directory/'safe.tar.gz'
+            command(['bash','scripts/docker/manage.sh','backup',str(backup_path)])
+            healthy();assert backup_path.stat().st_mode & 0o777==0o600
+            with tarfile.open(backup_path) as archive:
+                names=archive.getnames();assert 'config/server.ini' in names and 'state/server.sqlite' in names and 'state/audio/future.txt' in names
+            # Restoring to populated volumes refuses and restarts the original instance.
+            assert command(['bash','scripts/docker/manage.sh','restore',str(backup_path)],check=False).returncode!=0
+            healthy();assert information()['serverpassword']==values['serverpassword']
+            compose('stop')
+            before_restore=fingerprint()
+            command(['bash','scripts/docker/manage.sh','restore',str(backup_path)],project_name=restored)
+            # The restored project has distinct volumes but an identical DB/cert/config.
+            restored_code="import sqlite3,hashlib;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');tables=[(name,db.execute('SELECT * FROM \"'+name+'\" ORDER BY rowid').fetchall()) for (name,) in db.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='slog' ORDER BY name\")];print(hashlib.sha256(repr(tables).encode()).hexdigest())"
+            restored_hash=compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',restored_code,project_name=restored).stdout.strip()
+            assert restored_hash==before_restore
+            compose('up','-d','--no-build',project_name=restored)
+            # Independent root-level Mumble process and Docker run at the same time.
+            native_port=64738
+            try:
+                reservations=[]
+                for kind in (socket.SOCK_STREAM,socket.SOCK_DGRAM):
+                    sock=socket.socket(socket.AF_INET,kind);reservations.append(sock);sock.bind(('127.0.0.1',native_port))
+            except OSError:
+                native_port=0
+            finally:
+                for sock in reservations:sock.close()
+            if native_port==0:
+                with socket.socket() as sock:sock.bind(('127.0.0.1',0));native_port=sock.getsockname()[1]
+            config=directory/'native.ini'
+            config.write_text(f'host=127.0.0.1\nport={native_port}\ndatabase={directory}/native.sqlite\nlogfile=\nice=\nbonjour=false\n')
+            original=config.read_bytes();logfile=open(directory/'native.log','wb')
+            native=subprocess.Popen([str(args.native_server),'-ini',str(config),'-fg'],stdout=logfile,stderr=subprocess.STDOUT)
+            for _ in range(100):
+                try:
+                    with socket.create_connection(('127.0.0.1',native_port),timeout=.1):break
+                except OSError:time.sleep(.05)
+            else:raise RuntimeError('Native reference server did not start')
+            assert native.poll() is None
+            # Run the published-port protocol probe against the restored container.
+            deadline=time.monotonic()+20
+            while time.monotonic()<deadline:
+                if compose('exec','-T','mumble-funk','funk-container','health',project_name=restored,check=False).returncode==0:break
+                time.sleep(.1)
+            probe();assert certificate()==cert;assert config.read_bytes()==original;assert native.poll() is None
+            compose('stop',project_name=restored)
+            stopped=compose('ps','--all','--quiet','mumble-funk',project_name=restored).stdout.decode().strip()
+            state=json.loads(docker('inspect',stopped).stdout)[0]['State']
+            assert not state['OOMKilled'] and state['ExitCode'] in (0,15)
+            logs=compose('logs',project_name=restored).stdout
+            assert b'Shutting down' in logs and values['serverpassword'].encode() not in logs
+            if args.previous_image:
+                docker('tag',args.previous_image,upgrade+':local')
+                compose('up','-d','--no-build',project_name=upgrade);healthy(upgrade)
+                old=information(upgrade);old_certificate=certificate()
+                old_id=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
+                old_image=json.loads(docker('inspect',old_id).stdout)[0]['Image']
+                compose('stop',project_name=upgrade)
+                compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',code,project_name=upgrade)
+                compose('run','--rm','--no-deps','-T','mumble-funk','admin-password',input=((admin_password+'\n')*2).encode(),project_name=upgrade)
+                old_state=fingerprint(upgrade)
+                docker('tag',args.image,upgrade+':local')
+                compose('up','-d','--no-build','--force-recreate',project_name=upgrade);healthy(upgrade)
+                new_id=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
+                assert old_image!=json.loads(docker('inspect',new_id).stdout)[0]['Image']
+                assert information(upgrade)==old and certificate()==old_certificate
+                probe(old['serverpassword'])
+                compose('stop',project_name=upgrade)
+                assert fingerprint(upgrade)==old_state
+                # A true rollback to the previous binary, using the same named
+                # volumes, must retain all stored accounts/channels/ACLs/settings.
+                docker('tag',args.previous_image,upgrade+':local')
+                compose('up','-d','--no-build','--force-recreate',project_name=upgrade);healthy(upgrade)
+                assert information(upgrade)==old and certificate()==old_certificate
+                compose('stop',project_name=upgrade)
+                assert fingerprint(upgrade)==old_state
+                print('PASS: real image update AND rollback preserve full SQLite state, password, configuration and certificate')
+            print('PASS: image startup, rootless isolation, published TCP/encrypted UDP, simplex, diagnostics off, restart/recreate, port conflicts, native parallel operation, consistent backup/restore, clean shutdown')
+        finally:
+            if native:
+                native.terminate()
+                try:native.wait(timeout=10)
+                except subprocess.TimeoutExpired:native.kill();native.wait()
+            if logfile:logfile.close()
+            # Only the uniquely named resources created by this test are removed.
+            for name in owned_projects:
+                compose('down','--volumes',project_name=name,check=False)
+                docker('image','rm',name+':local',check=False)
+
+if __name__=='__main__':main()

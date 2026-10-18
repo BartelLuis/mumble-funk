@@ -2,10 +2,9 @@
 # Run as your normal login user, from any directory.
 set -euo pipefail
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-[[ $(git -C "$repo" branch --show-current) == funk-v0.1 ]] || {
-    echo 'Bitte zuerst auf den Zweig funk-v0.1 wechseln.' >&2; exit 1;
-}
-git -C "$repo" merge-base --is-ancestor dfbac8d3d9c967003e74b4ffc5610f7d45e8f666 HEAD
+# shellcheck source=scripts/funk/source.sh
+source "$repo/scripts/funk/source.sh"
+funk_require_supported_source "$repo"
 cmake -S "$repo" -B "$repo/build/funk" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DBUILD_NUMBER=939 \
     -Dclient=OFF -Dserver=ON -Dtests=ON -Dplugins=OFF -Doverlay=OFF \

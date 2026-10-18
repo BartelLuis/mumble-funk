@@ -1,0 +1,140 @@
+"""Unit checks for Docker-only lifecycle logic, with temporary directories."""
+import importlib.util
+import io
+import os
+from pathlib import Path
+import sqlite3
+import tempfile
+import tarfile
+import types
+import unittest
+from unittest.mock import patch
+
+SOURCE = Path(__file__).resolve().parents[1] / 'runtime.py'
+
+class RuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary=tempfile.TemporaryDirectory();self.addCleanup(self.temporary.cleanup)
+        self.root=Path(self.temporary.name)
+        with patch.dict(os.environ,{'FUNK_TEST_ROOT':str(self.root)}):
+            spec=importlib.util.spec_from_file_location('container_runtime',SOURCE)
+            self.runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(self.runtime)
+        for directory in self.runtime.DIRECTORIES.values(): directory.mkdir(parents=True)
+        (self.runtime.DIRECTORIES['state']/'audio').mkdir()
+        self.calls=[]
+        def initialize_database(args,**kwargs):
+            self.calls.append(args)
+            with sqlite3.connect(self.runtime.DATABASE) as db:
+                db.execute('CREATE TABLE config(server_id INTEGER,key TEXT,value TEXT)')
+            return type('Result',(),{'returncode':0})()
+        self.database=patch.object(self.runtime.subprocess,'run',side_effect=initialize_database)
+        self.database.start();self.addCleanup(self.database.stop)
+
+    def test_first_configuration_secure_and_repeated_start_preserves(self):
+        self.runtime.initialize();original=self.runtime.CONFIG.read_bytes()
+        values=self.runtime.settings()
+        self.assertEqual(values['simplex'],'true');self.assertEqual(values['simplexretrytimeout'],'500')
+        self.assertEqual(len(values['serverpassword']),48);self.assertNotIn('serverpassword=',str(self.calls))
+        self.assertEqual(self.runtime.CONFIG.stat().st_mode & 0o777,0o600)
+        self.assertIn('-disablesu',self.calls[0])
+        self.runtime.initialize();self.assertEqual(self.runtime.CONFIG.read_bytes(),original);self.assertEqual(len(self.calls),1)
+
+    def test_missing_config_never_resets_existing_database(self):
+        self.runtime.DATABASE.write_bytes(b'protected')
+        with self.assertRaises(RuntimeError):self.runtime.initialize()
+        self.assertEqual(self.runtime.DATABASE.read_bytes(),b'protected')
+
+    def test_missing_database_without_bootstrap_is_refused(self):
+        self.runtime.initialize();self.runtime.DATABASE.unlink()
+        with self.assertRaises(RuntimeError):self.runtime.initialize()
+        self.assertEqual(len(self.calls),1)
+
+    def test_lock_prevents_two_instances_and_offline_edits(self):
+        self.runtime.initialize()
+        with self.runtime.instance_lock():
+            with self.assertRaises(RuntimeError):
+                self.runtime.configure('simplex','false')
+
+    def test_configuration_changes_preserved(self):
+        self.runtime.initialize();password=self.runtime.settings()['serverpassword']
+        self.runtime.configure('simplexdiagnostics','false');self.runtime.configure('simplextimeout','700')
+        self.runtime.initialize();values=self.runtime.settings()
+        self.assertEqual(values['simplexdiagnostics'],'false');self.assertEqual(values['simplextimeout'],'700')
+        self.assertEqual(values['serverpassword'],password)
+        with self.assertRaises(RuntimeError):self.runtime.configure('database','/etc/foreign.sqlite')
+
+    def test_reserved_paths_and_duplicates_fail_closed(self):
+        self.runtime.initialize()
+        original=self.runtime.CONFIG.read_text()
+        for text in (original+'port=60000\n',original.replace('port=64739','port=64738'),original.replace('/var/lib/mumble-funk/server.sqlite','/etc/other.sqlite')):
+            self.runtime.CONFIG.write_text(text)
+            with self.assertRaises(RuntimeError):self.runtime.settings()
+
+    def capture_backup(self):
+        buffer=io.BytesIO()
+        with patch.object(self.runtime.sys,'stdout',types.SimpleNamespace(buffer=buffer)):
+            self.runtime.backup()
+        return buffer.getvalue()
+
+    def empty_target(self):
+        root=self.root/'restored'
+        with patch.dict(os.environ,{'FUNK_TEST_ROOT':str(root)}):
+            spec=importlib.util.spec_from_file_location('restore_runtime',SOURCE)
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        for directory in module.DIRECTORIES.values():directory.mkdir(parents=True)
+        (module.DIRECTORIES['state']/'audio').mkdir()
+        return module
+
+    def test_offline_backup_restore_includes_database_config_and_future_audio(self):
+        self.runtime.initialize()
+        (self.runtime.DIRECTORIES['state']/'audio'/'example.txt').write_text('future audio storage')
+        original=self.runtime.DATABASE.read_bytes();config=self.runtime.CONFIG.read_bytes()
+        archive=self.capture_backup();target=self.empty_target()
+        with patch.object(target.sys,'stdin',types.SimpleNamespace(buffer=io.BytesIO(archive))):target.restore()
+        self.assertEqual(target.DATABASE.read_bytes(),original);self.assertEqual(target.CONFIG.read_bytes(),config)
+        self.assertEqual((target.DIRECTORIES['state']/'audio'/'example.txt').read_text(),'future audio storage')
+        self.assertEqual(target.CONFIG.stat().st_mode & 0o777,0o600)
+
+    def test_restore_never_overwrites_existing_configuration(self):
+        self.runtime.initialize();archive=self.capture_backup();original=self.runtime.CONFIG.read_bytes()
+        with patch.object(self.runtime.sys,'stdin',types.SimpleNamespace(buffer=io.BytesIO(archive))):
+            with self.assertRaises(RuntimeError):self.runtime.restore()
+        self.assertEqual(self.runtime.CONFIG.read_bytes(),original)
+
+    def test_unsafe_or_incomplete_archives_never_publish_target_data(self):
+        for name,kind in [('config/../../escape',tarfile.REGTYPE),('/etc/escape',tarfile.REGTYPE),
+                          ('state/link',tarfile.SYMTYPE),('state/.instance.lock',tarfile.REGTYPE),('config',tarfile.DIRTYPE)]:
+            with self.subTest(name=name):
+                target=self.empty_target() if not (self.root/'restored').exists() else None
+                if target is None:
+                    import shutil
+                    shutil.rmtree(self.root/'restored');target=self.empty_target()
+                buffer=io.BytesIO()
+                with tarfile.open(fileobj=buffer,mode='w:gz') as archive:
+                    member=tarfile.TarInfo(name);member.type=kind
+                    if kind==tarfile.SYMTYPE:member.linkname='/etc/passwd'
+                    archive.addfile(member)
+                with patch.object(target.sys,'stdin',types.SimpleNamespace(buffer=io.BytesIO(buffer.getvalue()))):
+                    with self.assertRaises((RuntimeError,OSError)):target.restore()
+                self.assertFalse(target.CONFIG.exists());self.assertFalse(target.DATABASE.exists())
+                self.assertFalse((self.root/'escape').exists())
+
+    def test_edit_does_not_change_other_ini_groups(self):
+        self.runtime.initialize()
+        self.runtime.CONFIG.write_text(self.runtime.CONFIG.read_text()+'\n[Other]\nsimplex=true\n')
+        self.runtime.configure('simplex','false')
+        self.assertEqual(self.runtime.settings()['simplex'],'false')
+        self.assertIn('[Other]\nsimplex=true',self.runtime.CONFIG.read_text())
+
+    def test_admin_password_uses_stdin_and_never_process_arguments(self):
+        self.runtime.initialize()
+        password='test-only-'+('x'*32)
+        with patch.object(self.runtime.getpass,'getpass',side_effect=[password,password]), patch.object(self.runtime.subprocess,'run') as process:
+            process.return_value.returncode=0
+            self.runtime.admin_password()
+            self.assertIn('-readsupw',process.call_args.args[0])
+            self.assertNotIn(password,str(process.call_args.args))
+            self.assertEqual(process.call_args.kwargs['input'],(password+'\n').encode())
+        self.assertNotIn(password,self.runtime.CONFIG.read_text())
+
+if __name__=='__main__':unittest.main()

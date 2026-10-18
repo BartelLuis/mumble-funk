@@ -1,0 +1,35 @@
+name: ${COMPOSE_PROJECT_NAME:-mumble-funk-docker}
+services:
+  mumble-funk:
+    image: ${COMPOSE_PROJECT_NAME:-mumble-funk-docker}:local
+    build:
+      context: .
+      args:
+        FUNK_BUILD_JOBS: ${FUNK_BUILD_JOBS:-2}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    ports:
+      - "${FUNK_HOST_PORT:-64739}:64739/tcp"
+      - "${FUNK_HOST_PORT:-64739}:64739/udp"
+    volumes:
+      - funk_config:/etc/mumble-funk
+      - funk_state:/var/lib/mumble-funk
+      - funk_logs:/var/log/mumble-funk
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  funk_config:
+  funk_state:
+  funk_logs:

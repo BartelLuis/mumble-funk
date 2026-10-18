@@ -31,16 +31,15 @@ done
 # shellcheck source=/dev/null
 . /etc/os-release
 funk_require_supported_os "${ID:-}" "${VERSION_ID:-}"
-[[ $(git -C "$repo" branch --show-current) == funk-v0.1 ]] || {
-    echo 'Bitte das vorhandene Quellverzeichnis im Zweig funk-v0.1 verwenden.' >&2; exit 1;
-}
-git -C "$repo" merge-base --is-ancestor dfbac8d3d9c967003e74b4ffc5610f7d45e8f666 HEAD
+# shellcheck source=scripts/funk/source.sh
+source "$repo/scripts/funk/source.sh"
+funk_require_supported_source "$repo"
 command -v sudo >/dev/null || { echo 'sudo fehlt. Bitte einen Ubuntu-Benutzer mit sudo-Rechten verwenden.' >&2; exit 1; }
 if ! command -v systemctl >/dev/null || ! systemctl show --property=Version --value >/dev/null; then
     echo 'Ein laufendes systemd wird benötigt. Das Setup ist für Ubuntu-Server/VMs vorgesehen.' >&2; exit 1
 fi
 # Prevent two setup runs by the same user; install.sh also locks deployment globally.
-exec 8>"$repo/.git/funk-setup.lock"
+exec 8>"$(git -C "$repo" rev-parse --path-format=absolute --git-path funk-setup.lock)"
 flock -n 8 || { echo 'In diesem Quellverzeichnis läuft bereits ein Setup.' >&2; exit 1; }
 ram_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
 swap_kib=$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo)

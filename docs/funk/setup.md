@@ -36,7 +36,7 @@ Führe diese Befehle nacheinander aus. Bei Fehlern anhalten und die Meldung aufb
 ```bash
 sudo apt update && sudo apt install -y git
 
-git clone --branch funk-v0.1 --recurse-submodules \
+git clone --branch stable --recurse-submodules \
   https://github.com/Shawna7han/mumble-funk.git
 
 cd mumble-funk
@@ -152,13 +152,13 @@ git status --short --branch
 ```
 
 Der Pfad hängt davon ab, wo du das Projekt heruntergeladen hast. Der Zweig muss
-`funk-v0.1` sein. Werden eigene Änderungen angezeigt, diese zuerst aufbewahren und
+`stable` sein. Der bisherige Branch `funk-v0.1` bleibt ebenfalls unterstützt. Werden eigene Änderungen angezeigt, diese zuerst aufbewahren und
 prüfen. Nichts mit `reset --hard` oder `clean` löschen.
 
 Ohne lokale Änderungen:
 
 ```bash
-git pull --ff-only origin funk-v0.1
+git pull --ff-only origin stable
 bash scripts/funk/setup.sh
 ```
 
@@ -238,3 +238,37 @@ Das Setup bricht in solchen Fällen ab, statt bestehende Daten zu verändern.
 
 Die tatsächlich ausgeführten Prüfungen einschließlich der Grenzen der
 Containerumgebung stehen im [Setup-Prüfbericht](SETUP-STATUS.md).
+
+## Unterstützte Quellstände und Wechsel auf Stable
+
+Das neue Setup akzeptiert unveränderte Checkouts von `stable` oder `funk-v0.1`,
+deren HEAD dem jeweiligen lokalen `origin`-Referenzstand entspricht. Vorher `git fetch
+origin` verwenden. `origin` muss auf `Shawna7han/mumble-funk` zeigen. `dev`, Feature-
+Branches, lokale Zusatzcommits und unbekannte Quellstände bleiben gesperrt. Das ist
+eine Bedienungsschutzprüfung, kein Ersatz für eine kryptografische Signatur.
+
+Bei einer vorhandenen Installation zuerst die eigene Konfiguration/Daten sichern
+(Details in der [Ubuntu-Anleitung](installation-ubuntu.md)). Im sauberen bisherigen
+Quellverzeichnis, als normaler Benutzer:
+
+```bash
+git status --short --branch
+git fetch origin
+git switch --track origin/stable
+bash scripts/funk/setup.sh
+sudo mumble-funk-info
+```
+
+Falls `stable` lokal bereits existiert, stattdessen `git switch stable` und
+`git pull --ff-only origin stable` verwenden. Bei eigenen Änderungen oder Fehlern
+anhalten. Das Setup baut und testet vor dem bewussten Austausch des eigenen
+Funkdienstes; Dienstname und alle bisherigen Datenpfade bleiben gleich. Bestehende
+Werte werden nicht auf die Neuinstallationswerte zurückgesetzt.
+
+Für künftige freigegebene Versionen unterstützt **dieser neue Installer** auch
+`git switch --detach funk-vX.Y.Z`: Er verlangt einen annotierten Versionstag am
+HEAD, der auf GitHub veröffentlicht ist und dort denselben Commit bezeichnet.
+Dazu ist beim Setup Internetzugang nötig. Unveröffentlichte, leichte und Archiv-Tags
+werden abgewiesen. Jetzt wird kein neuer Tag erstellt; `funk-v0.2.0` enthält noch
+den alten Installer und keine Docker-Dateien. Diese neue Auswahlfunktion wird
+nicht nachträglich in den alten Tag eingebaut.
