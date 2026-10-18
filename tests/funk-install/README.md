@@ -1,6 +1,6 @@
 # Tests der Ubuntu-Installation
 
-Die Installationstests laufen getrennt von den 16 CTest-Programmen des Servers:
+Die Installationstests laufen getrennt von den 18 CTest-Programmen des Servers:
 
 ```bash
 python3 tests/funk-install/test_install.py build/funk/mumble-server
@@ -19,7 +19,9 @@ Sie prüfen fünf Fälle:
 3. Eine falsche Programmversion sowie `/` als Testziel werden abgewiesen.
 4. Zwei echte Serverprozesse starten parallel auf TCP/UDP 64738 und 64739 mit
    getrennten SQLite-Datenbanken und Logdateien. Nur beim zweiten ist die Diagnose
-   aktiviert. Beide Prozesse werden anschließend beendet und Testdaten entfernt.
+   aktiviert. Zusätzlich ist nur auf 64739 Simplex mit eigener Diagnose aktiv;
+   die JSONL-Datei und Startmeldungen werden geprüft. Beide Prozesse werden
+   anschließend beendet und Testdaten entfernt.
 5. Die Betriebssystemprüfung erlaubt ausschließlich Ubuntu 24.04 und 26.04;
    ältere, neuere, andere und fehlende Kennungen werden abgewiesen (zehn Kombinationen).
 

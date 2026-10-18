@@ -2,8 +2,10 @@
 
 Diese Anleitung installiert unseren Entwicklungszweig `funk-v0.1` auf Basis von
 Mumble 1.5.939. Der vorhandene Standardserver auf **64738** bleibt bestehen.
-Der zusätzliche Server verwendet **64739 für TCP und UDP**. Es gibt noch keine
-Simplex-Sendesteuerung. Mumla und Windows-Mumble bleiben unverändert.
+Der zusätzliche Server verwendet **64739 für TCP und UDP**. Die optionale
+Simplex-Sendesteuerung ist standardmäßig ausgeschaltet. Aktivierung, Update und
+Praxistest stehen in der [Simplex-Anleitung](simplex.md). Mumla und Windows-Mumble
+bleiben unverändert.
 
 Die folgenden Befehle führst du **später auf deiner Ubuntu-VM** aus, beispielsweise
 nach der Anmeldung per SSH. Diese Vorbereitung installiert dort noch nichts.
@@ -74,7 +76,7 @@ sudo systemctl is-active mumble-funk
 ```
 
 Der Build verwendet vorhandene Ergebnisse unter `build/funk` weiter und führt
-die 16 Servertestprogramme erneut aus. Zusätzliche Bibliotheken musst du bei einem
+die 18 Servertestprogramme aus. Zusätzliche Bibliotheken musst du bei einem
 bereits erfolgreichen Build normalerweise nicht nachinstallieren. Die bestehenden
 Dateien unter `/etc/mumble-funk` und `/var/lib/mumble-funk` bleiben erhalten.
 Zum Abschluss sollten `enabled` und `active` erscheinen. Der Entwicklungsserver
@@ -133,7 +135,7 @@ bash scripts/funk/build.sh
 Der angezeigte Zweig muss `funk-v0.1` sein. Falls das Verzeichnis schon existiert,
 nicht löschen oder darüber klonen: Verwende stattdessen die Update-Anleitung unten.
 Das Bauen kann einige Minuten dauern. Das Skript prüft den Zweig und die Abstammung
-vom offiziellen Release und führt anschließend die vorhandenen 16 Testprogramme aus.
+vom offiziellen Release und führt anschließend die vorhandenen 18 Testprogramme aus.
 Am Ende muss `100% tests passed` stehen. Es arbeitet ohne `sudo` und startet noch
 keinen dauerhaften Server.
 
@@ -298,7 +300,10 @@ unabhängig davon innerhalb der bereits vorhandenen Diagnosefunktion.
 Verbindungstest mit deinen Endgeräten. Ein vollständiger Neustarttest der VM
 bleibt nach der späteren Installation sinnvoll.
 
-## Was bei der Vorbereitung getestet wurde
+## Frühere Prüfung der Installationslösung (vor Simplex v0.2)
+
+Die folgenden Ergebnisse betreffen den Stand vor Simplex. Der neue Prüfstand
+mit 18 Server-Testprogrammen ist in [SIMPLEX-STATUS.md](SIMPLEX-STATUS.md) dokumentiert.
 
 Am 17. Oktober 2026 wurde die Lösung in frischen Containern für **Ubuntu 24.04
 LTS und Ubuntu 26.04.1 LTS (amd64)** mit den oben genannten Build-Abhängigkeiten

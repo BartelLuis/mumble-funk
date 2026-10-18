@@ -11,6 +11,11 @@ Für einen dauerhaften Parallelbetrieb unter Ubuntu 24.04 oder 26.04 mit systemd
 Das spätere Beispiel hier auf Port 64749 ist ein separater, manuell gestarteter
 Kurztest und wird dafür nicht zusätzlich benötigt.
 
+Die optionale [Simplex-Steuerung](simplex.md) arbeitet unabhängig von dieser
+Diagnose. Auch im Funkmodus werden hier eingehende Pakete erfasst, einschließlich
+anschließend verworfener Aussendungen. Für Senderechte und Freigaben gibt es eine
+eigene Simplex-Diagnose.
+
 ## Was aufgezeichnet wird
 
 Jede Zeile der Ergebnisdatei ist ein eigenständiges JSON-Objekt (JSONL).
