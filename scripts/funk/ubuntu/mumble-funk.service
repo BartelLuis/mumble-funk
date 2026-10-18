@@ -1,5 +1,5 @@
 [Unit]
-Description=Mumble-Funk development server (port 64739)
+Description=Mumble-Funk simplex radio server
 After=network.target
 
 [Service]

@@ -6,12 +6,27 @@ templates="$repo/scripts/funk/ubuntu"
 # shellcheck source=scripts/funk/platform.sh
 source "$repo/scripts/funk/platform.sh"
 root=
-if [[ ${1:-} == --stage && $# == 3 ]]; then
-    # Test-only: generate a directory tree without users, services or host writes.
-    root=$(realpath -m -- "$2")
-    [[ $root != / ]] || { echo 'Stage darf nicht / sein.' >&2; exit 1; }
-    binary=$(realpath -- "$3")
-elif [[ $# == 0 ]]; then
+binary=
+setup=false
+port_args=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --stage)
+            [[ $# -ge 3 ]] || { echo 'Stage-Ziel und Serverbinary fehlen.' >&2; exit 1; }
+            root=$(realpath -m -- "$2")
+            [[ $root != / ]] || { echo 'Stage darf nicht / sein.' >&2; exit 1; }
+            binary=$(realpath -- "$3"); shift 3 ;;
+        --setup) setup=true; shift ;;
+        --port)
+            [[ $# -ge 2 ]] || { echo 'Port fehlt.' >&2; exit 1; }
+            port_args=(--port "$2"); shift 2 ;;
+        *) echo 'Aufruf: install.sh [--setup] [--port PORT] [--stage TESTZIEL SERVERBINARY]' >&2; exit 1 ;;
+    esac
+done
+root_args=()
+if [[ -n $root ]]; then
+    root_args=(--root "$root")
+else
     [[ $EUID == 0 ]] || { echo 'Bitte mit sudo bash scripts/funk/install.sh starten.' >&2; exit 1; }
     # OS-provided file, not part of the repository.
     # shellcheck source=/dev/null
@@ -20,9 +35,9 @@ elif [[ $# == 0 ]]; then
     exec 9>/run/lock/mumble-funk-install.lock
     flock -n 9 || { echo 'Eine andere Funkserver-Installation läuft bereits.' >&2; exit 1; }
     binary="$repo/build/funk/mumble-server"
-else
-    echo 'Aufruf: install.sh [--stage TESTVERZEICHNIS SERVERBINARY]' >&2; exit 1
 fi
+command -v python3 >/dev/null || { echo 'python3 fehlt; bitte setup.sh verwenden.' >&2; exit 1; }
+port=$(python3 "$repo/scripts/funk/setup_support.py" preflight "${root_args[@]}" "${port_args[@]}")
 [[ -x $binary ]] || { echo "Serverbinary fehlt: $binary" >&2; exit 1; }
 version=$("$binary" --version 2>&1)
 [[ $version == *1.5.939* ]] || { echo 'Erwartet wird Mumble 1.5.939.' >&2; exit 1; }
@@ -42,11 +57,14 @@ else
         echo 'Vorhandene Release-Datei stimmt nicht mit ihrer Prüfsumme überein.' >&2; exit 1;
     }
 fi
-if [[ ! -e $root/etc/mumble-funk/server.ini ]]; then
-    password=$(openssl rand -hex 16)
-    sed "s/@PASSWORD@/$password/" "$templates/server.ini" > "$root/etc/mumble-funk/server.ini"
-    chmod 0640 "$root/etc/mumble-funk/server.ini"
-fi
+config_existed=false
+if [[ -f $root/etc/mumble-funk/server.ini ]]; then config_existed=true; fi
+simplex_args=()
+if [[ $setup == true ]]; then simplex_args=(--simplex); fi
+python3 "$repo/scripts/funk/setup_support.py" create-config "${root_args[@]}" \
+    --template "$templates/server.ini" --port "$port" "${simplex_args[@]}"
+install -d -m 0755 "$root/usr/local/sbin"
+install -m 0755 "$repo/scripts/funk/setup_support.py" "$root/usr/local/sbin/mumble-funk-info"
 install -m 0644 "$templates/mumble-funk.service" "$root/etc/systemd/system/mumble-funk.service"
 install -m 0644 "$templates/logrotate" "$root/etc/logrotate.d/mumble-funk"
 if [[ -z $root ]]; then
@@ -58,7 +76,7 @@ if [[ -z $root ]]; then
     # Stop only our instance; copy the entire SQLite state while it is stopped.
     systemctl daemon-reload
     systemctl stop mumble-funk.service
-    if [[ -f /var/lib/mumble-funk/server.sqlite ]]; then
+    if [[ $config_existed == true ]] || [[ -n $(find /var/lib/mumble-funk -mindepth 1 -maxdepth 1 -print -quit) ]]; then
         backup="/var/backups/mumble-funk/$(date -u +%Y%m%dT%H%M%S)-$$"
         install -d -m 0700 "$backup"
         cp -a /var/lib/mumble-funk "$backup/state"
@@ -77,9 +95,11 @@ mv -Tf -- "$base/current.new" "$base/current"
 if [[ -z $root ]]; then
     systemctl daemon-reload
     systemctl enable mumble-funk.service
+    log_offset=$(stat -c %s /var/log/mumble-funk/server.log)
     systemctl start mumble-funk.service
+    python3 "$repo/scripts/funk/setup_support.py" verify --log-offset "$log_offset"
     systemctl --no-pager --full status mumble-funk.service
-    echo 'Installation abgeschlossen. Zugangspasswort: sudo cat /etc/mumble-funk/server.ini'
+    echo 'Installation abgeschlossen. Verbindungsdaten und Zugangspasswort: sudo mumble-funk-info'
 else
     echo "Testinstallation erstellt: $root (kein Dienst gestartet)"
 fi

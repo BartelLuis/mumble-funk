@@ -4,6 +4,7 @@ Run: python3 tests/funk-install/test_install.py /path/to/mumble-server
 Network permission is needed for the concurrent-server smoke test.
 """
 import hashlib
+from contextlib import closing
 from pathlib import Path
 import socket
 import sqlite3
@@ -57,7 +58,10 @@ class InstallationTests(unittest.TestCase):
                               .replace("#simplex=false", "simplex=true"))
             protected[config] = config.read_bytes()
             db = root / "var/lib/mumble-funk/server.sqlite"
-            db.write_bytes(b"EXISTING CUSTOM DATABASE")
+            with sqlite3.connect(db) as connection:
+                connection.execute("CREATE TABLE preserved (value TEXT)")
+                connection.execute("INSERT INTO preserved VALUES ('EXISTING CUSTOM DATABASE')")
+            connection.close()
             protected[db] = db.read_bytes()
             subprocess.run(command, check=True)
             for path, content in protected.items():
@@ -137,7 +141,7 @@ class InstallationTests(unittest.TestCase):
                                 self.fail(f"Server on {port} did not start")
                             time.sleep(0.05)
                 for port in (64738, 64739):
-                    with sqlite3.connect(root / str(port) / "server.sqlite") as db:
+                    with closing(sqlite3.connect(root / str(port) / "server.sqlite")) as db:
                         self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
                 self.assertFalse(list((root / "64738").glob("voice.*.jsonl")))
             finally:
