@@ -1,0 +1,57 @@
+[
+  {
+    "path": "3rdparty/minhook",
+    "url": "https://github.com/mumble-voip/minhook.git",
+    "commit": "e41b301151b01ab657bec76cc8ca1a0b84a66c03"
+  },
+  {
+    "path": "3rdparty/mach-override-src",
+    "url": "https://github.com/mumble-voip/mach_override.git",
+    "commit": "919148f94db54fc04d287eb6a42c0c36b166bbfa"
+  },
+  {
+    "path": "3rdparty/speexdsp",
+    "url": "https://github.com/xiph/speexdsp.git",
+    "commit": "738e17905e1ca2a1fa932ddd9c2a85d089f4e845"
+  },
+  {
+    "path": "3rdparty/FindPythonInterpreter",
+    "url": "https://github.com/Krzmbrzl/FindPythonInterpreter.git",
+    "commit": "bb4d3ea8434eebef40df35434a9b6ef410fce0b2"
+  },
+  {
+    "path": "3rdparty/tracy",
+    "url": "https://github.com/wolfpld/tracy.git",
+    "commit": "897aec5b062664d2485f4f9a213715d2e527e0ca"
+  },
+  {
+    "path": "3rdparty/nlohmann_json",
+    "url": "https://github.com/nlohmann/json.git",
+    "commit": "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03"
+  },
+  {
+    "path": "3rdparty/gsl",
+    "url": "https://github.com/microsoft/GSL.git",
+    "commit": "0f6dbc9e2915ef5c16830f3fa3565738de2a9230"
+  },
+  {
+    "path": "3rdparty/SPSCQueue",
+    "url": "https://github.com/mumble-voip/SPSCQueue.git",
+    "commit": "fefa146bd2552d1bfb6e8066d5e5d624f32bb40e"
+  },
+  {
+    "path": "3rdparty/cmake-compiler-flags",
+    "url": "https://github.com/Krzmbrzl/cmake-compiler-flags.git",
+    "commit": "c0e8552d47be4270a1c31b0be693c43faff51537"
+  },
+  {
+    "path": "3rdparty/renamenoise",
+    "url": "https://github.com/mumble-voip/ReNameNoise.git",
+    "commit": "2a551ab1261a1d5a5123c34eb6f4d108367d5cb4"
+  },
+  {
+    "path": "3rdparty/flag-icons",
+    "url": "https://github.com/lipis/flag-icons.git",
+    "commit": "38dbe5f294c9692804d3516d617b3dd991c17ecc"
+  }
+]

@@ -968,50 +968,24 @@ void Server::run() {
 				} else {
 					m_udpDecoder.setProtocolVersion(Version::UNKNOWN);
 				}
-				// This may be a general ping requesting server details, unencrypted.
-				if (bAllowPing
+				// Ciphertext can itself parse as a discovery ping. Authenticate first;
+				// only an unauthenticated datagram may use the public ping path.
+				const bool unencryptedPing = bAllowPing
 					&& m_udpDecoder.decodePing(
 						gsl::span< Mumble::Protocol::byte >(encrypt, static_cast< std::size_t >(len)))
-					&& m_udpDecoder.getMessageType() == Mumble::Protocol::UDPMessageType::Ping) {
-					ZoneScopedN(TracyConstants::PING_PROCESSING_ZONE);
-
-					gsl::span< const Mumble::Protocol::byte > encodedPing =
-						handlePing(m_udpDecoder, m_udpPingEncoder, true);
-
-					if (!encodedPing.empty()) {
-#ifdef Q_OS_LINUX
-						// We are only reading from the buffer and thus the const_cast should be fine
-						iov[0].iov_base = const_cast< Mumble::Protocol::byte * >(encodedPing.data());
-						iov[0].iov_len  = encodedPing.size();
-						::sendmsg(sock, &msg, 0);
-#else
-#	ifdef Q_OS_WIN
-						using size_type = int;
-#	else
-						using size_type = std::size_t;
-#	endif
-						::sendto(sock, reinterpret_cast< const char * >(encodedPing.data()),
-								 static_cast< size_type >(encodedPing.size()), 0,
-								 reinterpret_cast< struct sockaddr * >(&from), fromlen);
-#endif
-					}
-
-					continue;
-				}
-
+					&& m_udpDecoder.getMessageType() == Mumble::Protocol::UDPMessageType::Ping;
+				bool authenticated = false;
 
 				if (u) {
-					if (!checkDecrypt(u, encrypt, buffer, static_cast< unsigned int >(len))) {
-						continue;
-					}
+					authenticated = checkDecrypt(u, encrypt, buffer, static_cast< unsigned int >(len), !unencryptedPing);
 				} else {
 					ZoneScopedN(TracyConstants::DECRYPT_UNKNOWN_PEER_ZONE);
 
 					// Unknown peer
 					foreach (ServerUser *usr, qhHostUsers.value(ha)) {
-						if (checkDecrypt(
-								usr, encrypt, buffer,
-								static_cast< unsigned int >(len))) { // checkDecrypt takes the User's qrwlCrypt lock.
+						// checkDecrypt takes the user's crypt lock.
+						if (checkDecrypt(usr, encrypt, buffer, static_cast< unsigned int >(len), !unencryptedPing)) {
+							authenticated = true;
 							// Every time we relock, reverify users' existence.
 							// The main thread might delete the user while the lock isn't held.
 							unsigned int uiSession = usr->uiSession;
@@ -1031,11 +1005,38 @@ void Server::run() {
 							break;
 						}
 					}
-					if (!u) {
-						continue;
+				}
+				if (!authenticated || !u) {
+					if (!authenticated && unencryptedPing) {
+						ZoneScopedN(TracyConstants::PING_PROCESSING_ZONE);
+
+						gsl::span< const Mumble::Protocol::byte > encodedPing =
+							handlePing(m_udpDecoder, m_udpPingEncoder, true);
+
+						if (!encodedPing.empty()) {
+#ifdef Q_OS_LINUX
+							// We are only reading from the buffer and thus the const_cast should be fine
+							iov[0].iov_base = const_cast< Mumble::Protocol::byte * >(encodedPing.data());
+							iov[0].iov_len  = encodedPing.size();
+							::sendmsg(sock, &msg, 0);
+#else
+#	ifdef Q_OS_WIN
+							using size_type = int;
+#	else
+							using size_type = std::size_t;
+#	endif
+							::sendto(sock, reinterpret_cast< const char * >(encodedPing.data()),
+									 static_cast< size_type >(encodedPing.size()), 0,
+									 reinterpret_cast< struct sockaddr * >(&from), fromlen);
+#endif
+						}
 					}
+					continue;
 				}
 				len -= 4;
+				// The unauthenticated ping probe may infer a different protocol from a
+				// ciphertext nonce byte. Authenticated audio must use its user's version.
+				m_udpDecoder.setProtocolVersion(u->m_version);
 
 				if (m_udpDecoder.decode(gsl::span< Mumble::Protocol::byte >(buffer, static_cast< std::size_t >(len)))) {
 					switch (m_udpDecoder.getMessageType()) {
@@ -1093,7 +1094,8 @@ void Server::run() {
 #endif
 }
 
-bool Server::checkDecrypt(ServerUser *u, const unsigned char *encrypt, unsigned char *plain, unsigned int len) {
+bool Server::checkDecrypt(ServerUser *u, const unsigned char *encrypt, unsigned char *plain, unsigned int len,
+						  bool requestResync) {
 	ZoneScoped;
 
 	QMutexLocker l(&u->qmCrypt);
@@ -1102,7 +1104,8 @@ bool Server::checkDecrypt(ServerUser *u, const unsigned char *encrypt, unsigned 
 		return true;
 	}
 
-	if (u->csCrypt->tLastGood.elapsed() > 5000000ULL) {
+	// Discovery pings are public and must not request a cryptographic resync.
+	if (requestResync && u->csCrypt->tLastGood.elapsed() > 5000000ULL) {
 		if (u->csCrypt->tLastRequest.elapsed() > 5000000ULL) {
 			u->csCrypt->tLastRequest.restart();
 			emit reqSync(u->uiSession);
@@ -1121,7 +1124,9 @@ void Server::sendMessage(ServerUser &u, const unsigned char *data, int len, QByt
 	if ((u.aiUdpFlag.load() == 1 || force) && (u.sUdpSocket != INVALID_SOCKET)) {
 #endif
 #if defined(__LP64__)
-		static std::vector< char > ebuffer;
+		// TCP tunneling and UDP ingress can transmit concurrently. Keep the
+		// reusable buffer per thread until sendmsg has consumed its ciphertext.
+		static thread_local std::vector< char > ebuffer;
 		ebuffer.resize(static_cast< std::size_t >(len + 4 + 16));
 		char *buffer = reinterpret_cast< char * >(
 			((reinterpret_cast< quint64 >(ebuffer.data()) + 8) & static_cast< quint64 >(~7)) + 4);

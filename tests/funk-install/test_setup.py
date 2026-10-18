@@ -169,6 +169,9 @@ if name=='df':
     print('test 33554432 1000 '+os.environ.get('MOCK_FREE_KIB','16777216')+' 1% /')
 elif name=='git':
     if '--show-current' in args: print('funk-v0.1')
+    elif 'config' in args: print('https://github.com/Shawna7han/mumble-funk.git')
+    elif '--git-path' in args: print(repo/'.git/funk-setup.lock')
+    elif 'rev-parse' in args: print('a'*40)
     if 'submodule' in args and fail=='network': sys.exit(128)
 elif name=='systemctl': print('259')
 elif name=='dpkg-query':

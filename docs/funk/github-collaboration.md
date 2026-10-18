@@ -12,7 +12,8 @@ Die aktuelle GitHub-Abfrage bestätigt ein **öffentliches, persönliches Reposi
 von `Shawna7han` (`owner.type=User`, `private=false`), Standardbranch `master`.
 Die fünf bisherigen Branches melden `protected=false`, die Ruleset-Liste ist leer.
 Offene PRs und Actions-Läufe wurden bei der Bestandsaufnahme nicht gefunden.
-`dev` kommt als neuer Vorbereitungsbranch hinzu; `stable` existiert noch nicht.
+`dev` enthält die gemeinsame Integration; `stable` ist zunächst deren Kandidat.
+Die folgenden Schutzregeln bleiben Vorschläge und werden hier nicht automatisch aktiviert.
 
 Die Möglichkeiten wurden mit der aktuellen offiziellen GitHub-Dokumentation
 abgeglichen, nicht durch unerlaubtes Anlegen einer Schutzregel ausprobiert:
@@ -173,5 +174,5 @@ Grundlage: [Paketrechte und Sichtbarkeit](https://docs.github.com/en/packages/le
 Zur späteren Bedienung: **Settings → Rules → Rulesets** für die neuen Regeln,
 **Settings → Collaborators / Manage access** für eine ausdrücklich freigegebene
 Einladung und **Settings → Environments** für die Releasefreigabe. Bezeichnungen
-können sich ändern. In dieser Phase wurden ausschließlich lesende GitHub-Abfragen
+können sich ändern. In der ursprünglichen Planungsphase wurden ausschließlich lesende GitHub-Abfragen
 ausgeführt; keine dieser Einstellungen wurde gespeichert.

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Validate the selected project revision; this is a guard, not a signature check.
+funk_require_supported_source() {
+    local repo=$1 branch head upstream tag published
+    git -C "$repo" merge-base --is-ancestor dfbac8d3d9c967003e74b4ffc5610f7d45e8f666 HEAD || {
+        echo 'Erwartet wird die Mumble-Funk-Basis Mumble 1.5.939.' >&2; return 1;
+    }
+    git -C "$repo" diff --quiet HEAD -- || {
+        echo 'Versionierte Quelldateien sind verändert. Bitte einen unveränderten freigegebenen Stand verwenden.' >&2; return 1;
+    }
+    case "$(git -C "$repo" config --get remote.origin.url)" in
+        https://github.com/Shawna7han/mumble-funk|https://github.com/Shawna7han/mumble-funk.git|git@github.com:Shawna7han/mumble-funk.git|ssh://git@github.com/Shawna7han/mumble-funk.git) ;;
+        *) echo 'origin muss auf das offizielle Shawna7han/mumble-funk-Repository zeigen.' >&2; return 1 ;;
+    esac
+    branch=$(git -C "$repo" branch --show-current)
+    head=$(git -C "$repo" rev-parse HEAD)
+    case "$branch" in
+        stable|funk-v0.1)
+            upstream=$(git -C "$repo" rev-parse --verify "refs/remotes/origin/$branch^{commit}") || return 1
+            [[ $head == "$upstream" ]] || {
+                echo 'Der lokale Branch weicht von origin ab. Bitte den Quellstand vor dem Setup prüfen.' >&2; return 1;
+            }
+            ;;
+        '')
+            # Detached checkouts must be an annotated, remotely published project
+            # version. Do not accept a locally invented tag or an archive tag.
+            published=false
+            while IFS= read -r tag; do
+                [[ $tag =~ ^funk-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+                [[ $(git -C "$repo" cat-file -t "refs/tags/$tag") == tag ]] || continue
+                upstream=$(git -C "$repo" ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}") || return 1
+                if [[ $(awk -v ref="refs/tags/$tag^{}" '$2==ref {print $1}' <<< "$upstream") == "$head" ]]; then
+                    published=true; break
+                fi
+            done < <(git -C "$repo" tag --points-at HEAD)
+            [[ $published == true ]] || {
+                echo 'Detached HEAD benötigt einen veröffentlichten annotierten funk-vX.Y.Z-Versionstag.' >&2; return 1;
+            }
+            ;;
+        *) echo 'Installation nur aus stable, funk-v0.1 oder einem veröffentlichten Versionstag.' >&2; return 1 ;;
+    esac
+    printf 'Mumble-Funk-Quellrevision: %s\n' "$head"
+}

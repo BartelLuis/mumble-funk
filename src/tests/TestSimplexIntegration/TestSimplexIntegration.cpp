@@ -13,7 +13,259 @@ private slots:
 	void alternateRoutes_data();
 	void alternateRoutes();
 	void restartAndLoggingDisabled();
+	void udpNonceProtocol_data();
+	void udpNonceProtocol();
+	void udpFenceDiscardsUnauthenticatedDatagram();
+	void udpCiphertextLooksLikePing_data();
+	void udpCiphertextLooksLikePing();
+	void unencryptedServerInfo_data();
+	void unencryptedServerInfo();
+	void concurrentUdpEgress();
 };
+
+void TestSimplexIntegration::concurrentUdpEgress() {
+	Fixture f;
+	QVERIFY(f.start("false", 5000, 5000, false));
+	QFile config(f.config);
+	QVERIFY(config.open(QIODevice::ReadOnly));
+	auto contents = config.readAll();
+	config.close();
+	contents.replace("bandwidth=72000", "bandwidth=10000000");
+	QVERIFY(config.open(QIODevice::WriteOnly | QIODevice::Truncate));
+	QCOMPARE(config.write(contents), static_cast< qint64 >(contents.size()));
+	config.close();
+	QVERIFY(f.restart());
+	Client tcp, udp, receiver;
+	QVERIFY(tcp.login(f.port, "ConcurrentTCP", true));
+	QVERIFY(udp.login(f.port, "ConcurrentUDP", true));
+	QVERIFY(receiver.login(f.port, "ConcurrentReceiver", true));
+	QVERIFY(receiver.speak(true, true));
+	QVERIFY(receiver.udpBarrier());
+	MumbleProto::VoiceTarget target;
+	target.set_id(1);
+	target.add_targets()->add_session(receiver.session);
+	QVERIFY(tcp.send(Type::VoiceTarget, target) && tcp.barrier());
+	QVERIFY(udp.send(Type::VoiceTarget, target) && udp.barrier());
+	int received = 0;
+	for (int batch = 0; batch < 32; ++batch) {
+		for (int frame = 0; frame < 16; ++frame) {
+			QVERIFY(tcp.speak(false, false, 1));
+			QVERIFY(udp.speak(true, false, 1));
+		}
+		QVERIFY(tcp.barrier());
+		QVERIFY(udp.udpBarrier());
+		QElapsedTimer timer;
+		timer.start();
+		while (received < (batch + 1) * 32 && timer.elapsed() < 2000) {
+			if (!receiver.udp.hasPendingDatagrams())
+				receiver.udp.waitForReadyRead(10);
+			while (receiver.udp.hasPendingDatagrams()) {
+				QByteArray encrypted(static_cast< int >(receiver.udp.pendingDatagramSize()), '\0');
+				QCOMPARE(receiver.udp.readDatagram(encrypted.data(), encrypted.size()),
+						 static_cast< qint64 >(encrypted.size()));
+				QVERIFY(encrypted.size() > 4);
+				QByteArray plain(encrypted.size() - 4, '\0');
+				QVERIFY2(receiver.crypt.decrypt(reinterpret_cast< const unsigned char * >(encrypted.constData()),
+											   reinterpret_cast< unsigned char * >(plain.data()),
+											   static_cast< unsigned int >(encrypted.size())),
+						 "Concurrent TCP/UDP senders corrupted an outgoing authenticated datagram");
+				Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Client > decoder(receiver.version);
+				QVERIFY(decoder.decode(gsl::span< const Mumble::Protocol::byte >(
+					reinterpret_cast< const Mumble::Protocol::byte * >(plain.constData()),
+					static_cast< std::size_t >(plain.size()))));
+				QCOMPARE(decoder.getMessageType(), Mumble::Protocol::UDPMessageType::Audio);
+				const auto audio = decoder.getAudioData();
+				QVERIFY(audio.senderSession == tcp.session || audio.senderSession == udp.session);
+				QCOMPARE(QByteArray(reinterpret_cast< const char * >(audio.payload.data()),
+								static_cast< int >(audio.payload.size())), audioContent);
+				++received;
+			}
+		}
+		QCOMPARE(received, (batch + 1) * 32);
+	}
+}
+
+void TestSimplexIntegration::udpCiphertextLooksLikePing_data() {
+	QTest::addColumn< bool >("modern");
+	QTest::addColumn< bool >("knownPeer");
+	QTest::addColumn< bool >("extended");
+	for (bool modern : { false, true })
+		for (bool known : { false, true })
+			for (bool extended : { false, true }) {
+				const auto name = QString("%1-%2-%3")
+					.arg(modern ? "modern" : "legacy")
+					.arg(known ? "known-peer" : "first-datagram")
+					.arg(extended ? "extended-lookalike" : "connectivity-lookalike");
+				QTest::newRow(qPrintable(name)) << modern << known << extended;
+			}
+}
+
+void TestSimplexIntegration::udpCiphertextLooksLikePing() {
+	QFETCH(bool, modern);
+	QFETCH(bool, knownPeer);
+	QFETCH(bool, extended);
+	Fixture f;
+	QVERIFY(f.start("true", 5000, 5000, false));
+	Client client;
+	QVERIFY(client.login(f.port, "PingCollision", modern));
+	QVERIFY(client.udp.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	const auto resync = [&](const std::string &iv) {
+		if (!client.crypt.setEncryptIV(iv)) return false;
+		MumbleProto::CryptSetup setup;
+		setup.set_client_nonce(iv);
+		return client.send(Type::CryptSetup, setup) && client.barrier();
+	};
+	if (knownPeer) {
+		auto bootstrap = client.crypt.getEncryptIV();
+		bootstrap[0] = 64;
+		QVERIFY(resync(bootstrap));
+		QVERIFY(client.udpBarrier());
+	}
+	Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > encoder(client.version);
+	Mumble::Protocol::PingData ping;
+	ping.timestamp = 42;
+	const auto plain = encoder.encodePingPacket(ping);
+	QByteArray encrypted(static_cast< int >(plain.size() + 4), '\0');
+	CryptStateOCB2 scratch;
+	QVERIFY(scratch.setKey(client.crypt.getRawKey(), client.crypt.getEncryptIV(), client.crypt.getDecryptIV()));
+	auto iv = client.crypt.getEncryptIV();
+	iv[0] = 0;
+	bool found = false;
+	// Search only offline test nonces. Send the selected authenticated packet
+	// through the real server; never avoid the collision or replace a failure.
+	for (unsigned int candidate = 0; candidate < 1000000; ++candidate) {
+		iv[1] = static_cast< char >(candidate & 0xff);
+		iv[2] = static_cast< char >((candidate >> 8) & 0xff);
+		iv[3] = static_cast< char >((candidate >> 16) & 0xff);
+		QVERIFY(scratch.setEncryptIV(iv));
+		QVERIFY(scratch.encrypt(plain.data(), reinterpret_cast< unsigned char * >(encrypted.data()),
+							static_cast< unsigned int >(plain.size())));
+		Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Server > probe(client.version);
+		if (probe.decodePing(gsl::span< const Mumble::Protocol::byte >(
+				reinterpret_cast< const Mumble::Protocol::byte * >(encrypted.constData()),
+				static_cast< std::size_t >(encrypted.size())))
+			&& probe.getPingData().requestAdditionalInformation == extended) {
+			found = true;
+			break;
+		}
+	}
+	QVERIFY2(found, "Could not construct a ciphertext/plaintext ping collision");
+	QVERIFY(resync(iv));
+	QVERIFY2(client.udpBarrier(42), "Authenticated ping was mistaken for an unencrypted discovery ping");
+}
+
+void TestSimplexIntegration::unencryptedServerInfo_data() {
+	QTest::addColumn< bool >("modern");
+	QTest::addColumn< int >("peer");
+	for (bool modern : { false, true })
+		for (int peer : { 0, 1, 2 }) {
+			const auto name = QString("%1-peer-%2").arg(modern ? "modern" : "legacy").arg(peer);
+			QTest::newRow(qPrintable(name)) << modern << peer;
+		}
+}
+
+void TestSimplexIntegration::unencryptedServerInfo() {
+	QFETCH(bool, modern);
+	QFETCH(int, peer);
+	Fixture f;
+	QVERIFY(f.start("false", 5000, 5000, false));
+	Client client;
+	QUdpSocket discovery;
+	QUdpSocket &socket = peer ? client.udp : discovery;
+	QSslSocket readiness;
+	if (!peer) {
+		// The listening log precedes certificate generation. Wait for actual
+		// readiness without Authenticate: the idle public-ping path stays active.
+		QObject::connect(&readiness, QOverload< const QList< QSslError > & >::of(&QSslSocket::sslErrors),
+						 [&readiness] { readiness.ignoreSslErrors(); });
+		readiness.connectToHostEncrypted(QStringLiteral("127.0.0.1"), f.port);
+		QVERIFY(readiness.waitForEncrypted(10000));
+	}
+	if (peer)
+		QVERIFY(client.login(f.port, "PublicPingClient", modern));
+	QVERIFY(socket.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	if (peer == 2)
+		QVERIFY(client.udpBarrier());
+	const auto version = modern ? Version::fromComponents(1, 5, 0) : Version::fromComponents(1, 2, 5);
+	Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > encoder(version);
+	Mumble::Protocol::PingData ping;
+	ping.timestamp = 12345;
+	ping.requestAdditionalInformation = true;
+	const auto data = encoder.encodePingPacket(ping);
+	QCOMPARE(socket.writeDatagram(reinterpret_cast< const char * >(data.data()), static_cast< qint64 >(data.size()),
+								 QHostAddress::LocalHost, f.port), static_cast< qint64 >(data.size()));
+	QVERIFY(socket.waitForReadyRead(2000));
+	QByteArray response(static_cast< int >(socket.pendingDatagramSize()), '\0');
+	QCOMPARE(socket.readDatagram(response.data(), response.size()), static_cast< qint64 >(response.size()));
+	Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Client > decoder(version);
+	QVERIFY(decoder.decodePing(gsl::span< const Mumble::Protocol::byte >(
+		reinterpret_cast< const Mumble::Protocol::byte * >(response.constData()),
+		static_cast< std::size_t >(response.size()))));
+	QCOMPARE(decoder.getPingData().timestamp, ping.timestamp);
+	QVERIFY(decoder.getPingData().serverVersion != Version::UNKNOWN);
+	if (peer)
+		QVERIFY(client.udpBarrier()); // Public pings must not desynchronize an authenticated client.
+}
+
+void TestSimplexIntegration::udpNonceProtocol_data() {
+	QTest::addColumn< bool >("modern");
+	QTest::addColumn< bool >("simplex");
+	QTest::addColumn< bool >("knownPeer");
+	for (bool modern : { false, true })
+		for (bool simplex : { false, true })
+			for (bool known : { false, true }) {
+				const auto name = QString("%1-%2-%3")
+					.arg(modern ? "modern" : "legacy")
+					.arg(simplex ? "simplex" : "normal")
+					.arg(known ? "known-peer" : "first-datagram");
+				QTest::newRow(qPrintable(name)) << modern << simplex << known;
+			}
+}
+
+void TestSimplexIntegration::udpNonceProtocol() {
+	QFETCH(bool, modern);
+	QFETCH(bool, simplex);
+	QFETCH(bool, knownPeer);
+	Fixture f;
+	QVERIFY(f.start(simplex ? "true" : "false", 5000, 5000, false));
+	Client sender, observer;
+	QVERIFY(sender.login(f.port, "NonceSender", modern));
+	QVERIFY(observer.login(f.port, "NonceObserver", modern));
+	QVERIFY(sender.udp.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	const auto resync = [&](unsigned char lowByte) {
+		auto iv = sender.crypt.getEncryptIV();
+		iv[0] = static_cast< char >(lowByte);
+		if (!sender.crypt.setEncryptIV(iv)) return false;
+		MumbleProto::CryptSetup setup;
+		setup.set_client_nonce(iv);
+		return sender.send(Type::CryptSetup, setup) && sender.barrier();
+	};
+	if (knownPeer) {
+		QVERIFY(resync(64));
+		QVERIFY(sender.udpBarrier());
+	}
+	// OCB increments the nonce before encryption: low byte 0 becomes 1, which
+	// equals the protobuf ping header. This is authenticated LEGACY audio too.
+	QVERIFY(resync(0));
+	QVERIFY(sender.speak(true));
+	QVERIFY2(observer.expect(sender), "Authenticated audio was decoded with the unauthenticated ping probe's version");
+	QVERIFY(sender.speak(false, true));
+	QVERIFY(observer.expect(sender, true, true));
+}
+
+void TestSimplexIntegration::udpFenceDiscardsUnauthenticatedDatagram() {
+	Fixture f;
+	QVERIFY(f.start("true", 5000, 5000, false));
+	Client client;
+	QVERIFY(client.login(f.port, "FenceClient", true));
+	QVERIFY(client.udp.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	QUdpSocket unrelated;
+	const QByteArray noise(16, 'x');
+	QCOMPARE(unrelated.writeDatagram(noise, QHostAddress::LocalHost, client.udp.localPort()), qint64(noise.size()));
+	QVERIFY(client.udp.waitForReadyRead(2000));
+	// Discarding an invalid packet must not satisfy or abort the real ping fence.
+	QVERIFY(client.udpBarrier());
+}
 
 void TestSimplexIntegration::ownership_data() {
 	QTest::addColumn< QString >("setting");

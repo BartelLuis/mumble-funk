@@ -132,22 +132,9 @@ public:
 		if (udp.state() == QAbstractSocket::UnconnectedState) {
 			if (!udp.bind(QHostAddress(QHostAddress::LocalHost), 0))
 				return false;
-			// Real clients establish the UDP peer with a connectivity ping before speech.
-			Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > pingEncoder(version);
-			Mumble::Protocol::PingData ping;
-			ping.timestamp       = 42;
-			const auto pingBytes = pingEncoder.encodePingPacket(ping);
-			if (!sendEncrypted(QByteArray(reinterpret_cast< const char * >(pingBytes.data()),
-										  static_cast< int >(pingBytes.size())))
-				|| !udp.waitForReadyRead(2000))
-				return false;
-			QByteArray response(static_cast< int >(udp.pendingDatagramSize()), '\0');
-			if (udp.readDatagram(response.data(), response.size()) != response.size())
-				return false;
-			QByteArray plain(response.size() - 4, '\0');
-			if (!crypt.decrypt(reinterpret_cast< const unsigned char * >(response.constData()),
-							   reinterpret_cast< unsigned char * >(plain.data()),
-							   static_cast< unsigned int >(response.size())))
+			// Match the authenticated connectivity ping; unrelated datagrams cannot
+			// satisfy this fence (as in a normal client).
+			if (!udpBarrier())
 				return false;
 		}
 		return sendEncrypted(bytes);
@@ -159,10 +146,10 @@ public:
 							 static_cast< unsigned int >(bytes.size()))
 			   && udp.writeDatagram(encrypted, QHostAddress::LocalHost, port) == encrypted.size();
 	}
-	bool udpBarrier() {
+	bool udpBarrier(std::uint64_t timestamp = 0) {
 		Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > encoder(version);
 		Mumble::Protocol::PingData ping;
-		ping.timestamp   = ++m_barrier;
+		ping.timestamp   = timestamp ? timestamp : ++m_barrier;
 		const auto bytes = encoder.encodePingPacket(ping);
 		if (!sendEncrypted(
 				QByteArray(reinterpret_cast< const char * >(bytes.data()), static_cast< int >(bytes.size()))))
@@ -180,7 +167,7 @@ public:
 				if (!crypt.decrypt(reinterpret_cast< const unsigned char * >(encrypted.constData()),
 								   reinterpret_cast< unsigned char * >(plain.data()),
 								   static_cast< unsigned int >(encrypted.size())))
-					return false;
+					continue; // Discard duplicates or unauthenticated datagrams; still require the matching ping.
 				Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Client > decoder(version);
 				if (decoder.decode(gsl::span< const Mumble::Protocol::byte >(
 						reinterpret_cast< const Mumble::Protocol::byte * >(plain.constData()),

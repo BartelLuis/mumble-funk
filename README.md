@@ -2,14 +2,15 @@
 
 **Server-side simplex radio communication for Mumble**
 
-**Development preparation (`dev`):** this branch starts from Simplex v0.2 and
-currently adds planning documentation only. A `stable` branch and the unified
-Ubuntu/Docker release process are **not available yet**. Existing installations
-continue to use their documented branches.
+**Stable candidate — proposed release `funk-v0.2.1`.** Ubuntu and Docker now share
+one source revision on [`stable`](https://github.com/Shawna7han/mumble-funk/tree/stable).
+Simplex Engine v0.2 remains an experimental alpha; final Docker acceptance on the
+operator's host is still required. No new version tag or release is published.
+`dev` is the development branch; `master` remains the historical upstream/default
+branch until separately approved.
 
-[Development structure (Deutsch)](docs/funk/development.md) ·
-[Release and integration plan](docs/funk/release-plan.md) ·
-[GitHub collaboration and protection plan](docs/funk/github-collaboration.md)
+[Deutsch](README.de.md) · [Integration evidence](docs/funk/STABLE-INTEGRATION-STATUS.md) ·
+[Development](docs/funk/development.md) · [Release plan](docs/funk/release-plan.md)
 
 Mumble-Funk is an independent, open-source fork of the Mumble server, based on
 **Mumble Server 1.5.939**. It adds optional radio-style channel access: one user
@@ -26,6 +27,23 @@ production readiness and long-term reliability have not been established.
 [Enable Simplex / update](docs/funk/simplex.md) ·
 [Verification report](docs/funk/SIMPLEX-STATUS.md)
 
+## Choose an installation
+
+| Route | Source | Operation | New installation defaults |
+| --- | --- | --- | --- |
+| Ubuntu Server 24.04 / 26.04 LTS | `stable` | Dedicated `mumble-funk` systemd service | Host 64739 TCP/UDP, Simplex enabled, timeout/retry 500/500 ms |
+| Docker Compose v2 on Linux | The same `stable` commit | Rootless container, persistent named volumes | Container 64739 TCP/UDP; host port configurable; Simplex and timeout/retry identical |
+
+[Docker installation and backup](docs/funk/docker.md) ·
+[Safe migration from the Docker feature branch](docs/funk/docker-stable-migration.md).
+Use host **64740** to run Docker alongside the native Funk server on 64739.
+Existing `.env`, project name, service and volume names remain compatible.
+Do not change the Compose project name during an update.
+
+Both builds use Mumble 1.5.939 plus the same Funk sources. Record `git rev-parse HEAD`
+for an exact version; the Mumble version alone does not identify a Funk release.
+Audio Feedback v0.3 is **not included**.
+
 ## Quick installation — Ubuntu 24.04 / 26.04 LTS
 
 Run as a normal user with **sudo access**, not as root. You need Internet access,
@@ -34,7 +52,7 @@ at least 2 GiB RAM including swap (4 GiB RAM recommended), and 8 GiB free disk s
 ```bash
 sudo apt update && sudo apt install -y git
 
-git clone --branch funk-v0.1 --recurse-submodules \
+git clone --branch stable --recurse-submodules \
   https://github.com/Shawna7han/mumble-funk.git
 
 cd mumble-funk
@@ -60,8 +78,9 @@ directory already exists, use its update instructions instead of cloning over it
 
 | Item | Current status |
 | --- | --- |
-| Development preparation | [`dev`](https://github.com/Shawna7han/mumble-funk/tree/dev), initially documentation only |
-| Existing Simplex / Ubuntu branch | [`funk-v0.1`](https://github.com/Shawna7han/mumble-funk/tree/funk-v0.1), unchanged |
+| Common installation source | [`stable`](https://github.com/Shawna7han/mumble-funk/tree/stable), candidate pending final acceptance |
+| Development | [`dev`](https://github.com/Shawna7han/mumble-funk/tree/dev); future changes through pull requests |
+| Historical Simplex / Ubuntu branch | [`funk-v0.1`](https://github.com/Shawna7han/mumble-funk/tree/funk-v0.1), unchanged |
 | Server baseline | Mumble 1.5.939, official tag `v1.5.939` |
 | Radio engine | Simplex v0.2, implemented; core default off, **new automated installations enable it** |
 | Supported installation targets | Ubuntu Server **24.04 LTS** and **26.04 LTS** |
@@ -116,12 +135,14 @@ reported successful initial Simplex v0.2 tests with Android-Mumla and Windows-Mu
 on Ubuntu Server 26.04.1. This remains limited practical evidence, not a comprehensive
 client/version/network validation or a completed long-term test.
 
-The recorded automated verification includes **18/18 server test programs** and
+The historical v0.2 verification includes **18/18 server test programs** and
 **5/5 installation tests**. Targeted Simplex and existing PTT-diagnostic tests also
 passed after the development environment was resumed. Integration tests use a real
 server process and simulated clients to check actual packet forwarding, UDP/TCP
 competition, legacy and newer packet formats, lifecycle events and disabled-mode
 routing. They do not test sound playback on an Android or Windows device.
+
+The new integration is checked separately in the [integration report](docs/funk/STABLE-INTEGRATION-STATUS.md), including the authenticated UDP nonce regression and removal of Docker test workarounds.
 
 See the [verification report](docs/funk/SIMPLEX-STATUS.md) for test dates,
 environments, coverage and remaining checks. These are recorded results, not a
@@ -158,6 +179,7 @@ additional server without modification.
 
 | Task | Guide |
 | --- | --- |
+| Docker installation, persistence, backup and recovery | [Docker guide](docs/funk/docker.md) · [Stable migration](docs/funk/docker-stable-migration.md) |
 | Automatic setup, connection details, updates and removal | [Simple setup guide](docs/funk/setup.md) |
 | Manual installation, prerequisites and systemd details | [Ubuntu installation](docs/funk/installation-ubuntu.md) |
 | Update, enable Simplex, understand settings or roll back | [Simplex v0.2 guide](docs/funk/simplex.md) |
@@ -175,7 +197,7 @@ through `setup.sh` automatically enable Simplex.
 
 | Stage | Scope |
 | --- | --- |
-| **Implemented** | Simplex Engine v0.2, optional server-side diagnostics and automatic parallel Ubuntu setup. |
+| **Implemented** | Simplex Engine v0.2, optional diagnostics, Ubuntu setup and Docker Compose from a common commit. |
 | **Current development goals** | Broader real-device tests; improve rapid PTT changes within protocol limits; examine packet loss, delayed packets and network outages; strengthen stability and reliability through longer runs. |
 | **Possible future work — not committed** | Busy tone, roger beep, analog radio audio effects, squelch, digital radio profiles and extended configuration. |
 

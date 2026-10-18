@@ -1,6 +1,11 @@
+> Gemeinsamer Stable-Kandidat: Ubuntu und Docker verwenden denselben Commit.
+> Für die einfache Installation und den Wechsel aus `funk-v0.1` zuerst
+> [setup.md](setup.md) lesen. Die manuellen Schritte unten bleiben verfügbar;
+> Pfade und Dienstname sind unverändert. Kein neuer Release-Tag ist freigegeben.
+
 # Mumble-Funk parallel unter Ubuntu Server 24.04 oder 26.04 installieren
 
-Diese Anleitung installiert unseren Entwicklungszweig `funk-v0.1` auf Basis von
+Diese Anleitung installiert unseren gemeinsamen Kandidaten `stable` auf Basis von
 Mumble 1.5.939. Der vorhandene Standardserver auf **64738** bleibt bestehen.
 Der zusätzliche Server verwendet **64739 für TCP und UDP**. Beim hier beschriebenen manuellen Weg ist die optionale
 Simplex-Sendesteuerung standardmäßig ausgeschaltet. Aktivierung, Update und
@@ -71,8 +76,8 @@ prüfen und aufbewahren. Keine Dateien zurücksetzen oder löschen.
 Anschließend diese Befehle nacheinander ausführen; bei einer Fehlermeldung anhalten:
 
 ```bash
-git switch funk-v0.1
-git pull --ff-only origin funk-v0.1
+git switch stable
+git pull --ff-only origin stable
 git submodule update --init --recursive
 bash scripts/funk/build.sh
 sudo bash scripts/funk/install.sh
@@ -130,14 +135,14 @@ Danach den obigen `sudo apt install ...`-Befehl wiederholen.
 ```bash
 mkdir -p "$HOME/src"
 cd "$HOME/src"
-git clone --branch funk-v0.1 --recurse-submodules \
+git clone --branch stable --recurse-submodules \
   https://github.com/Shawna7han/mumble-funk.git
 cd "$HOME/src/mumble-funk"
 git branch --show-current
 bash scripts/funk/build.sh
 ```
 
-Der angezeigte Zweig muss `funk-v0.1` sein. Falls das Verzeichnis schon existiert,
+Der angezeigte Zweig muss `stable` sein. Falls das Verzeichnis schon existiert,
 nicht löschen oder darüber klonen: Verwende stattdessen die Update-Anleitung unten.
 Das Bauen kann einige Minuten dauern. Das Skript prüft den Zweig und die Abstammung
 vom offiziellen Release und führt anschließend die vorhandenen 18 Testprogramme aus.
@@ -243,8 +248,8 @@ Führe diesen Block im vorhandenen Quellverzeichnis aus:
 ```bash
 cd "$HOME/src/mumble-funk"
 git status --short --branch
-git switch funk-v0.1
-git pull --ff-only origin funk-v0.1
+git switch stable
+git pull --ff-only origin stable
 git submodule update --init --recursive
 bash scripts/funk/build.sh
 sudo bash scripts/funk/install.sh
