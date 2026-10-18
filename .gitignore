@@ -50,3 +50,8 @@ compile_commands.json
 .devcontainer/*
 __pycache__/
 CMakeSettings.json
+# Local Docker settings/backups (never commit access passwords or state).
+.env
+.env.*
+!.env.example
+backups/
