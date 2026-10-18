@@ -1,157 +1,164 @@
-![Mumble screenshot](screenshots/Mumble.png)
+# Mumble-Funk
 
-# Mumble - Open Source voice-chat software
+**Server-side simplex radio communication for Mumble**
 
-[![https://www.mumble.info](https://img.shields.io/badge/Website-https%3A%2F%2Fwww.mumble.info-blue?style=for-the-badge)](https://www.mumble.info)
+Mumble-Funk is an independent, open-source fork of the Mumble server, based on
+**Mumble Server 1.5.939**. It adds optional radio-style channel access: one user
+transmits at a time, and the server enforces the rule for unchanged Mumble clients.
 
-[![#mumble:matrix.org](https://img.shields.io/matrix/mumble:matrix.org?label=%23mumble:matrix.org&style=for-the-badge)](https://matrix.to/#/#mumble:matrix.org)
+Ordinary Mumble channels allow several people to speak at once. Mumble-Funk provides
+a shared radio channel where the first accepted sender holds the right to transmit
+and competing transmissions are discarded.
 
-[![Codacy](https://img.shields.io/codacy/grade/262a5e20c83a40599050e22e700d8a3e?label=Codacy&style=for-the-badge)](https://app.codacy.com/manual/mumble-voip/mumble)
-[![Azure](https://img.shields.io/azure-devops/build/Mumble-VoIP/c819eb06-7b22-4ef3-bbcd-860094454eb3/1?label=Azure&style=for-the-badge)](https://dev.azure.com/Mumble-VoIP/Mumble)
-[![Cirrus CI](https://img.shields.io/cirrus/github/mumble-voip/mumble?label=Cirrus%20CI&style=for-the-badge)](https://cirrus-ci.com/github/mumble-voip/mumble)
-[![Travis CI](https://img.shields.io/travis/com/mumble-voip/mumble?label=Travis%20CI&style=for-the-badge)](https://travis-ci.com/mumble-voip/mumble)
+**Experimental alpha — Simplex Engine v0.2.** A working prototype is available;
+production readiness and long-term reliability have not been established.
 
-Mumble is an Open Source, low-latency and high-quality voice-chat program
-written on top of Qt and Opus.
+[Deutsch](README.de.md) · [Install on Ubuntu](docs/funk/installation-ubuntu.md) ·
+[Enable Simplex / update](docs/funk/simplex.md) ·
+[Verification report](docs/funk/SIMPLEX-STATUS.md)
 
-There are two modules in Mumble; the client (mumble) and the server (mumble-server formerly known as murmur).
-The client works on Windows, Linux, FreeBSD, OpenBSD, and macOS,
-while the server should work on anything Qt can be installed on.
+## Project at a glance
 
-Please note that with "Windows" we mean 7 and newer.
-Vista may be supported, but we can't guarantee it.
-If you don't want to encounter potential issues, you may download Mumble 1.3.x,
-the last version to provide support for XP.
+| Item | Current status |
+| --- | --- |
+| Development branch | [`funk-v0.1`](https://github.com/Shawna7han/mumble-funk/tree/funk-v0.1) |
+| Server baseline | Mumble 1.5.939, official tag `v1.5.939` |
+| Radio engine | Simplex v0.2, implemented; **disabled by default** |
+| Supported installation targets | Ubuntu Server **24.04 LTS** and **26.04 LTS** |
+| Clients | Existing Mumble clients; focus on Mumla for Android and Mumble for Windows |
+| Parallel installation | Funk server on **64739 TCP/UDP**, separate from standard Mumble on 64738 |
+| License | [BSD 3-Clause](LICENSE), with existing third-party notices retained |
 
-The documentation of the project can be found on [the website](https://www.mumble.info/documentation/).
+## What works today
 
+| Feature | Implemented behavior |
+| --- | --- |
+| Exclusive transmission | One authorized sender per channel; different channels operate independently. |
+| Concurrent attempts | Atomic allocation shared by UDP and TCP prevents two simultaneous owners. |
+| Rejected transmissions | A continuously arriving rejected transmission stays blocked when the channel becomes free. A new attempt is required. |
+| End markers | A valid marker from the current owner releases the channel; another user's marker cannot release it. |
+| Configurable timeouts | Default channel timeout: **500 ms** without valid new packets. Default quiet interval for inferring a new attempt: **1,000 ms**. |
+| Lifecycle handling | Channel changes, detected disconnects and loss of speaking permission release ownership. Ownership is not persisted across restarts. |
+| Transport | Incoming UDP audio and audio tunneled over TCP use the same Simplex control. |
+| Existing clients | No client modifications, protocol extensions or additional client messages are required. |
+| Server diagnostics | Optional voice-packet diagnostics and separate Simplex grant/denial/release diagnostics; metadata only, no recorded speech. |
+| Optional operation | With Simplex disabled, normal Mumble voice routing remains available. |
 
-## Contributing
+Audio payloads are forwarded without decoding and re-encoding for the radio rules.
+Diagnostic file output runs in background threads with bounded queues; records may
+be dropped under load without changing transmission ownership.
 
-We always welcome contributions to the project. If you have some code that you would like to contribute, please go ahead and create a PR. While doing so,
-please try to make sure that you follow our [commit guidelines](COMMIT_GUIDELINES.md).
+### A simple radio example
 
-If you are new to the Mumble project, you may want to check out the general [introduction to the Mumble source code](docs/dev/TheMumbleSourceCode.md).
+1. Alice starts transmitting in a free channel. The server accepts her first
+   eligible packet and gives her the channel.
+2. Bob presses PTT while Alice is transmitting. His packets are discarded.
+3. Alice stops. Her end marker, or the configured packet timeout, releases the channel.
+4. Bob's continuing packet stream **does not automatically become audible**.
+   He must end that attempt and start a new one.
 
-### Translating
+The server observes packets, not physical buttons. Without an end marker, a new
+attempt is inferred only after the configured quiet interval. For initial tests,
+release PTT, wait about two seconds, then press again. A sufficiently long network
+gap can also look like a new attempt; this cannot be resolved exactly without
+client or protocol changes.
 
-Mumble supports various languages. We are always looking for qualified people to contribute translations.
+## Client compatibility and test evidence
 
-We are using Weblate as a translation platform. [Register on Weblate](https://hosted.weblate.org/accounts/register/), and join [our translation project](https://hosted.weblate.org/projects/mumble/).
+| Client | Evidence so far |
+| --- | --- |
+| **Mumla — Android** | Initial operator-reported tests confirmed connection, two-way voice and PTT packet behavior. The observed transmissions continued through speaking pauses; three observed attempts had no confirmed end marker. |
+| **Mumble Desktop — Windows** | Initial operator-reported tests confirmed connection, two-way voice and PTT packet behavior, including an observed end marker on release. |
+| Other Mumble clients | The existing protocol is retained, but broad client/version compatibility has not been practically validated. |
 
-### Writing plugins
+These initial device observations informed the implementation. They are **not a
+completed real-device validation of Simplex v0.2** and do not guarantee identical
+behavior across client versions or networks.
 
-Mumble supports general-purpose plugins that can provide functionality that is not implemented in the main Mumble application. You can find more
-information on how this works and how these have to be created in the [plugin documentation](docs/dev/plugins/README.md).
+The recorded automated verification includes **18/18 server test programs** and
+**5/5 installation tests**. Targeted Simplex and existing PTT-diagnostic tests also
+passed after the development environment was resumed. Integration tests use a real
+server process and simulated clients to check actual packet forwarding, UDP/TCP
+competition, legacy and newer packet formats, lifecycle events and disabled-mode
+routing. They do not test sound playback on an Android or Windows device.
 
-## Building
+See the [verification report](docs/funk/SIMPLEX-STATUS.md) for test dates,
+environments, coverage and remaining checks. These are recorded results, not a
+claim of continuously passing CI.
 
-For information on how to build Mumble, check out [the dedicated documentation](docs/dev/build-instructions/README.md).
+## Known limitations
 
+- **Physical PTT is not directly visible to the server.** Missing end markers,
+  delayed packets and long network interruptions can make transmission boundaries
+  ambiguous.
+- Unchanged clients have **no reliable native busy indication** for a
+  server-rejected transmission. Their local transmit indicator may still light up.
+- Rapid PTT changes are not fully optimized. Short pauses without an end marker,
+  or sequence resets, may remain blocked until enough packet silence is observed.
+- In enabled radio mode, speech stays inside the sender's current channel.
+  **Whisper, linked-channel forwarding, extra channel-listener reception and server
+  loopback do not provide alternative voice routes.** Their saved settings or
+  client UI may still exist.
+- No integrated radio audio effects, busy tone, roger beep or squelch are implemented.
+- Practical testing is limited; **no completed long-term or load test** establishes
+  production reliability.
 
-## Reporting issues
+## Installation and documentation
 
-If you want to report a bug or create a feature request, you can open a new issue (after you have checked that there is none already) on
-[GitHub](https://github.com/mumble-voip/mumble/issues/new/choose).
+Use the existing guides below; they contain the maintained commands rather than
+an additional installation recipe here. The operational guides are currently
+**in German**. The supported installation targets are Ubuntu Server 24.04 LTS and
+26.04 LTS, including point releases.
 
+The supplied installation runs `mumble-funk.service` on **64739 TCP/UDP** with its
+own configuration, database and logs. It is designed to coexist with an existing
+standard Mumble server on 64738. Existing Mumla and Mumble clients connect to the
+additional server without modification.
 
-## Code Signing
+| Task | Guide |
+| --- | --- |
+| First installation, prerequisites and systemd service | [Ubuntu installation](docs/funk/installation-ubuntu.md) |
+| Update, enable Simplex, understand settings or roll back | [Simplex v0.2 guide](docs/funk/simplex.md) |
+| Test with Android, Windows and an optional third observer | [Practical test plan](docs/funk/simplex.md#6-praxistest-mit-android-und-windows) |
+| Inspect incoming packet timing and end markers | [PTT / voice diagnostics](docs/funk/diagnose.md) |
+| Review automated verification and its limits | [Implementation and test status](docs/funk/SIMPLEX-STATUS.md) |
+| Understand synchronization and ownership | [Server locking notes](docs/dev/MurmurLocking.md#optional-simplexcontroller-funk-v02) |
 
-We graciously acknowledge that this program uses free code signing provided by
-[SignPath.io](https://signpath.io?utm_source=foundation&utm_medium=github&utm_campaign=mumble), and a free code signing certificate by the
-[SignPath Foundation](https://signpath.org?utm_source=foundation&utm_medium=github&utm_campaign=mumble).
+**Installing an update does not enable Simplex.** Activation is a separate server
+configuration step described in the Simplex guide; configuration changes require
+a restart of the Funk service.
 
-## Windows
+## Roadmap
 
-### Running Mumble
+| Stage | Scope |
+| --- | --- |
+| **Implemented** | Simplex Engine v0.2, optional server-side diagnostics and the parallel Ubuntu installation. |
+| **Current development goals** | Broader real-device tests; improve rapid PTT changes within protocol limits; examine packet loss, delayed packets and network outages; strengthen stability and reliability through longer runs. |
+| **Possible future work — not committed** | Busy tone, roger beep, analog radio audio effects, squelch, digital radio profiles and extended configuration. |
 
-After installation, you should have a new Mumble folder in your
-Start Menu, from which you can start Mumble.
+Future ideas are exploratory. They have no promised delivery date or guaranteed
+implementation and are not features of the current prototype.
 
-### Running Mumble-Server
+## Contributing and reporting issues
 
-Double-click the icon to start ``mumble-server``. There will be a small icon on your
-taskbar from which you can view the log.
+Report fork-specific problems in [Mumble-Funk issues](https://github.com/Shawna7han/mumble-funk/issues).
+Include the server commit, client/platform versions, enabled settings and steps to
+reproduce the behavior. Diagnostic excerpts can help; remove passwords and personal
+information before sharing them. See the [commit guidelines](COMMIT_GUIDELINES.md)
+for code contributions.
 
-To set the superuser password, run ``mumble-server`` with the parameters `-supw <password>`.
+## Upstream and license
 
+Mumble-Funk is an **independent project**, derived from
+[Mumble](https://github.com/mumble-voip/mumble). It is not an official Mumble release
+and does not claim endorsement or support from the original Mumble developers.
+The upstream project's website is [mumble.info](https://www.mumble.info/).
 
-## MacOS
+> Copyright (C) 2005-2022 The Mumble Developers
+>
+> All rights reserved.
 
-### Running Mumble
-
-To install Mumble, drag the application from the downloaded
-disk image into your `/Applications` folder.
-
-### Running Mumble-Server
-
-``mumble-server`` is distributed separately from the Mumble client on MacOS.
-It is called Static OS X Server and can be downloaded from the main webpage.
-
-Once downloaded it can be run in the same way as on any other Unix-like system.
-For more information please see the "Running mumble-server" in the Linux/Unix section below.
-
-
-## Linux/Unix
-
-### Running Mumble
-
-If you have installed Mumble through your distribution package
-repository, you should be able to find Mumble in your start menu. No
-additional steps are necessary.
-
-### Running Mumble-Server
-
-``mumble-server`` should be run from the command line, so start a shell (command prompt)
-and go to wherever you installed Mumble. Run ``mumble-server`` as
-
-```
-mumble-server [-supw <password>] [-ini <inifile>] [-fg] [v]
-
--supw   Set a new password for the user SuperUser, which is hardcoded to
-        bypass ACLs. Keep this password safe. Until you set a password,
-        the SuperUser is disabled. If you use this option, mumble-server will
-        set the password in the database and then exit.
-
--ini    Use an inifile other than mumble-server.ini, use this to run several instances
-        of mumble-server from the same directory. Make sure each instance is using
-        a separate database.
-
--fg     Run in the foreground, logging to standard output.
-
--v      More verbose logging.
-```
-
-#### Build and run from Docker
-
-On recent Docker versions, you can build images directly from sources on GitHub:
-```bash
-docker build --pull -t mumble-server github.com/mumble-voip/mumble#master
-```
-Example `--pull`s each time to check for updated base image, then downloads and builds `master` branch.
-
-You can also specify the user ID (UID) and group ID (GID) for the *murmur* user in the image. This allows users who use bind mount volumes to use the same UID/GID in the container as in the host:
-```bash
-docker build --pull -t mumble-server --build-arg UID=1234 --build-arg GID=1234 github.com/mumble-voip/mumble#master
-```
-
-### Server configuration
-
-You can find an up-to-date ``mumble-server`` configuration template in [this repository](auxiliary_files/mumble-server.ini).
-Further server configuration documentation can be found [on the project website](https://www.mumble.info/documentation/administration/).
-
-### OpenGL Overlay
-
-The OpenGL overlay works by intercepting the call to switch buffers, and just
-before the buffer switch, we draw our nice GUI.
-
-To load a game with the overlay enabled, start the game like this:
-```bash
-LD_PRELOAD=/path/to/libmumble.so.1.1 gamename
-```
-
-If you have Mumble installed through the binary packages, this can be done by
-simply typing:
-```bash
-mumble-overlay gamename
-```
+The source is distributed under the terms in [LICENSE](LICENSE) (BSD 3-Clause).
+Original copyright and license notices remain in place. Bundled components retain
+their own terms; see [3rdPartyLicenses](3rdPartyLicenses/) and the notices in the
+respective source files and submodules.
