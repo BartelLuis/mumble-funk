@@ -2,6 +2,7 @@
 """Rootless lifecycle and offline backups for the isolated Mumble-Funk container."""
 import contextlib
 import fcntl
+import getpass
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -94,7 +95,7 @@ registerName=Mumble-Funk
 ice=
 bonjour=false
 logfile=
-logdays=0
+logdays=-1
 simplex=true
 simplextimeout=500
 simplexretrytimeout=500
@@ -191,7 +192,7 @@ def restore():
                     target = DIRECTORIES[name] / item.name
                     if item.name == 'audio' and target.is_dir() and not any(target.iterdir()):
                         target.rmdir()
-                    os.replace(item, target)
+                    shutil.move(str(item), str(target))
         print('Backup in leere Docker-Volumes wiederhergestellt.', file=sys.stderr)
 
 
@@ -266,6 +267,21 @@ def configure(key, value):
         write_private(CONFIG, ('\n'.join(lines)+'\n').encode())
 
 
+def admin_password():
+    with instance_lock():
+        settings()
+        integrity()
+        password = getpass.getpass('Neues SuperUser-Passwort (mindestens 12 ASCII-Zeichen): ')
+        if (not 12 <= len(password) <= 200 or any(ord(c) < 32 or ord(c) > 126 for c in password)
+                or password != getpass.getpass('Passwort wiederholen: ')):
+            raise RuntimeError('Passwort muss übereinstimmen und aus 12..200 druckbaren ASCII-Zeichen bestehen.')
+        result = subprocess.run([BINARY, '-ini', str(CONFIG), '-readsupw'],
+                                input=(password+'\n').encode('ascii'), capture_output=True)
+        if result.returncode:
+            raise RuntimeError('SuperUser-Passwort konnte nicht gesetzt werden.')
+        print('SuperUser-Passwort gesetzt. Es wurde nicht in Konfiguration oder Logs geschrieben.')
+
+
 def main():
     os.umask(0o077)
     command = sys.argv[1] if len(sys.argv)>1 else 'serve'
@@ -283,10 +299,12 @@ def main():
             backup()
         elif command == 'restore':
             restore()
+        elif command == 'admin-password':
+            admin_password()
         elif command == 'set' and len(sys.argv) == 4:
             configure(sys.argv[2],sys.argv[3])
         else:
-            raise RuntimeError('Aufruf: funk-container serve|info [--json]|health|backup|restore|set SCHLÜSSEL WERT')
+            raise RuntimeError('Aufruf: funk-container serve|info [--json]|health|backup|restore|admin-password|set SCHLÜSSEL WERT')
         return 0
     except (OSError, ValueError, RuntimeError, sqlite3.Error, tarfile.TarError) as error:
         print('Mumble-Funk Docker: '+str(error), file=sys.stderr)

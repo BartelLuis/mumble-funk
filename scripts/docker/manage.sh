@@ -3,12 +3,19 @@
 set -euo pipefail
 umask 077
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-cd "$repo"
 command=${1:-}
 [[ $# == 2 && ( $command == backup || $command == restore ) ]] || {
     echo 'Aufruf: bash scripts/docker/manage.sh backup DATEI.tar.gz | restore DATEI.tar.gz' >&2; exit 1;
 }
-archive=$2
+archive=$(realpath -m -- "$2")
+if [[ $command == backup ]]; then
+    [[ ! -e $archive && -d $(dirname -- "$archive") && -w $(dirname -- "$archive") ]] || {
+        echo 'Sicherung existiert bereits oder das Zielverzeichnis ist nicht beschreibbar.' >&2; exit 1;
+    }
+else
+    [[ -f $archive ]] || { echo 'Sicherungsdatei fehlt.' >&2; exit 1; }
+fi
+cd "$repo"
 was_running=$(docker compose ps --status running --quiet mumble-funk)
 resume() { if [[ -n $was_running ]]; then docker compose start mumble-funk >&2; fi; }
 trap resume EXIT
