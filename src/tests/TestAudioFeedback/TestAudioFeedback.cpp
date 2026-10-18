@@ -1,4 +1,4 @@
-// Copyright The Mumble Developers. All rights reserved.
+// Copyright The Mumble-Funk Contributors. All rights reserved.
 // Use of this source code is governed by a BSD-style license in the LICENSE file.
 #include "AudioFeedback.h"
 #include "SimplexController.h"

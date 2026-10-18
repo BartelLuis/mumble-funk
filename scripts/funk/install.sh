@@ -32,6 +32,12 @@ else
     # shellcheck source=/dev/null
     . /etc/os-release
     funk_require_supported_os "${ID:-}" "${VERSION_ID:-}" || exit 1
+    # This guard exists only on the experimental branch. Its binaries must never
+    # be deployed to the v0.2 instance via a manual invocation of this installer.
+    [[ $(git -C "$repo" branch --show-current) == funk-v0.1 ]] || {
+        echo 'v0.2-Installation nur aus funk-v0.1. Für die Audio-Preview: scripts/funk/setup-audio-preview.sh' >&2
+        exit 1
+    }
     exec 9>/run/lock/mumble-funk-install.lock
     flock -n 9 || { echo 'Eine andere Funkserver-Installation läuft bereits.' >&2; exit 1; }
     binary="$repo/build/funk/mumble-server"

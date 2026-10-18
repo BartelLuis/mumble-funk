@@ -1,0 +1,11 @@
+/var/log/mumble-funk-audio/server.log {
+    su mumble-funk-audio mumble-funk-audio
+    weekly
+    maxsize 10M
+    rotate 4
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

@@ -1,4 +1,4 @@
-// Copyright The Mumble Developers. All rights reserved.
+// Copyright The Mumble-Funk Contributors. All rights reserved.
 // Use of this source code is governed by a BSD-style license in the LICENSE file.
 #include "AudioSignal.h"
 #include <QtCore/QFile>
@@ -77,6 +77,10 @@ std::vector< float > AudioSignal::loadWav(const QString &path) {
 }
 
 std::vector< float > AudioSignal::syntheticBusy() {
+	// Original generic sine waveform; no samples, recordings or device-specific cadence.
+	// At 48000 Hz: x[n] = 0.2 * envelope[n] * sin(2*pi*600*n/48000).
+	// Each 4800-sample burst has a 240-sample (5 ms) linear attack/release;
+	// the gap and tail are zero-valued samples. This code has no audio-asset dependency.
 	std::vector< float > pcm(12480, 0); // 100 ms tone, 40 ms gap, 100 ms tone, 20 ms tail.
 	for (std::size_t sample = 0; sample < pcm.size(); ++sample) {
 		const int at    = static_cast< int >(sample);

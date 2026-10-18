@@ -1,0 +1,28 @@
+[Unit]
+Description=Mumble-Funk v0.3 experimental audio preview
+After=network.target
+
+[Service]
+Type=simple
+User=mumble-funk-audio
+Group=mumble-funk-audio
+WorkingDirectory=/var/lib/mumble-funk-audio
+ExecStart=/opt/mumble-funk-audio/current/mumble-server -ini /etc/mumble-funk-audio/server.ini -fg
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=mumble-funk-audio
+StateDirectoryMode=0750
+LogsDirectory=mumble-funk-audio
+LogsDirectoryMode=0750
+StandardOutput=append:/var/log/mumble-funk-audio/server.log
+StandardError=inherit
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mumble-funk-audio /var/log/mumble-funk-audio
+
+[Install]
+WantedBy=multi-user.target
