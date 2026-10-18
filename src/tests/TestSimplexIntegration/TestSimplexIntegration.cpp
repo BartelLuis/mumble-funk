@@ -20,7 +20,70 @@ private slots:
 	void udpCiphertextLooksLikePing();
 	void unencryptedServerInfo_data();
 	void unencryptedServerInfo();
+	void concurrentUdpEgress();
 };
+
+void TestSimplexIntegration::concurrentUdpEgress() {
+	Fixture f;
+	QVERIFY(f.start("false", 5000, 5000, false));
+	QFile config(f.config);
+	QVERIFY(config.open(QIODevice::ReadOnly));
+	auto contents = config.readAll();
+	config.close();
+	contents.replace("bandwidth=72000", "bandwidth=10000000");
+	QVERIFY(config.open(QIODevice::WriteOnly | QIODevice::Truncate));
+	QCOMPARE(config.write(contents), static_cast< qint64 >(contents.size()));
+	config.close();
+	QVERIFY(f.restart());
+	Client tcp, udp, receiver;
+	QVERIFY(tcp.login(f.port, "ConcurrentTCP", true));
+	QVERIFY(udp.login(f.port, "ConcurrentUDP", true));
+	QVERIFY(receiver.login(f.port, "ConcurrentReceiver", true));
+	QVERIFY(receiver.speak(true, true));
+	QVERIFY(receiver.udpBarrier());
+	MumbleProto::VoiceTarget target;
+	target.set_id(1);
+	target.add_targets()->add_session(receiver.session);
+	QVERIFY(tcp.send(Type::VoiceTarget, target) && tcp.barrier());
+	QVERIFY(udp.send(Type::VoiceTarget, target) && udp.barrier());
+	int received = 0;
+	for (int batch = 0; batch < 32; ++batch) {
+		for (int frame = 0; frame < 16; ++frame) {
+			QVERIFY(tcp.speak(false, false, 1));
+			QVERIFY(udp.speak(true, false, 1));
+		}
+		QVERIFY(tcp.barrier());
+		QVERIFY(udp.udpBarrier());
+		QElapsedTimer timer;
+		timer.start();
+		while (received < (batch + 1) * 32 && timer.elapsed() < 2000) {
+			if (!receiver.udp.hasPendingDatagrams())
+				receiver.udp.waitForReadyRead(10);
+			while (receiver.udp.hasPendingDatagrams()) {
+				QByteArray encrypted(static_cast< int >(receiver.udp.pendingDatagramSize()), '\0');
+				QCOMPARE(receiver.udp.readDatagram(encrypted.data(), encrypted.size()),
+						 static_cast< qint64 >(encrypted.size()));
+				QVERIFY(encrypted.size() > 4);
+				QByteArray plain(encrypted.size() - 4, '\0');
+				QVERIFY2(receiver.crypt.decrypt(reinterpret_cast< const unsigned char * >(encrypted.constData()),
+											   reinterpret_cast< unsigned char * >(plain.data()),
+											   static_cast< unsigned int >(encrypted.size())),
+						 "Concurrent TCP/UDP senders corrupted an outgoing authenticated datagram");
+				Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Client > decoder(receiver.version);
+				QVERIFY(decoder.decode(gsl::span< const Mumble::Protocol::byte >(
+					reinterpret_cast< const Mumble::Protocol::byte * >(plain.constData()),
+					static_cast< std::size_t >(plain.size()))));
+				QCOMPARE(decoder.getMessageType(), Mumble::Protocol::UDPMessageType::Audio);
+				const auto audio = decoder.getAudioData();
+				QVERIFY(audio.senderSession == tcp.session || audio.senderSession == udp.session);
+				QCOMPARE(QByteArray(reinterpret_cast< const char * >(audio.payload.data()),
+								static_cast< int >(audio.payload.size())), audioContent);
+				++received;
+			}
+		}
+		QCOMPARE(received, (batch + 1) * 32);
+	}
+}
 
 void TestSimplexIntegration::udpCiphertextLooksLikePing_data() {
 	QTest::addColumn< bool >("modern");
@@ -109,6 +172,15 @@ void TestSimplexIntegration::unencryptedServerInfo() {
 	Client client;
 	QUdpSocket discovery;
 	QUdpSocket &socket = peer ? client.udp : discovery;
+	QSslSocket readiness;
+	if (!peer) {
+		// The listening log precedes certificate generation. Wait for actual
+		// readiness without Authenticate: the idle public-ping path stays active.
+		QObject::connect(&readiness, QOverload< const QList< QSslError > & >::of(&QSslSocket::sslErrors),
+						 [&readiness] { readiness.ignoreSslErrors(); });
+		readiness.connectToHostEncrypted(QStringLiteral("127.0.0.1"), f.port);
+		QVERIFY(readiness.waitForEncrypted(10000));
+	}
 	if (peer)
 		QVERIFY(client.login(f.port, "PublicPingClient", modern));
 	QVERIFY(socket.bind(QHostAddress(QHostAddress::LocalHost), 0));

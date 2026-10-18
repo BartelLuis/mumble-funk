@@ -53,6 +53,22 @@ Sechs weitere Fälle prüfen öffentliche Serverabfragen mit alten/neuen Formate
 ohne Anmeldung, vor der ersten UDP-Anmeldung und bei bereits bekanntem UDP-Peer;
 anschließende authentifizierte Pings müssen weiterhin funktionieren.
 
+Der zusätzliche Paralleltest weist außerdem einen schon bestehenden gemeinsamen
+Sendepuffer nach: Hauptthread (TCP-Tunnel) und UDP-Thread können denselben
+Ciphertext-Puffer überschreiben, bevor das Betriebssystem ihn gesendet hat.
+Der Test leitet 1.024 Pakete beider Eingangswege an einen UDP-Empfänger und prüft
+Authentifizierung, Anzahl und unveränderte Nutzdaten. Vor der Korrektur schlägt
+die Entschlüsselung fehl. Der wiederverwendete Puffer ist nun `thread_local`;
+es werden weder Audiocodec noch Senderechte geändert und keine neuen
+Allokationen pro Paket eingeführt.
+
+Ein Fehlschlag der neuen öffentlichen Ping-Prüfung war dagegen ein Testproblem:
+Die frühe Listening-Logzeile erscheint vor Abschluss der Zertifikatserzeugung.
+Der Test wartet nun per TLS-Handshake auf echte Bereitschaft, **ohne Authenticate**;
+der öffentliche UDP-Pfad ohne angemeldeten Benutzer bleibt deshalb geprüft.
+Seine eigentliche UDP-Antwort, Zeitmarke und Serverversion bleiben verpflichtend.
+Es gibt keinen pauschalen Test-Retry und keine ignorierte Fehlermeldung.
+
 Die Docker-CMake-Testadapter mit absichtlich vermiedenem Nonce-Bereich sind
 vollständig entfernt. Beide Builds verwenden dieselben Testquellen. Die gemeinsame
 Testhilfe verlangt einen passenden authentifizierten Ping und verwirft fremde/

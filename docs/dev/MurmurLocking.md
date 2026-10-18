@@ -270,3 +270,13 @@ outside it. It never accesses the server or controller. File failure disables
 logging only. Counts are summarized per attempt, not logged on every rejected
 packet. Diagnostic records can be lost under load; they must not be used as the
 source of truth for enforcing ownership.
+
+## UDP transmission scratch buffer
+
+TCP-tunneled audio on the main thread and incoming UDP audio on the voice thread
+can both reach the raw UDP `Server::sendMessage` overload. Its reusable ciphertext
+buffer is thread-local: a shared vector could be overwritten after the user's
+crypto lock is released and before `sendmsg` consumes it. The per-user crypto
+lock still protects encryption state; the thread-local buffer separately protects
+the lifetime of the outgoing bytes. The concurrent-ingress regression checks
+1,024 authenticated packets and their unchanged payloads at one UDP receiver.
