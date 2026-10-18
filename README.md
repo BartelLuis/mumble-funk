@@ -17,6 +17,20 @@ production readiness and long-term reliability have not been established.
 [Enable Simplex / update](docs/funk/simplex.md) ·
 [Verification report](docs/funk/SIMPLEX-STATUS.md)
 
+## Experimental v0.3 audio preview
+
+This feature branch adds optional, private **Busy Tone** feedback with a synthesized
+fallback or a replaceable PCM WAV asset. It is **not part of the v0.2 reference** and
+has not yet been audibly verified on real Windows/Android devices.
+
+[Architecture and WAV format](docs/funk/audio-feedback.md) ·
+[Separate installation and device test (Deutsch)](docs/funk/installation-audio-preview.md) ·
+[Verification](docs/funk/AUDIO-FEEDBACK-STATUS.md) ·
+[Audio provenance and licenses](docs/funk/AUDIO-RESOURCE-LICENSES.md)
+
+The preview uses **64740** and separate state/service directories. The quick setup
+below deliberately still installs **v0.2 from `funk-v0.1`**.
+
 ## Quick installation — Ubuntu 24.04 / 26.04 LTS
 
 Run as a normal user with **sudo access**, not as root. You need Internet access,
