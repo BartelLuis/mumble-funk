@@ -38,8 +38,20 @@ Paketformate, jeweils bei unbekanntem/bekanntem UDP-Peer, mit/ohne Simplex.
 Eine unverschlüsselte Ping-Probe interpretiert das Ciphertext-Byte als neue
 Protokollversion. Nach erfolgreicher Entschlüsselung muss der Decoder wieder die
 bekannte Version des authentifizierten Benutzers verwenden. Genau dies ergänzt
-der Server-Fix (eine Anweisung plus Erklärung), ohne Simplex-Regeln zu ändern.
-Danach bestehen alle acht Kombinationen.
+der erste Teil der UDP-Korrektur, ohne Simplex-Regeln zu ändern. Danach bestehen
+alle acht Kombinationen.
+
+Ein weiterer CI-Lauf deckte eine zweite Ursache für einen verlorenen UDP-Ping auf:
+Authentifizierter Ciphertext kann zufällig selbst als unverschlüsselter Ping
+parsbar sein. Vor der zweiten Korrektur scheitern **8/8** gezielt erzeugte Fälle
+(alt/neu, erster/bekannter Peer, mit/ohne scheinbare Extended-Info-Anfrage).
+Der Server versucht deshalb zuerst die bestehende Authentifizierung. Nur wenn
+sie nicht gelingt, wird die öffentliche Ping-Antwort verarbeitet. Echte öffentliche
+Pings lösen dabei wie bisher keine CryptSetup-Resync-Anforderung aus. Format,
+Antwortkodierung, Verschlüsselung und Simplex-Vergabe bleiben erhalten.
+Sechs weitere Fälle prüfen öffentliche Serverabfragen mit alten/neuen Formaten,
+ohne Anmeldung, vor der ersten UDP-Anmeldung und bei bereits bekanntem UDP-Peer;
+anschließende authentifizierte Pings müssen weiterhin funktionieren.
 
 Die Docker-CMake-Testadapter mit absichtlich vermiedenem Nonce-Bereich sind
 vollständig entfernt. Beide Builds verwenden dieselben Testquellen. Die gemeinsame
@@ -56,6 +68,8 @@ Keine Routing-Assertion wird entfernt und kein Test wird in Erfolg umgewandelt.
 | Vollständige CTest-Suite einschließlich Simplex und Diagnose | 18/18 Testprogramme, keine Auslassung |
 | Native Setup-Orchestrierung und Datenerhalt | 16/16 Tests |
 | Native Installation, OS-Prüfung, Parallelserver | 5/5 Tests |
+| Ubuntu 26.04: frisch installierte Abhängigkeiten und nativer Build | Erstlauf 18/18; abschließende Quellrevision und Nachprüfung werden im PR protokolliert |
+| Ubuntu 26.04: ergänzende Setup- und systemd-Dateiprüfung | 16/16, ShellCheck und systemd-analyze erfolgreich; kein echter Boot-Test |
 | Neue echte Git-Quellstand-/Tag-/Worktree-Prüfungen | 14/14 Tests, nur lokale Wegwerf-Repositories |
 | Docker-Runtime-Hilfsprogramme | 11/11 Tests |
 | Echter Multi-Stage-Docker-Build mit vollständiger CTest-Suite | Erfolgreich; ohne Nonce-Testadapter |
@@ -65,9 +79,16 @@ Keine Routing-Assertion wird entfernt und kein Test wird in Erfolg umgewandelt.
 | Backup/Restore, voller SQLite-Inhalt inklusive Benutzer/Kanäle/ACLs | Erfolgreich |
 | Echtes Update vom vorherigen Docker-Image und Rollback mit denselben Volumes | Erfolgreich; Daten, Passwörter, Zertifikat und Konfiguration erhalten |
 
-Die finalen Commit- und Wiederholungsnachweise werden nach Abschluss der Integration
-im PR festgehalten. Native Ubuntu-Containerprüfungen und finale Wiederholungen
-werden gesondert ergänzt; frühere Einzelbranch-Ergebnisse ersetzen sie nicht.
+Die finalen Commit- und Wiederholungsnachweise stehen im zugehörigen
+[Pull Request #1](https://github.com/Shawna7han/mumble-funk/pull/1). Frühere
+Einzelbranch-Ergebnisse ersetzen die erneuten Integrationsprüfungen nicht.
+Der erste Ubuntu-26.04-Build bestand alle 18 Tests; nur ein anschließender
+Hilfsschritt brach wegen der bereits belegten UID 1000 ab. Die Zusatzprüfung wurde
+mit dem vorhandenen Benutzer erfolgreich nachgeholt. Eine große alternative
+Ubuntu-Testkopie passte nicht in den freien Cloud-Speicher; die 8-GiB-Vorprüfung
+blieb intakt. Das ist kein nachgewiesener VM-Neuinstallations-/Boot-Test.
+Die Git-Testfixtures unterbinden Hintergrundwartung, nachdem ein CI-Lauf beim
+Aufräumen sonst von einem noch laufenden Git-Prozess gestört wurde.
 
 ## Noch keine abgeschlossenen Praxistests dieses Kandidaten
 
@@ -88,7 +109,7 @@ automatische Backports und automatische Issue-Schließung sind im Integrationsst
 entfernt. Server-Build-, Installer- und serverbezogene CodeQL-Prüfungen bleiben.
 Kein Registry-Schreibrecht, kein Tag-/Release-Publish-Job, kein Zielserver-Deployment.
 GitHub-Actions-Laufergebnisse sind getrennt von lokalen Ergebnissen zu betrachten.
-Die bestehenden geschützten Quellbranches und alle Tags bleiben unverändert;
+Die bisherigen zu erhaltenden Quellbranches und alle Tags bleiben unverändert;
 `master` bleibt GitHub-Standardbranch. Schutzregeln werden nicht neu eingerichtet.
 
 [Ubuntu-Setup](setup.md) · [Docker](docker.md) ·

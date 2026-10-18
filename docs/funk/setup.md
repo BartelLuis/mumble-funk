@@ -242,8 +242,7 @@ Containerumgebung stehen im [Setup-Prüfbericht](SETUP-STATUS.md).
 ## Unterstützte Quellstände und Wechsel auf Stable
 
 Das neue Setup akzeptiert unveränderte Checkouts von `stable` oder `funk-v0.1`,
-deren HEAD dem jeweiligen lokalen `origin`-Referenzstand entspricht. Vorher `git fetch
-origin` verwenden. `origin` muss auf `Shawna7han/mumble-funk` zeigen. `dev`, Feature-
+deren HEAD dem jeweiligen lokalen `origin`-Referenzstand entspricht. Vorher `git fetch origin` verwenden. `origin` muss auf `Shawna7han/mumble-funk` zeigen. `dev`, Feature-
 Branches, lokale Zusatzcommits und unbekannte Quellstände bleiben gesperrt. Das ist
 eine Bedienungsschutzprüfung, kein Ersatz für eine kryptografische Signatur.
 

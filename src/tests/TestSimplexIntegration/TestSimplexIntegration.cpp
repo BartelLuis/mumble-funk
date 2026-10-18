@@ -16,7 +16,124 @@ private slots:
 	void udpNonceProtocol_data();
 	void udpNonceProtocol();
 	void udpFenceDiscardsUnauthenticatedDatagram();
+	void udpCiphertextLooksLikePing_data();
+	void udpCiphertextLooksLikePing();
+	void unencryptedServerInfo_data();
+	void unencryptedServerInfo();
 };
+
+void TestSimplexIntegration::udpCiphertextLooksLikePing_data() {
+	QTest::addColumn< bool >("modern");
+	QTest::addColumn< bool >("knownPeer");
+	QTest::addColumn< bool >("extended");
+	for (bool modern : { false, true })
+		for (bool known : { false, true })
+			for (bool extended : { false, true }) {
+				const auto name = QString("%1-%2-%3")
+					.arg(modern ? "modern" : "legacy")
+					.arg(known ? "known-peer" : "first-datagram")
+					.arg(extended ? "extended-lookalike" : "connectivity-lookalike");
+				QTest::newRow(qPrintable(name)) << modern << known << extended;
+			}
+}
+
+void TestSimplexIntegration::udpCiphertextLooksLikePing() {
+	QFETCH(bool, modern);
+	QFETCH(bool, knownPeer);
+	QFETCH(bool, extended);
+	Fixture f;
+	QVERIFY(f.start("true", 5000, 5000, false));
+	Client client;
+	QVERIFY(client.login(f.port, "PingCollision", modern));
+	QVERIFY(client.udp.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	const auto resync = [&](const std::string &iv) {
+		if (!client.crypt.setEncryptIV(iv)) return false;
+		MumbleProto::CryptSetup setup;
+		setup.set_client_nonce(iv);
+		return client.send(Type::CryptSetup, setup) && client.barrier();
+	};
+	if (knownPeer) {
+		auto bootstrap = client.crypt.getEncryptIV();
+		bootstrap[0] = 64;
+		QVERIFY(resync(bootstrap));
+		QVERIFY(client.udpBarrier());
+	}
+	Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > encoder(client.version);
+	Mumble::Protocol::PingData ping;
+	ping.timestamp = 42;
+	const auto plain = encoder.encodePingPacket(ping);
+	QByteArray encrypted(static_cast< int >(plain.size() + 4), '\0');
+	CryptStateOCB2 scratch;
+	QVERIFY(scratch.setKey(client.crypt.getRawKey(), client.crypt.getEncryptIV(), client.crypt.getDecryptIV()));
+	auto iv = client.crypt.getEncryptIV();
+	iv[0] = 0;
+	bool found = false;
+	// Search only offline test nonces. Send the selected authenticated packet
+	// through the real server; never avoid the collision or replace a failure.
+	for (unsigned int candidate = 0; candidate < 1000000; ++candidate) {
+		iv[1] = static_cast< char >(candidate & 0xff);
+		iv[2] = static_cast< char >((candidate >> 8) & 0xff);
+		iv[3] = static_cast< char >((candidate >> 16) & 0xff);
+		QVERIFY(scratch.setEncryptIV(iv));
+		QVERIFY(scratch.encrypt(plain.data(), reinterpret_cast< unsigned char * >(encrypted.data()),
+							static_cast< unsigned int >(plain.size())));
+		Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Server > probe(client.version);
+		if (probe.decodePing(gsl::span< const Mumble::Protocol::byte >(
+				reinterpret_cast< const Mumble::Protocol::byte * >(encrypted.constData()),
+				static_cast< std::size_t >(encrypted.size())))
+			&& probe.getPingData().requestAdditionalInformation == extended) {
+			found = true;
+			break;
+		}
+	}
+	QVERIFY2(found, "Could not construct a ciphertext/plaintext ping collision");
+	QVERIFY(resync(iv));
+	QVERIFY2(client.udpBarrier(42), "Authenticated ping was mistaken for an unencrypted discovery ping");
+}
+
+void TestSimplexIntegration::unencryptedServerInfo_data() {
+	QTest::addColumn< bool >("modern");
+	QTest::addColumn< int >("peer");
+	for (bool modern : { false, true })
+		for (int peer : { 0, 1, 2 }) {
+			const auto name = QString("%1-peer-%2").arg(modern ? "modern" : "legacy").arg(peer);
+			QTest::newRow(qPrintable(name)) << modern << peer;
+		}
+}
+
+void TestSimplexIntegration::unencryptedServerInfo() {
+	QFETCH(bool, modern);
+	QFETCH(int, peer);
+	Fixture f;
+	QVERIFY(f.start("false", 5000, 5000, false));
+	Client client;
+	QUdpSocket discovery;
+	QUdpSocket &socket = peer ? client.udp : discovery;
+	if (peer)
+		QVERIFY(client.login(f.port, "PublicPingClient", modern));
+	QVERIFY(socket.bind(QHostAddress(QHostAddress::LocalHost), 0));
+	if (peer == 2)
+		QVERIFY(client.udpBarrier());
+	const auto version = modern ? Version::fromComponents(1, 5, 0) : Version::fromComponents(1, 2, 5);
+	Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > encoder(version);
+	Mumble::Protocol::PingData ping;
+	ping.timestamp = 12345;
+	ping.requestAdditionalInformation = true;
+	const auto data = encoder.encodePingPacket(ping);
+	QCOMPARE(socket.writeDatagram(reinterpret_cast< const char * >(data.data()), static_cast< qint64 >(data.size()),
+								 QHostAddress::LocalHost, f.port), static_cast< qint64 >(data.size()));
+	QVERIFY(socket.waitForReadyRead(2000));
+	QByteArray response(static_cast< int >(socket.pendingDatagramSize()), '\0');
+	QCOMPARE(socket.readDatagram(response.data(), response.size()), static_cast< qint64 >(response.size()));
+	Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Client > decoder(version);
+	QVERIFY(decoder.decodePing(gsl::span< const Mumble::Protocol::byte >(
+		reinterpret_cast< const Mumble::Protocol::byte * >(response.constData()),
+		static_cast< std::size_t >(response.size()))));
+	QCOMPARE(decoder.getPingData().timestamp, ping.timestamp);
+	QVERIFY(decoder.getPingData().serverVersion != Version::UNKNOWN);
+	if (peer)
+		QVERIFY(client.udpBarrier()); // Public pings must not desynchronize an authenticated client.
+}
 
 void TestSimplexIntegration::udpNonceProtocol_data() {
 	QTest::addColumn< bool >("modern");

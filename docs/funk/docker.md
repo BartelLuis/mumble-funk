@@ -424,18 +424,25 @@ Sperren, Konfiguration und Archivprüfung sowie echte Compose-Integrationstests.
 Die Protokollprobe benutzt authentifizierte Testclients und verschlüsselte UDP-
 Pakete mit überprüften Testnutzdaten durch den veröffentlichten Host-Port. Sie
 prüft die Weiterleitungs-/Simplex-Entscheidungen, keine hörbare Opus-Wiedergabe.
-Der Server benötigt dafür keinen Opus-Encoder. Der echte Gerätetest bleibt offen.
+Der Server benötigt dafür keinen Opus-Encoder. Der echte Gerätetest des neuen Integrationscommits bleibt offen.
 
-Es wurden keine Simplex-Regeln oder Serverfunktionen für Docker geändert. Die im
-Audio-Zweig separat behandelte seltene v0.2-UDP-Nonce/Versions-Erkennung wird hier
-nicht automatisch übernommen. Die Docker-Probe und ausschließlich für den
-Docker-Build erzeugte Kopien der bestehenden Simplex-/Diagnose-Testhilfen benutzen
-kontrollierte, gültige Test-Nonce-Bereiche. Die
-ursprünglichen Testquellen bleiben unverändert, ebenso sämtliche Sprach-/Routing-
-Assertions. Die UDP-Testhilfe verwirft unpassende ungültige Datagramme und verlangt
-weiterhin den passenden authentifizierten Ping. Das macht die Verpackungsprüfung
-reproduzierbarer; es ist keine Behebung oder vollständige Prüfung der bekannten
-v0.2-Paketverlust-/Nonce-Grenzfälle.
+Die Simplex-Regeln bleiben unverändert. Der gemeinsame Integrationsstand behebt
+gezielt den UDP-Nonce-/Versionsfehler, nachdem ein deterministischer Test ihn am
+alten Server nachgewiesen hat. Nach der Entschlüsselung wird die bekannte
+Clientversion verwendet. Die acht Kombinationen aus alten/neuen Paketformaten,
+bekanntem/unbekanntem Peer und Simplex an/aus werden direkt getestet.
+Zusätzliche Regressionstests erzwingen verschlüsselte Pakete, die zufällig auch
+wie öffentliche Pings aussehen. Die Authentifizierung hat Vorrang; echte
+öffentliche Serverabfragen bleiben verfügbar und werden gesondert geprüft.
+Docker erzeugt keine angepassten Kopien der Testquellen und vermeidet keine
+kritischen Nonce-Werte mehr. Alle Routing-Assertions bleiben bestehen; der
+zusätzliche Test der UDP-Ping-Warteschleife verlangt eine echte authentifizierte
+Antwort auch nach einem ungültigen Datagramm.
+
+Für die neue Integration gilt der
+[gemeinsame Prüfbericht](STABLE-INTEGRATION-STATUS.md). Der bisherige
+[Docker-Prüfbericht](DOCKER-STATUS.md) beschreibt ausdrücklich den historischen
+Feature-Branch. Seine dort genannten Testadapter sind kein Teil von Stable.
 
 Keine Behauptung von Produktionsreife, abgeschlossenem Langzeittest oder getesteter
 ARM-/Windows-/macOS-Hostunterstützung. Ein echter Host-Neustart und der externe
@@ -462,9 +469,9 @@ Für eine spätere, bewusst durchgeführte Übernahme in `feature/audio-feedback
    Lizenzhinweise ergänzen. Versionsanzeigen und Testumfang auf v0.3 aktualisieren.
 3. Den bereits persistenten Bereich `/var/lib/mumble-funk/audio/` für eigene WAV-
    Dateien nutzen und den v0.3-Verwaltungsbefehl an diesen Containerpfad anpassen.
-4. Den Docker-Testhilfe-Abgleich mit den dortigen Simplex-/Diagnosetests prüfen. Bei Übernahme
-   der UDP-Korrektur kann der v0.2-spezifische Testadapter entfallen; der Build hält
-   bei einer unerwarteten Testhilfenversion ausdrücklich an.
+4. Den Testhilfe-Abgleich mit den zusätzlichen Audio-/Simplex-/Diagnosetests
+   prüfen. Die gemeinsame UDP-Korrektur und ihre Regressionstests erhalten;
+   keine alten Nonce-Testadapter wieder einführen.
 5. Feedback zunächst bewusst konfigurieren, vorhandene Dateien erhalten und alle
    Audio-, Routing-, Sicherungs- und Neustarttests erneut ausführen.
 

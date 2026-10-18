@@ -146,10 +146,10 @@ public:
 							 static_cast< unsigned int >(bytes.size()))
 			   && udp.writeDatagram(encrypted, QHostAddress::LocalHost, port) == encrypted.size();
 	}
-	bool udpBarrier() {
+	bool udpBarrier(std::uint64_t timestamp = 0) {
 		Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > encoder(version);
 		Mumble::Protocol::PingData ping;
-		ping.timestamp   = ++m_barrier;
+		ping.timestamp   = timestamp ? timestamp : ++m_barrier;
 		const auto bytes = encoder.encodePingPacket(ping);
 		if (!sendEncrypted(
 				QByteArray(reinterpret_cast< const char * >(bytes.data()), static_cast< int >(bytes.size()))))
