@@ -28,6 +28,8 @@ if(server)
 	use_test("TestVoiceDiagnostics")
 	use_test("TestSimplex")
 	use_test("TestSimplexIntegration")
+	use_test("TestAudioFeedback")
+	use_test("TestAudioFeedbackIntegration")
 endif()
 
 # Shared tests

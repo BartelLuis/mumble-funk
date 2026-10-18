@@ -137,6 +137,28 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 				.arg(m_simplex->timeoutMs())
 				.arg(m_simplex->retryMs()));
 	}
+	if (m_simplex && getConf("audiofeedback", Meta::mp.audioFeedback).toBool()
+		&& getConf("busytone", Meta::mp.busyTone).toBool()
+		&& getConf("busytonevolume", Meta::mp.busyToneVolume).toInt() > 0) {
+		try {
+			m_audioFeedback =
+				std::make_unique< AudioFeedback >(getConf("busytonevolume", Meta::mp.busyToneVolume).toInt(),
+												  getConf("busytonefile", Meta::mp.busyToneFile).toString());
+			if (!m_audioFeedback->warning().isEmpty())
+				log(QStringLiteral("Invalid busy tone WAV; using synthetic default: %1")
+						.arg(m_audioFeedback->warning()));
+			log(QStringLiteral("Busy tone source: %1")
+					.arg(m_audioFeedback->customBusy() ? QStringLiteral("custom PCM WAV")
+													   : QStringLiteral("synthetic double tone")));
+			m_audioFeedbackTimer = new QTimer(this);
+			m_audioFeedbackTimer->setTimerType(Qt::PreciseTimer);
+			connect(m_audioFeedbackTimer, &QTimer::timeout, this, &Server::deliverAudioFeedback);
+			m_audioFeedbackTimer->start(20);
+			log(QStringLiteral("Experimental audio feedback enabled: private Opus busy tone via TCP tunnel"));
+		} catch (const std::exception &error) {
+			log(QStringLiteral("Audio feedback disabled: %1").arg(QString::fromUtf8(error.what())));
+		}
+	}
 	if (getConf("voicediagnostics", Meta::mp.voiceDiagnostics).toBool()) {
 		VoiceDiagnostics::Config config;
 		const QString prefix = getConf("voicediagnosticsfile", Meta::mp.voiceDiagnosticsFile).toString();
@@ -363,6 +385,9 @@ Server::~Server() {
 #endif
 
 	stopThread();
+	if (m_audioFeedbackTimer)
+		m_audioFeedbackTimer->stop();
+	m_audioFeedback.reset();
 	if (m_simplexTimer)
 		m_simplexTimer->stop();
 	if (m_simplex)
@@ -1121,7 +1146,8 @@ void Server::sendMessage(ServerUser &u, const unsigned char *data, int len, QByt
 	if ((u.aiUdpFlag.load() == 1 || force) && (u.sUdpSocket != INVALID_SOCKET)) {
 #endif
 #if defined(__LP64__)
-		static std::vector< char > ebuffer;
+		// TCP and UDP ingress may forward concurrently; scratch storage must not be shared.
+		static thread_local std::vector< char > ebuffer;
 		ebuffer.resize(static_cast< std::size_t >(len + 4 + 16));
 		char *buffer = reinterpret_cast< char * >(
 			((reinterpret_cast< quint64 >(ebuffer.data()) + 8) & static_cast< quint64 >(~7)) + 4);
@@ -1290,8 +1316,15 @@ void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, Au
 				u->bwr.addFrame(static_cast< int >(20 + 8 + 4 + audioData.payload.size()), iMaxBandwidth / 8);
 		}
 		transmission = m_simplex->begin(packet);
-		if (!transmission.allowed)
+		if (!transmission.allowed) {
+			const bool feedback = transmission.feedback;
+			transmission.lock.unlock(); // No queueing, encoding or delivery under the Simplex mutex.
+			if (feedback && m_audioFeedback)
+				m_audioFeedback->request(AudioFeedback::Signal::Busy,
+										 { packet.context.connection, packet.context.session, packet.context.channel },
+										 SimplexController::monotonicUs());
 			return;
+		}
 	} else {
 		if (u->bMute || u->bSuppress || u->bSelfMute)
 			return;
@@ -1816,6 +1849,8 @@ void Server::connectionClosed(QAbstractSocket::SocketError err, const QString &r
 	{
 		QWriteLocker wl(&qrwlVoiceThread);
 
+		if (m_audioFeedback)
+			m_audioFeedback->cancel(u->diagnosticConnection);
 		qhUsers.remove(u->uiSession);
 		if (m_simplex)
 			m_simplex->disconnect(u->diagnosticConnection);
@@ -1957,6 +1992,35 @@ void Server::checkTimeout() {
 	qrwlVoiceThread.unlock();
 	foreach (ServerUser *u, qlClose)
 		u->rejectConnection(true);
+}
+
+void Server::deliverAudioFeedback() {
+	// Main-thread only. No raw user pointer survives this callback. TCP tunneling
+	// uses the normal client decoder even for clients sending encrypted UDP audio.
+	m_audioFeedback->tick(SimplexController::monotonicUs(), [this](const AudioFeedback::Recipient &recipient,
+																   const QByteArray &payload, std::uint64_t frame,
+																   bool last) {
+		ServerUser *user = qhUsers.value(recipient.session);
+		if (!user || user->diagnosticConnection != recipient.connection || !user->cChannel
+			|| static_cast< unsigned int >(user->cChannel->iId) != recipient.channel
+			|| user->sState != ServerUser::Authenticated || user->bDeaf || user->bSelfDeaf || !user->bOpus
+			|| !user->feedbackWritable())
+			return false;
+		Mumble::Protocol::AudioData audio;
+		audio.senderSession =
+			recipient.session; // Own-session audio is supported by server loopback in existing clients.
+		audio.frameNumber     = frame;
+		audio.isLastFrame     = last;
+		audio.targetOrContext = Mumble::Protocol::AudioContext::NORMAL;
+		audio.payload         = gsl::span< const Mumble::Protocol::byte >(
+            reinterpret_cast< const Mumble::Protocol::byte * >(payload.constData()),
+            static_cast< std::size_t >(payload.size()));
+		Mumble::Protocol::UDPAudioEncoder< Mumble::Protocol::Role::Server > encoder(user->m_version);
+		const auto bytes = encoder.encodeAudioPacket(audio);
+		tcpTransmitData(QByteArray(reinterpret_cast< const char * >(bytes.data()), static_cast< int >(bytes.size())),
+						recipient.session);
+		return true;
+	});
 }
 
 void Server::tcpTransmitData(QByteArray a, unsigned int id) {
@@ -2139,6 +2203,8 @@ void Server::userEnterChannel(User *p, Channel *c, MumbleProto::UserState &mpus)
 
 	{
 		QWriteLocker wl(&qrwlVoiceThread);
+		if (m_audioFeedback)
+			m_audioFeedback->cancel(static_cast< ServerUser * >(p)->diagnosticConnection);
 		if (m_simplex) {
 			m_simplex->invalidate(static_cast< ServerUser * >(p)->diagnosticConnection,
 								  QStringLiteral("channel_changed"));
