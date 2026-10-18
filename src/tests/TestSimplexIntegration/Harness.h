@@ -159,7 +159,40 @@ public:
 							 static_cast< unsigned int >(bytes.size()))
 			   && udp.writeDatagram(encrypted, QHostAddress::LocalHost, port) == encrypted.size();
 	}
-	QList< Received > audio(int milliseconds = 80) {
+	bool udpBarrier() {
+		Mumble::Protocol::UDPPingEncoder< Mumble::Protocol::Role::Client > encoder(version);
+		Mumble::Protocol::PingData ping;
+		ping.timestamp   = ++m_barrier;
+		const auto bytes = encoder.encodePingPacket(ping);
+		if (!sendEncrypted(
+				QByteArray(reinterpret_cast< const char * >(bytes.data()), static_cast< int >(bytes.size()))))
+			return false;
+		QElapsedTimer timer;
+		timer.start();
+		do {
+			if (!udp.hasPendingDatagrams())
+				udp.waitForReadyRead(10);
+			while (udp.hasPendingDatagrams()) {
+				QByteArray encrypted(static_cast< int >(udp.pendingDatagramSize()), '\0');
+				if (udp.readDatagram(encrypted.data(), encrypted.size()) != encrypted.size() || encrypted.size() < 5)
+					return false;
+				QByteArray plain(encrypted.size() - 4, '\0');
+				if (!crypt.decrypt(reinterpret_cast< const unsigned char * >(encrypted.constData()),
+								   reinterpret_cast< unsigned char * >(plain.data()),
+								   static_cast< unsigned int >(encrypted.size())))
+					return false;
+				Mumble::Protocol::UDPDecoder< Mumble::Protocol::Role::Client > decoder(version);
+				if (decoder.decode(gsl::span< const Mumble::Protocol::byte >(
+						reinterpret_cast< const Mumble::Protocol::byte * >(plain.constData()),
+						static_cast< std::size_t >(plain.size())))
+					&& decoder.getMessageType() == Mumble::Protocol::UDPMessageType::Ping
+					&& decoder.getPingData().timestamp == ping.timestamp)
+					return true;
+			}
+		} while (timer.elapsed() < 2000);
+		return false;
+	}
+	QList< Received > audio(int milliseconds = 80, int minimumPackets = 0) {
 		QList< Received > result;
 		QElapsedTimer timer;
 		timer.start();
@@ -182,11 +215,11 @@ public:
 				}
 			}
 			socket.waitForReadyRead(5);
-		} while (timer.elapsed() < milliseconds);
+		} while (timer.elapsed() < milliseconds || (result.size() < minimumPackets && timer.elapsed() < 2000));
 		return result;
 	}
 	bool expect(const Client &sender, bool yes = true, bool last = false, bool payload = true) {
-		const auto packets = audio();
+		const auto packets = audio(80, yes ? 1 : 0);
 		if (!yes)
 			return packets.isEmpty();
 		return packets.size() == 1 && packets[0].session == sender.session && packets[0].frame == sender.lastSent

@@ -48,7 +48,7 @@ if [[ -z $root ]]; then
         useradd --system --user-group --home-dir /var/lib/mumble-funk --shell /usr/sbin/nologin mumble-funk
     fi
 fi
-install -d -m 0755 "$base/releases/$release" "$root/etc/systemd/system" "$root/etc/logrotate.d"
+install -d -m 0755 "$base" "$base/releases" "$base/releases/$release" "$root/etc/systemd/system" "$root/etc/logrotate.d"
 install -d -m 0750 "$root/etc/mumble-funk" "$root/var/lib/mumble-funk" "$root/var/log/mumble-funk"
 if [[ ! -e $base/releases/$release/mumble-server ]]; then
     install -m 0755 "$binary" "$base/releases/$release/mumble-server"

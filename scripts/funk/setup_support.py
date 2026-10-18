@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local deployment checks and connection information. Never changes server state."""
+"""Local deployment checks, creation of new configuration, and connection information."""
 import argparse
 from contextlib import closing
 import ast

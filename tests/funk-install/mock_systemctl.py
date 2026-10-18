@@ -68,3 +68,4 @@ elif command != 'daemon-reload':
     sys.exit('Nicht unterstützter Testaufruf: ' + command)
 if os.geteuid() == 0:
     statefile.write_text(json.dumps(state))
+    statefile.chmod(0o644)

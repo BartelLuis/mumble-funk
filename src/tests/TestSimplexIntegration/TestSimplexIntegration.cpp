@@ -38,6 +38,7 @@ void TestSimplexIntegration::ownership() {
 	QVERIFY(a.speak());
 	QVERIFY(observer.expect(a));
 	QVERIFY(b.speak(true));
+	QVERIFY(b.udpBarrier());
 	QVERIFY(observer.expect(b, !enabled));
 	QVERIFY(a.speak(false, true));
 	QVERIFY(observer.expect(a, true, true));
@@ -58,7 +59,12 @@ void TestSimplexIntegration::ownership() {
 			QVERIFY(a.speak(true));
 			QVERIFY(b.speak());
 		}
-		const auto received = observer.audio(100);
+		// Wait until both server ingress paths have processed their packets before
+		// sending end markers. This keeps scheduler delay out of the race assertion.
+		QVERIFY((i % 2 ? b : a).udpBarrier());
+		QVERIFY(a.barrier());
+		QVERIFY(b.barrier());
+		const auto received = observer.audio(100, enabled ? 1 : 2);
 		QCOMPARE(received.size(), enabled ? 1 : 2);
 		for (const auto &p : received) {
 			QVERIFY(p.session == a.session || p.session == b.session);
@@ -66,7 +72,9 @@ void TestSimplexIntegration::ownership() {
 		}
 		QVERIFY(a.speak(false, true));
 		QVERIFY(b.speak(false, true));
-		QCOMPARE(observer.audio(100).size(), enabled ? 1 : 2);
+		QVERIFY(a.barrier());
+		QVERIFY(b.barrier());
+		QCOMPARE(observer.audio(100, enabled ? 1 : 2).size(), enabled ? 1 : 2);
 	}
 	// The existing packet diagnostic sees both accepted and denied UDP/TCP data.
 	QTRY_VERIFY(f.events("voice").size() > 30);
@@ -79,10 +87,21 @@ void TestSimplexIntegration::ownership() {
 	}
 	QVERIFY(udp >= 8);
 	QVERIFY(tcp >= 8);
+	// Forwarding assertions above are authoritative. Diagnostics are asynchronous
+	// and explicitly allowed to drop records under contention. Drain them and
+	// account for reported loss rather than requiring a lossless event stream.
+	f.server.stop();
 	if (enabled) {
-		QTRY_VERIFY(f.count("granted") >= 10);
-		QVERIFY(f.count("denied") >= 9);
-		QVERIFY(f.count("released", "marker_confirmed") >= 10);
+		const auto events = f.events("simplex");
+		QVERIFY(!events.isEmpty());
+		QCOMPARE(events.last().value("event").toString(), QString("simplex_log_stopped"));
+		const auto lost = events.last().value("dropped_total").toString().toULongLong();
+		QVERIFY(f.count("granted") > 0);
+		QVERIFY(f.count("denied") > 0);
+		QVERIFY(f.count("released", "marker_confirmed") > 0);
+		QVERIFY(static_cast< qulonglong >(f.count("granted")) + lost >= 10);
+		QVERIFY(static_cast< qulonglong >(f.count("denied")) + lost >= 9);
+		QVERIFY(static_cast< qulonglong >(f.count("released", "marker_confirmed")) + lost >= 10);
 	} else {
 		QVERIFY(!QFile::exists(f.directory.filePath("simplex.1.jsonl")));
 	}

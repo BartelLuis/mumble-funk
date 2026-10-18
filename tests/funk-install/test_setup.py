@@ -249,6 +249,15 @@ class OrchestrationTests(unittest.TestCase):
             if call[0] == "sudo":
                 self.assertFalse(any(arg.endswith("build.sh") for arg in call))
 
+    def test_restrictive_umask_keeps_program_paths_traversable(self):
+        result = subprocess.run(["bash", "-c", 'umask 077; exec bash "$1"', "setup-test",
+                                 str(self.repo / "scripts/funk/setup.sh")],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        base = self.repo / "stage/opt/mumble-funk"
+        for directory in (base, base / "releases", (base / "current").resolve()):
+            self.assertEqual(directory.stat().st_mode & 0o777, 0o755, str(directory))
+
     def test_failure_before_deployment(self):
         for failure in ("apt-update", "apt-install", "build", "tests", "network"):
             with self.subTest(failure=failure):
