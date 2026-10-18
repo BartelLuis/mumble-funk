@@ -29,7 +29,11 @@ class SourceTests(unittest.TestCase):
         self.git("config", f"url.{self.remote}.insteadOf", OFFICIAL)
 
     def run_git(self, *args, cwd=None):
-        return subprocess.run(["git", *args], cwd=cwd or self.repo, check=True,
+        # A detached CI checkout can trigger auto-maintenance after our local
+        # fixture commits. Keep it synchronous/off so no Git child recreates
+        # files while TemporaryDirectory removes its disposable repository.
+        return subprocess.run(["git", "-c", "gc.auto=0", "-c", "maintenance.auto=false",
+                               "-c", "gc.autoDetach=false", *args], cwd=cwd or self.repo, check=True,
                               capture_output=True, text=True)
 
     def git(self, *args):
