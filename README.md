@@ -17,6 +17,18 @@ production readiness and long-term reliability have not been established.
 [Enable Simplex / update](docs/funk/simplex.md) ·
 [Verification report](docs/funk/SIMPLEX-STATUS.md)
 
+## Optional Docker installation — experimental
+
+The separate [`feature/docker-install`](https://github.com/Shawna7han/mumble-funk/tree/feature/docker-install)
+branch adds a rootless Docker Compose installation of **Simplex v0.2**. It creates
+its configuration and random access password on first start and keeps state in
+separate named volumes. Audio Feedback v0.3 is not included.
+
+[Docker setup, backups and recovery (Deutsch)](docs/funk/docker.md) ·
+[Docker verification report](docs/funk/DOCKER-STATUS.md)
+
+The Ubuntu quick setup below remains the normal `funk-v0.1` installation.
+
 ## Quick installation — Ubuntu 24.04 / 26.04 LTS
 
 Run as a normal user with **sudo access**, not as root. You need Internet access,

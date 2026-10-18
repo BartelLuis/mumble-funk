@@ -33,3 +33,28 @@ endif()
 string(REPLACE "${original_decrypt}" "${docker_decrypt}" docker_harness "${docker_harness}")
 file(WRITE "${CMAKE_BINARY_DIR}/DockerSimplexHarness.h" "${docker_harness}")
 target_compile_options(TestSimplexIntegration PRIVATE -include "${CMAKE_BINARY_DIR}/DockerSimplexHarness.h")
+
+# The older diagnostics test has its own client implementation and the same
+# random first-UDP-byte exposure. Adapt only its generated build copy as well.
+# A TCP ping fence ensures that the server has processed the nonce resync.
+file(READ "${CMAKE_SOURCE_DIR}/src/tests/TestVoiceDiagnostics/TestVoiceDiagnostics.cpp" docker_diagnostics)
+string(FIND "${docker_diagnostics}" "${original_login}" diagnostics_login_position)
+if(diagnostics_login_position LESS 0)
+ message(FATAL_ERROR "The Docker diagnostics test adapter needs review")
+endif()
+set(diagnostics_login [=[
+if (!crypt.isValid()) return false;
+auto dockerIV = crypt.getEncryptIV(); dockerIV[0] = 64;
+if (!crypt.setEncryptIV(dockerIV)) return false;
+MumbleProto::CryptSetup dockerResync; dockerResync.set_client_nonce(dockerIV);
+MumbleProto::Ping dockerFence; dockerFence.set_timestamp(1);
+return send(Mumble::Protocol::TCPMessageType::CryptSetup, dockerResync)
+    && send(Mumble::Protocol::TCPMessageType::Ping, dockerFence)
+    && receive(Mumble::Protocol::TCPMessageType::Ping, data);
+]=])
+string(REPLACE "${original_login}" "${diagnostics_login}" docker_diagnostics "${docker_diagnostics}")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/docker-tests")
+file(WRITE "${CMAKE_BINARY_DIR}/docker-tests/TestVoiceDiagnostics.cpp" "${docker_diagnostics}")
+set_property(TARGET TestVoiceDiagnostics PROPERTY SOURCES
+ "${CMAKE_BINARY_DIR}/docker-tests/TestVoiceDiagnostics.cpp"
+ "${CMAKE_SOURCE_DIR}/src/murmur/VoiceDiagnostics.cpp")
