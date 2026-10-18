@@ -2,10 +2,15 @@
 
 Diese Anleitung installiert unseren Entwicklungszweig `funk-v0.1` auf Basis von
 Mumble 1.5.939. Der vorhandene Standardserver auf **64738** bleibt bestehen.
-Der zusätzliche Server verwendet **64739 für TCP und UDP**. Die optionale
-Simplex-Sendesteuerung ist standardmäßig ausgeschaltet. Aktivierung, Update und
+Der zusätzliche Server verwendet **64739 für TCP und UDP**. Beim hier beschriebenen manuellen Weg ist die optionale
+Simplex-Sendesteuerung standardmäßig ausgeschaltet. Aktivierung, Update und
 Praxistest stehen in der [Simplex-Anleitung](simplex.md). Mumla und Windows-Mumble
 bleiben unverändert.
+
+**Einfachster Einstieg:** Die neue [automatische Setup-Anleitung](setup.md) erledigt
+Abhängigkeiten, Build, Tests und Einrichtung ohne manuelles Bearbeiten der INI.
+Bei einer Neuinstallation aktiviert sie Simplex mit 500/500 ms. Diese ausführliche
+Anleitung bleibt als manueller und technischer Weg erhalten.
 
 Die folgenden Befehle führst du **später auf deiner Ubuntu-VM** aus, beispielsweise
 nach der Anmeldung per SSH. Diese Vorbereitung installiert dort noch nichts.

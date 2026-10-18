@@ -16,8 +16,40 @@ ist implementiert und automatisiert getestet. Eine Produktionsreife oder dauerha
 zuverlässiger Betrieb unter allen Netzbedingungen ist damit noch nicht belegt.
 
 [English / Hauptvorstellung](README.md) ·
-[Installation unter Ubuntu](docs/funk/installation-ubuntu.md) ·
+[Automatische Installation](docs/funk/setup.md) ·
 [Simplex aktivieren und testen](docs/funk/simplex.md)
+
+## Schnellinstallation — Ubuntu 24.04 / 26.04 LTS
+
+Als normaler Benutzer mit **sudo-Rechten** starten, nicht als root. Erforderlich
+sind Internetzugang, mindestens 2 GiB RAM einschließlich Swap (4 GiB RAM empfohlen)
+und 8 GiB freier Speicher.
+
+```bash
+sudo apt update && sudo apt install -y git
+
+git clone --branch funk-v0.1 --recurse-submodules \
+  https://github.com/Shawna7han/mumble-funk.git
+
+cd mumble-funk
+bash scripts/funk/setup.sh
+```
+
+Das Setup installiert fehlende Abhängigkeiten, kompiliert, führt alle Servertests
+aus und richtet nur nach erfolgreichen Tests den eigenen Dienst ein.
+Bei **neuen Installationen ist Simplex automatisch aktiv**, auf **64739 TCP/UDP**
+mit 500 ms für Belegungstimeout und Paketruhe. Bestehende Einstellungen,
+Passwörter, Datenbanken und Zertifikate bleiben erhalten.
+
+Verbindungsdaten und zufälliges Zugangspasswort lokal abrufen:
+
+```bash
+sudo mumble-funk-info
+```
+
+Firewalls und Router werden nicht verändert. Bei einem bereits vorhandenen
+Quellverzeichnis die Update-Anleitung verwenden, nicht darüber klonen.
+[Alle Schritte, Alternativport, Updates und sichere Entfernung](docs/funk/setup.md).
 
 ## Was bereits funktioniert
 
@@ -27,7 +59,7 @@ zuverlässiger Betrieb unter allen Netzbedingungen ist damit noch nicht belegt.
 | Gleichzeitige Sendeversuche | UDP und TCP teilen sich dieselbe atomare Vergabe. Es gibt nur einen Besitzer pro Kanal. |
 | Abgewiesene Aussendung | Bei fortlaufenden Paketen bleibt sie stumm, auch wenn der Kanal wieder frei wird. Ein neuer Versuch ist erforderlich. |
 | Ende und Timeout | Eine gültige Ende-Markierung gibt den Kanal frei. Ohne Marker gilt standardmäßig ein Timeout von 500 ms ohne gültiges neues Paket. |
-| Wiederholter Versuch | Ohne Marker wird ein neuer Versuch nach standardmäßig 1.000 ms Paketruhe angenommen. Die Zeiten sind konfigurierbar. |
+| Wiederholter Versuch | Ohne Marker gilt im Kern standardmäßig 1.000 ms Paketruhe. Neue Installationen mit `setup.sh` verwenden 500 ms. Die Zeiten sind konfigurierbar. |
 | Wechsel und Abbruch | Kanalwechsel, erkannter Verbindungsabbruch und Verlust der Sendeberechtigung geben das Senderecht frei. |
 | Diagnose | Optionale PTT-/Sprachpaketdiagnose und eigene Simplex-Diagnose für Vergabe, Ablehnung und Freigabe. |
 | Bestehende Clients | Keine Änderungen an Clients oder Mumble-Protokoll erforderlich. |
@@ -37,8 +69,10 @@ Dateizugriffe erfolgen in Hintergrundthreads. Bei Überlast können Diagnoseeint
 fehlen, ohne die Vergabe des Senderechts zu verändern. Für die Funklogik werden
 Sprachdaten nicht dekodiert und neu kodiert.
 
-**Simplex ist standardmäßig ausgeschaltet.** Ohne Aktivierung bleibt die normale
-Mumble-Sprachweiterleitung verfügbar.
+**Neue Installationen mit `setup.sh` aktivieren Simplex automatisch.** Der Kern
+und der manuelle Installationsweg bleiben standardmäßig ausgeschaltet. Bestehende
+Installationen behalten ihre Einstellung; bei ausgeschaltetem Simplex gilt die
+normale Mumble-Sprachweiterleitung.
 
 ## Ein einfaches Funkbeispiel
 
@@ -68,8 +102,10 @@ Windows-Client wurde eine Ende-Markierung beobachtet. Diese Ergebnisse gelten
 für die beobachteten Versuche und sind keine Zusage für jede Clientversion.
 Andere Mumble-Clients sind nicht umfassend praktisch geprüft.
 
-Die automatisierten Ergebnisse sind **keine abgeschlossene Hörprobe der
-Simplex-Engine mit echten Endgeräten**. Testdaten, Umgebung und Grenzen stehen im
+Der Betreiber berichtet inzwischen zusätzlich von erfolgreichen ersten
+Simplex-v0.2-Praxistests mit Android-Mumla und Windows-Mumble unter Ubuntu Server
+26.04.1. Das ist noch keine umfassende Prüfung aller Geräte oder Netzbedingungen.
+Die automatisierten Ergebnisse selbst ersetzen keine Hörprobe mit Endgeräten. Testdaten, Umgebung und Grenzen stehen im
 [Prüfbericht](docs/funk/SIMPLEX-STATUS.md). Es wird kein laufender CI-Status behauptet.
 
 ## Bekannte Einschränkungen
@@ -98,20 +134,21 @@ keine zweite Installationsanleitung:
 
 | Aufgabe | Anleitung |
 | --- | --- |
-| Voraussetzungen und Erstinstallation | [Ubuntu-Installation](docs/funk/installation-ubuntu.md) |
+| Automatische Einrichtung, Zugangsdaten, Updates und Entfernung | [Setup-Anleitung](docs/funk/setup.md) |
+| Voraussetzungen und manueller Installationsweg | [Ubuntu-Installation](docs/funk/installation-ubuntu.md) |
 | Aktualisieren, Simplex einschalten, Einstellungen und Rückkehr zur vorherigen Version | [Simplex-Anleitung](docs/funk/simplex.md) |
 | Android-/Windows-Test mit optionalem dritten Beobachter | [Praxistestplan](docs/funk/simplex.md#6-praxistest-mit-android-und-windows) |
 | Paketzeitpunkte und Ende-Markierungen untersuchen | [PTT-Diagnose](docs/funk/diagnose.md) |
 
-Ein Update allein aktiviert den Funkmodus nicht. Die Aktivierung erfolgt in der
-Serverkonfiguration mit anschließendem Neustart des Funkdienstes. Die Clients
-verbinden sich wie gewohnt mit dem zusätzlichen Server und brauchen keine Anpassung.
+Ein Update erhält die bestehende Einstellung des Funkmodus. Eine neue Installation
+über `setup.sh` aktiviert ihn automatisch. Die Clients verbinden sich wie gewohnt
+mit dem zusätzlichen Server und brauchen keine Anpassung.
 
 ## Roadmap
 
 | Stand | Inhalt |
 | --- | --- |
-| **Implementiert** | Simplex-Engine v0.2, optionale Diagnosesysteme und parallele Ubuntu-Installation. |
+| **Implementiert** | Simplex-Engine v0.2, optionale Diagnosesysteme und automatische parallele Ubuntu-Installation. |
 | **Aktuelle Entwicklungsziele** | Umfangreichere Praxistests, schnelle PTT-Wechsel innerhalb der Protokollgrenzen verbessern, Netzwerkstörungen untersuchen sowie Stabilität und Zuverlässigkeit durch längere Tests absichern. |
 | **Unverbindliche Zukunftsideen** | Busy Tone, Roger Beep, analoge Funk-Audioeffekte, Squelch, digitale Funkprofile und erweiterte Konfiguration. |
 

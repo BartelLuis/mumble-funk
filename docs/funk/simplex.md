@@ -5,7 +5,10 @@ Sender, dessen Sprachpaket der Server akzeptiert, belegt den Kanal. Andere Sende
 werden verworfen. Verschiedene Kanäle können gleichzeitig benutzt werden.
 Mumla und Windows-Mumble brauchen weder Änderungen noch Zusatzsoftware.
 
-**Der Modus ist standardmäßig aus.** Ein Update allein schaltet ihn nicht ein.
+**Der Kern und der manuelle Installationsweg sind standardmäßig aus.** Ein Update
+allein schaltet den Modus nicht ein. Die neue [automatische Installation](setup.md)
+aktiviert Simplex nur bei einer neuen Konfiguration mit 500/500 ms. Die manuelle
+Aktivierung unten verwendet weiterhin die konservativeren 500/1000 ms.
 Es gibt keine neuen Klangeffekte und keine Speicherung von Sprachinhalten.
 Alle folgenden Befehle betreffen ausschließlich unseren Dienst `mumble-funk`
 auf **64739 TCP/UDP**, nicht `mumble-server` auf 64738.

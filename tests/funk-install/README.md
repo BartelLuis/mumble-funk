@@ -4,8 +4,9 @@ Die Installationstests laufen getrennt von den 18 CTest-Programmen des Servers:
 
 ```bash
 python3 tests/funk-install/test_install.py build/funk/mumble-server
-bash -n scripts/funk/build.sh scripts/funk/install.sh scripts/funk/platform.sh
-shellcheck scripts/funk/build.sh scripts/funk/install.sh scripts/funk/platform.sh
+python3 tests/funk-install/test_setup.py
+bash -n scripts/funk/*.sh
+shellcheck scripts/funk/*.sh
 ```
 
 `shellcheck` ist ein optionales Entwicklungswerkzeug (`sudo apt install shellcheck`).
@@ -37,3 +38,30 @@ Konfiguration für dieses Testverzeichnis.
 
 Dieser Testmodus allein prüft weder systemd noch den Start beim Hochfahren.
 Für den Produktivbetrieb gilt die [Ubuntu-Anleitung](../../docs/funk/installation-ubuntu.md).
+
+
+## Automatisches Setup
+
+`test_setup.py` prüft 16 zusätzliche Fälle. Es verwendet echte temporäre
+Konfigurationsdateien und SQLite-Datenbanken; Paketmanager, Build-Werkzeuge und
+systemd-Aufrufe werden für die Orchestrierungs- und Fehlerfalltests ausdrücklich
+nachgebildet. Zu den Fällen zählen Paket-/Netzwerk-/Build-/Testfehler, Ressourcen,
+Portkonflikte, fremde Dienste, Passworterhaltung, Datenbank-Overrides, frische
+Startmeldungen und beide Listener. Der Socket-Test benötigt localhost-Zugriff.
+Die Orchestrierungstests müssen als normaler Benutzer ausgeführt werden.
+Ein eigener Test prüft die Verzeichnisrechte auch bei `umask 077`.
+
+`ubuntu_container_check.sh` ist ausschließlich für frische wegwerfbare
+Ubuntu-Docker-Container bestimmt. Es benötigt `--init --cap-add SYS_PTRACE`
+in einem eigenen PID-Namensraum, damit root die Socket-Besitzer des
+Dienstbenutzers erkennen kann. Ohne diese Berechtigung greift die sichere
+Abweisung unbekannter Portbesitzer. Es installiert fehlende Build-Abhängigkeiten
+über das echte Setup und baut/testet den echten Server als normaler Benutzer.
+`mock_systemctl.py` startet den echten Server unter dem Dienstbenutzer, ersetzt
+aber den systemd-Dienstmanager. Es ist **kein Nachweis von systemd-Supervision oder
+VM-Startverhalten**. Der Prüflauf muss außerdem eine nur lesbare Quellkopie unter
+`/input` und die öffentliche Proxy-CA unter `/run/proxy-ca.pem` erhalten, wenn die
+Cloud-Umgebung diese benötigt. Niemals auf einer produktiven VM verwenden.
+
+Die tatsächlich ausgeführten Ubuntu-Prüfungen werden in
+[SETUP-STATUS.md](../../docs/funk/SETUP-STATUS.md) festgehalten.
