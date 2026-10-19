@@ -21,7 +21,12 @@ interaktive Aufrufe und Setup-Ausgaben bleiben geheimnisfrei. Der bekannte Befeh
 Eine absichtliche Anzeige erfordert nun zusätzlich **`--show-password`**, ein
 interaktives stdin und stdout sowie ein verfügbares steuerndes Terminal.
 Das Passwort wird ausschließlich nach `/dev/tty` geschrieben, nie nach stdout
-oder stderr. Umleitungen und Pipes führen für diese Option zum Abbruch. Die
+oder stderr. Umleitungen und Pipes führen für diese Option zum Abbruch.
+Der Zugriff verwendet einen vorhandenen Gerätedeskriptor ohne `O_CREAT` oder
+`O_TRUNC`, mit `O_NOFOLLOW` und `O_CLOEXEC`. Vor jeder Ausgabe werden Zeichengerät
+und TTY-Eigenschaft geprüft. Unerwartete reguläre Dateien bleiben unverändert;
+symbolische Links werden nicht verfolgt. Teilweise geschriebene Ausgaben werden
+korrekt fortgesetzt und der Deskriptor wird in jedem Fall geschlossen. Die
 root-Prüfung für die echte Installation bleibt bestehen. `--hide-password` bleibt
 kompatibel; die beiden Optionen schließen sich gegenseitig aus.
 
@@ -30,9 +35,17 @@ absichtliche Terminalaufzeichnung oder das Mitlesen am Bildschirm kann die CLI
 nicht schützen; deshalb erfolgt die Anzeige ausschließlich nach ausdrücklicher
 Anforderung. Konfiguration, Passwort und Datenbank werden dabei nicht verändert.
 
+Im ersten Nachprüfungslauf verschwanden die ursprüngliche Log- und TLS-Warnung.
+CodeQL stufte jedoch `open("/dev/tty", "w").write(...)` als Klartextspeicherung
+in einer Datei ein. Das bezeichnete die absichtliche Terminalanzeige, keine
+Logdatei. Die anschließende Deskriptor-Härtung schließt zusätzlich tatsächliche
+Dateischreib-/Trunkierungsziele und unerwartete Symlinks aus; sie ist keine
+CodeQL-Ausnahme. Die neue Analyse dieses Folgecommits ist gesondert zu prüfen.
+
 Regressionstests prüfen echte Pseudoterminals und umgeleitete Ausgaben: Standard
 und alte Aufrufvarianten ohne Geheimnis, ausdrückliche Terminalanzeige, keine
-Offenlegung bei stdout-Umleitung oder fehlendem steuerndem Terminal.
+Offenlegung bei stdout-Umleitung oder fehlendem steuerndem Terminal; außerdem
+Erhalt einer unerwarteten regulären Datei und Verweigerung symbolischer Links.
 
 ## 2. TLS-Mindestversion im Integrationstest
 
@@ -94,13 +107,13 @@ Prüfung. Die anschließende Dienststartprüfung bleibt bestehen.
 ## Tests und GitHub-Bewertung
 
 Gezielter neuer Test: `python3 tests/funk-install/test_audio_security.py`.
-Die elf Fälle bestehen einschließlich IPv6 und echter Terminaltests. Die fünf
+Die 13 Fälle bestehen einschließlich IPv6 und echter Terminaltests. Die fünf
 bestehenden Preview-Tests bestehen mit explizitem TLS-Minimum ebenfalls.
 
 | Erneut ausgeführte lokale Prüfung | Ergebnis |
 | --- | --- |
 | Vollständige vorhandene Servertests, einschließlich Simplex/UDP/Busy Tone | 20/20 bestanden |
-| Neue Sicherheitstests | 11/11 bestanden, keine ausgelassen |
+| Neue Sicherheitstests | 13/13 bestanden, keine ausgelassen |
 | Bestehende Preview-Tests mit TLS-Minimum | 5/5 bestanden |
 | WAV-/Verwaltungs- und native Installationstests | 8/8 und 5/5 bestanden |
 | Setup- und Quellstandprüfungen | 16/16 und 14/14 bestanden |

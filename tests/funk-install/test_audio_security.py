@@ -107,6 +107,37 @@ class AudioSecurityTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertNotIn(self.password.encode(), output + errors + terminal)
 
+    def test_unexpected_regular_file_is_not_truncated_or_written(self):
+        target = self.root / 'unexpected-terminal'
+        target.write_bytes(b'PRESERVE EXISTING FILE')
+        original_open = os.open
+        descriptors = []
+        def open_unexpected(path, flags):
+            self.assertEqual(path, '/dev/tty')
+            descriptor = original_open(target, flags)
+            descriptors.append(descriptor)
+            return descriptor
+        with patch.object(sys.stdin, 'isatty', return_value=True), patch.object(sys.stdout, 'isatty', return_value=True):
+            with patch.object(SUPPORT.os, 'open', side_effect=open_unexpected):
+                with self.assertRaises(SUPPORT.SetupError):
+                    self.installation.show_password()
+        self.assertEqual(target.read_bytes(), b'PRESERVE EXISTING FILE')
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+
+    def test_unexpected_symlink_is_not_followed(self):
+        target = self.root / 'preserved'
+        target.write_bytes(b'PRESERVE SYMLINK TARGET')
+        link = self.root / 'unexpected-terminal'
+        link.symlink_to(target)
+        original_open = os.open
+        with patch.object(sys.stdin, 'isatty', return_value=True), patch.object(sys.stdout, 'isatty', return_value=True):
+            with patch.object(SUPPORT.os, 'open', side_effect=lambda path, flags: original_open(link, flags)):
+                with self.assertRaises(OSError):
+                    self.installation.show_password()
+        self.assertEqual(target.read_bytes(), b'PRESERVE SYMLINK TARGET')
+
     def test_bound_non_listening_tcp_on_other_local_address_is_rejected(self):
         with socket.socket() as holder:
             holder.bind(('127.0.0.2', 0))

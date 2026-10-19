@@ -10,6 +10,7 @@ import re
 import secrets
 import socket
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -252,12 +253,21 @@ class Installation:
         # Never route a credential through stdout/stderr, pipes or setup logs.
         if not sys.stdin.isatty() or not sys.stdout.isatty():
             raise SetupError("Passwortanzeige nur im interaktiven Terminal ohne Ausgabeumleitung erlaubt.")
-        with open("/dev/tty", "w", encoding="utf-8") as terminal:
-            if not terminal.isatty():
+        # Open an existing device only: never create/truncate a file or follow
+        # an unexpected symlink. Verify the descriptor before writing any secret.
+        descriptor = os.open("/dev/tty", os.O_WRONLY | os.O_NOCTTY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            if not stat.S_ISCHR(os.fstat(descriptor).st_mode) or not os.isatty(descriptor):
                 raise SetupError("Kein interaktives Terminal für die Passwortanzeige vorhanden.")
             password = self.settings().get("serverpassword", "")
-            terminal.write("Zugangspasswort: " + (password or "(kein Zugangspasswort konfiguriert)") + "\n")
-            terminal.flush()
+            display = ("Zugangspasswort: " + (password or "(kein Zugangspasswort konfiguriert)") + "\n").encode("utf-8")
+            while display:
+                written = os.write(descriptor, display)
+                if written <= 0:
+                    raise SetupError("Passwort konnte nicht am Terminal angezeigt werden.")
+                display = display[written:]
+        finally:
+            os.close(descriptor)
 
     def info(self, hide_password=True):
         # Keep the old argument for callers, but never put secrets in this report.
