@@ -84,7 +84,7 @@ echo "Funkserver-Port: $selected_port TCP/UDP. Bestehende Einstellungen werden e
 step='Build-Abhängigkeiten installieren'
 install_missing git ca-certificates build-essential cmake ninja-build pkg-config \
     qtbase5-dev qtbase5-dev-tools libqt5sql5-sqlite libboost-dev libssl-dev \
-    libprotobuf-dev protobuf-compiler libprotoc-dev libcap-dev \
+    libopus-dev libprotobuf-dev protobuf-compiler libprotoc-dev libcap-dev \
     libavahi-compat-libdnssd-dev libzeroc-ice-dev openssl logrotate
 step='Git-Submodule initialisieren'
 git -C "$repo" submodule update --init --recursive

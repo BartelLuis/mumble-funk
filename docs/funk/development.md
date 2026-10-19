@@ -61,3 +61,11 @@ aufräumen. Für eine echte Serverumstellung gilt dagegen **niemals `down -v`**.
 [Docker-Anleitung](docker.md) · [Migration](docker-stable-migration.md) ·
 [Ubuntu-Setup](setup.md) · [Releaseplan](release-plan.md) ·
 [Empfohlenes GitHub-Schutzmodell](github-collaboration.md)
+
+## Audio-Integration, Phase 1
+
+`feature/audio-engine` baut auf dem gemeinsamen `dev`-/Stable-Stand auf und
+integriert ausschließlich die vorhandene Busy-Tone-Engine. Keine automatische
+Übernahme nach `dev` oder `stable`, keine neue Freigabe. Die historische Audio-
+Preview bleibt erhalten. [Bedienung und Architektur](audio-engine.md),
+[Integrationsnachweis](AUDIO-ENGINE-STATUS.md).

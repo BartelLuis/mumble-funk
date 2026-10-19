@@ -32,6 +32,10 @@ else
     # shellcheck source=/dev/null
     . /etc/os-release
     funk_require_supported_os "${ID:-}" "${VERSION_ID:-}" || exit 1
+    # Experimental builds must not replace the existing native Stable service.
+    # shellcheck source=scripts/funk/source.sh
+    source "$repo/scripts/funk/source.sh"
+    funk_require_supported_source "$repo"
     exec 9>/run/lock/mumble-funk-install.lock
     flock -n 9 || { echo 'Eine andere Funkserver-Installation läuft bereits.' >&2; exit 1; }
     binary="$repo/build/funk/mumble-server"

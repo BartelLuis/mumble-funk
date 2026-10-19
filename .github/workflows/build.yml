@@ -18,7 +18,7 @@ jobs:
       - name: Install server dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config python3 qtbase5-dev qtbase5-dev-tools libqt5sql5-sqlite libboost-dev libssl-dev libprotobuf-dev protobuf-compiler libprotoc-dev libcap-dev libavahi-compat-libdnssd-dev libzeroc-ice-dev
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config python3 qtbase5-dev qtbase5-dev-tools libqt5sql5-sqlite libboost-dev libssl-dev libopus-dev libprotobuf-dev protobuf-compiler libprotoc-dev libcap-dev libavahi-compat-libdnssd-dev libzeroc-ice-dev
       - name: Build server and protocol probe
         run: |
           cmake -S . -B build/funk -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_NUMBER=939 -Dclient=OFF -Dserver=ON -Dtests=ON -Dplugins=OFF -Doverlay=OFF -Dlto=OFF -DCMAKE_UNITY_BUILD=OFF -DCMAKE_PROJECT_mumble_INCLUDE="$PWD/scripts/docker/tests/register.cmake"
@@ -27,7 +27,9 @@ jobs:
         run: |
           ctest --test-dir build/funk --output-on-failure
           python3 tests/funk-install/test_install.py build/funk/mumble-server
+          python3 tests/funk-install/test_audio_assets.py build/funk/mumble-server
+          python3 tests/funk-install/test_audio_preview.py build/funk/mumble-server
       - name: Build Docker image (includes server and runtime tests)
         run: docker compose build
       - name: Verify TCP/UDP, Simplex, persistence and recovery
-        run: python3 scripts/docker/tests/integration.py --probe "$PWD/build/funk/FunkDockerProbe" --native-server "$PWD/build/funk/mumble-server"
+        run: python3 scripts/docker/tests/integration.py --probe "$PWD/build/funk/FunkDockerProbe" --native-server "$PWD/build/funk/mumble-server" --audio-feedback --host-port 64740

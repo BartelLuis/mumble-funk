@@ -252,7 +252,8 @@ struct Fixture {
 	ServerProcess server;
 	quint16 port = 0;
 	QString config;
-	bool start(const QString &setting, int timeout = 2500, int retry = 3000, bool diagnostics = true) {
+	bool start(const QString &setting, int timeout = 2500, int retry = 3000, bool diagnostics = true,
+			   const QByteArray &extra = {}) {
 		QTcpServer reservation;
 		if (!reservation.listen(QHostAddress::LocalHost, 0))
 			return false;
@@ -272,6 +273,7 @@ struct Fixture {
 			+ "\nvoicediagnostics=true\nvoicediagnosticsfile=" + directory.filePath("voice").toUtf8() + "\n";
 		if (!setting.isEmpty())
 			ini += "simplex=" + setting.toUtf8() + '\n';
+		ini += extra;
 		if (file.write(ini) != ini.size())
 			return false;
 		file.close();

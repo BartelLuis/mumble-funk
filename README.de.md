@@ -2,6 +2,14 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
+**Dieser Branch: experimentelle Audio-Engine, Phase 1 (`feature/audio-engine`).**
+Die bestehende Busy-Tone-Funktion ist mit der aktuellen Ubuntu-/Docker-Basis
+integriert, standardmäßig deaktiviert. Keine neuen Funk-Audioeffekte, kein Release.
+[Bedienung, eigene WAV und sichere parallele Preview](docs/funk/audio-engine.md) ·
+[Phase-1-Prüfbericht](docs/funk/AUDIO-ENGINE-STATUS.md).
+
+Die folgende Installationsübersicht bezieht sich auf den separaten Stable-Kandidaten.
+
 **Gemeinsamer Stable-Kandidat; Versionsvorschlag `funk-v0.2.1`.** Ubuntu und Docker
 verwenden auf `stable` denselben Quellstand. Die Simplex-Engine bleibt v0.2 und
 experimentell. Die abschließende Docker-Abnahme auf dem Rechner des Kollegen und
@@ -33,7 +41,8 @@ zuverlässiger Betrieb unter allen Netzbedingungen ist damit noch nicht belegt.
 Beide Wege bauen denselben Git-Commit; `git rev-parse HEAD` zeigt seine eindeutige
 Kennung. Neue Installationen aktivieren Simplex mit 500 ms Timeout und 500 ms
 Retry-Timeout. Unveränderte Mumla-/Windows-Mumble-Clients verbinden sich damit.
-Audio-Feedback v0.3 wird nicht mitgeliefert.
+Stable enthält kein Audio-Feedback. Auf diesem Entwicklungsbranch ist der
+private Busy Tone optional enthalten; dafür die [getrennte Preview-Anleitung](docs/funk/audio-engine.md) verwenden.
 
 - [Ubuntu-Setup](docs/funk/setup.md): Ubuntu Server 24.04 oder 26.04 LTS, Dienst
   `mumble-funk`, üblicherweise 64739 TCP/UDP.
@@ -142,7 +151,8 @@ Die automatisierten Ergebnisse selbst ersetzen keine Hörprobe mit Endgeräten. 
 - Bei aktiviertem Simplex wird nur innerhalb des aktuellen Kanals übertragen.
   Whisper, Kanalverknüpfungen, zusätzliche Kanal-Abonnements und Server-Loopback
   bieten keine alternativen Sprachwege; ihre Clientanzeigen können bestehen bleiben.
-- Keine integrierten Funk-Audioeffekte, kein Busy Tone, Roger Beep oder Squelch.
+- Stable enthält keine Audioeffekte. Dieser Branch ergänzt optionales privates
+  Busy-Feedback; Roger Beep, Squelch und Grundrauschen sind nicht implementiert.
 - Begrenzte Praxiserfahrung und kein abgeschlossener Langzeit-/Lasttest.
 
 ## Installation und Bedienung
@@ -173,7 +183,8 @@ mit dem zusätzlichen Server und brauchen keine Anpassung.
 | --- | --- |
 | **Implementiert** | Simplex-Engine v0.2, optionale Diagnosesysteme und automatische parallele Ubuntu-Installation. |
 | **Aktuelle Entwicklungsziele** | Umfangreichere Praxistests, schnelle PTT-Wechsel innerhalb der Protokollgrenzen verbessern, Netzwerkstörungen untersuchen sowie Stabilität und Zuverlässigkeit durch längere Tests absichern. |
-| **Unverbindliche Zukunftsideen** | Busy Tone, Roger Beep, analoge Funk-Audioeffekte, Squelch, digitale Funkprofile und erweiterte Konfiguration. |
+| **Experimenteller Audiobranch** | Bestehender privater Busy Tone integriert; standardmäßig deaktiviert. |
+| **Unverbindliche Zukunftsideen** | Roger Beep, analoge Funk-Audioeffekte, Squelch, digitale Funkprofile und erweiterte Konfiguration. |
 
 Die Zukunftsideen sind angedacht, noch nicht implementiert und ohne zugesagten
 Termin. Ihr späterer Einbau ist nicht garantiert.

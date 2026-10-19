@@ -26,6 +26,7 @@ int main(int argc,char **argv) {
  std::string password; std::getline(std::cin,password);
  const auto port=static_cast<quint16>(QString::fromLocal8Bit(argv[1]).toUInt());
  auto check=[](bool ok,const char *message) {if(!ok) {std::cerr<<message<<std::endl;std::exit(1);}};
+ const bool feedback = argc > 2 && QString::fromLocal8Bit(argv[2]) == "--audio-feedback";
  Client a,b,observer;
  check(login(a,port,"DockerAlice",password),"TCP/TLS login A failed");
  check(login(b,port,"DockerBob",password),"TCP/TLS login B failed");
@@ -33,11 +34,24 @@ int main(int argc,char **argv) {
  check(a.speak(),"TCP send failed"); check(observer.expect(a),"TCP voice not forwarded"); b.audio();
  check(b.speak(true) && b.udpBarrier(),"Encrypted UDP voice/ping failed");
  check(observer.expect(b,false),"Blocked UDP speech leaked");
+ if(feedback) {
+  const auto tone=b.audio(400,13);
+  check(tone.size()==13,"Private busy tone missing or wrong duration");
+  for(int i=0;i<tone.size();++i) {
+   check(tone[i].session==b.session,"Busy tone has wrong recipient identity");
+   check(tone[i].frame==static_cast<std::uint64_t>(i*2),"Busy tone frame sequence changed");
+   check(tone[i].last==(i==12),"Busy tone end marker missing");
+   check(!tone[i].payload.isEmpty() && tone[i].payload!=audioContent,"Busy tone payload invalid");
+  }
+  check(a.audio().isEmpty() && observer.audio().isEmpty(),"Private busy tone leaked to channel");
+ }
+
  check(a.speak(false,true) && observer.expect(a,true,true),"Owner terminator not forwarded");
  check(b.speak() && observer.expect(b,false),"Rejected sender automatically took over");
  check(b.speak(false,true) && b.barrier(),"Rejected end marker failed");
  check(b.speak(true) && b.udpBarrier() && observer.expect(b),"Encrypted UDP voice did not acquire released channel");
  check(b.speak(true,true) && b.udpBarrier() && observer.expect(b,true,true),"UDP terminator failed");
+ if(feedback) std::cout<<"Private busy tone verified; ";
  std::cout<<"Published TCP + encrypted UDP speech and Simplex verified"<<std::endl;
  return 0;
 }

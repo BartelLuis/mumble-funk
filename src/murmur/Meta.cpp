@@ -311,6 +311,10 @@ void MetaParams::read(QString fname) {
 	voiceDiagnosticsFile = typeCheckedFromSettings("voicediagnosticsfile", voiceDiagnosticsFile);
 	voiceDiagnosticsTimeout    = typeCheckedFromSettings("voicediagnosticstimeout", voiceDiagnosticsTimeout);
 	voiceDiagnosticsMaxSize    = typeCheckedFromSettings("voicediagnosticsmaxsize", voiceDiagnosticsMaxSize);
+	audioFeedback              = typeCheckedFromSettings("audiofeedback", audioFeedback);
+	busyTone                   = typeCheckedFromSettings("busytone", busyTone);
+	busyToneFile               = typeCheckedFromSettings("busytonefile", busyToneFile);
+	busyToneVolume             = typeCheckedFromSettings("busytonevolume", busyToneVolume);
 	simplex                    = typeCheckedFromSettings("simplex", simplex);
 	simplexTimeout             = typeCheckedFromSettings("simplextimeout", simplexTimeout);
 	simplexRetryTimeout        = typeCheckedFromSettings("simplexretrytimeout", simplexRetryTimeout);
@@ -454,6 +458,10 @@ void MetaParams::read(QString fname) {
 	qmConfig.insert(QStringLiteral("voicediagnosticsfile"), voiceDiagnosticsFile);
 	qmConfig.insert(QStringLiteral("voicediagnosticstimeout"), QString::number(voiceDiagnosticsTimeout));
 	qmConfig.insert(QStringLiteral("voicediagnosticsmaxsize"), QString::number(voiceDiagnosticsMaxSize));
+	qmConfig.insert(QStringLiteral("audiofeedback"), audioFeedback ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("busytone"), busyTone ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("busytonefile"), busyToneFile);
+	qmConfig.insert(QStringLiteral("busytonevolume"), QString::number(busyToneVolume));
 	qmConfig.insert(QStringLiteral("simplex"), simplex ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("simplextimeout"), QString::number(simplexTimeout));
 	qmConfig.insert(QStringLiteral("simplexretrytimeout"), QString::number(simplexRetryTimeout));

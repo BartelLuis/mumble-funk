@@ -2,6 +2,14 @@
 
 **Server-side simplex radio communication for Mumble**
 
+**This branch: experimental Audio Engine, Phase 1 (`feature/audio-engine`).**
+Private busy feedback from the existing audio preview is integrated with current
+Ubuntu/Docker and UDP fixes. It defaults to **off**; no new radio effects or release.
+[Audio setup, own WAV and safe parallel preview](docs/funk/audio-engine.md) ·
+[Phase-1 verification](docs/funk/AUDIO-ENGINE-STATUS.md).
+
+The following installation overview describes the separate Stable candidate.
+
 **Stable candidate — proposed release `funk-v0.2.1`.** Ubuntu and Docker now share
 one source revision on [`stable`](https://github.com/Shawna7han/mumble-funk/tree/stable).
 Simplex Engine v0.2 remains an experimental alpha; final Docker acceptance on the
@@ -42,7 +50,8 @@ Do not change the Compose project name during an update.
 
 Both builds use Mumble 1.5.939 plus the same Funk sources. Record `git rev-parse HEAD`
 for an exact version; the Mumble version alone does not identify a Funk release.
-Audio Feedback v0.3 is **not included**.
+Audio Feedback is **not included in Stable**. It is available experimentally on
+this `feature/audio-engine` branch; use its separate [preview guide](docs/funk/audio-engine.md).
 
 ## Quick installation — Ubuntu 24.04 / 26.04 LTS
 
@@ -161,7 +170,8 @@ claim of continuously passing CI.
   **Whisper, linked-channel forwarding, extra channel-listener reception and server
   loopback do not provide alternative voice routes.** Their saved settings or
   client UI may still exist.
-- No integrated radio audio effects, busy tone, roger beep or squelch are implemented.
+- Stable has no audio effects. This branch adds optional private busy feedback;
+  roger beep, squelch and background noise are not implemented.
 - Practical testing is limited; **no completed long-term or load test** establishes
   production reliability.
 
@@ -199,7 +209,8 @@ through `setup.sh` automatically enable Simplex.
 | --- | --- |
 | **Implemented** | Simplex Engine v0.2, optional diagnostics, Ubuntu setup and Docker Compose from a common commit. |
 | **Current development goals** | Broader real-device tests; improve rapid PTT changes within protocol limits; examine packet loss, delayed packets and network outages; strengthen stability and reliability through longer runs. |
-| **Possible future work — not committed** | Busy tone, roger beep, analog radio audio effects, squelch, digital radio profiles and extended configuration. |
+| **Experimental audio branch** | Existing private busy tone integrated; disabled by default. |
+| **Possible future work — not committed** | Roger beep, analog radio audio effects, squelch, digital radio profiles and extended configuration. |
 
 Future ideas are exploratory. They have no promised delivery date or guaranteed
 implementation and are not features of the current prototype.
