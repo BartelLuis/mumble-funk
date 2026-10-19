@@ -1,3 +1,8 @@
+> **Historischer Prüfbericht der Audio-Integration.** Die damaligen Portwerte
+> bleiben unten als Nachweis erhalten. Der gesonderte spätere
+> [Docker-Portstandard und Bestandsschutz](docker.md#9-aktualisieren) betrifft
+> `feature/docker-port-default` (Ziel: `dev`), nicht den damaligen Prüfstand.
+
 # Audio-Engine Phase 1: Integrations- und Prüfbericht
 
 Stand: 19. Oktober 2026. **Experimentell**, kein neuer Release und keine

@@ -2,13 +2,19 @@
 
 **Server-side simplex radio communication for Mumble**
 
-**This branch: experimental Audio Engine, Phase 1 (`feature/audio-engine`).**
+**This branch: Docker host-port default update (`feature/docker-port-default`, targeting `dev`).**
 Private busy feedback from the existing audio preview is integrated with current
 Ubuntu/Docker and UDP fixes. It defaults to **off**; no new radio effects or release.
 [Audio setup, own WAV and safe parallel preview](docs/funk/audio-engine.md) ·
 [Phase-1 verification](docs/funk/AUDIO-ENGINE-STATUS.md).
 
-The following installation overview describes the separate Stable candidate.
+New Docker installations from this development candidate default to **host 64740
+TCP/UDP → container 64739 TCP/UDP**. Native Ubuntu remains **64739 TCP/UDP**.
+Explicit existing/custom host ports are preserved. Older installations without an
+explicit port must pin their current port before updating; see
+[update protection and rollback](docs/funk/docker.md#9-aktualisieren).
+The following installation overview describes the separate, unchanged Stable candidate;
+its historical Docker fallback is still 64739.
 
 **Stable candidate — proposed release `funk-v0.2.1`.** Ubuntu and Docker now share
 one source revision on [`stable`](https://github.com/Shawna7han/mumble-funk/tree/stable).
@@ -50,8 +56,8 @@ Do not change the Compose project name during an update.
 
 Both builds use Mumble 1.5.939 plus the same Funk sources. Record `git rev-parse HEAD`
 for an exact version; the Mumble version alone does not identify a Funk release.
-Audio Feedback is **not included in Stable**. It is available experimentally on
-this `feature/audio-engine` branch; use its separate [preview guide](docs/funk/audio-engine.md).
+Audio Feedback is **not included in Stable**. It is integrated experimentally in
+`dev` and this development candidate; use its separate [preview guide](docs/funk/audio-engine.md).
 
 ## Quick installation — Ubuntu 24.04 / 26.04 LTS
 

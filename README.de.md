@@ -2,13 +2,19 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
-**Dieser Branch: experimentelle Audio-Engine, Phase 1 (`feature/audio-engine`).**
+**Dieser Branch: neuer Docker-Host-Standard (`feature/docker-port-default`, Ziel: `dev`).**
 Die bestehende Busy-Tone-Funktion ist mit der aktuellen Ubuntu-/Docker-Basis
 integriert, standardmäßig deaktiviert. Keine neuen Funk-Audioeffekte, kein Release.
 [Bedienung, eigene WAV und sichere parallele Preview](docs/funk/audio-engine.md) ·
 [Phase-1-Prüfbericht](docs/funk/AUDIO-ENGINE-STATUS.md).
 
-Die folgende Installationsübersicht bezieht sich auf den separaten Stable-Kandidaten.
+Neue Docker-Installationen dieses Entwicklungsstands verwenden **Host 64740
+TCP/UDP → Container 64739 TCP/UDP**. Ubuntu nativ bleibt auf **64739 TCP/UDP**.
+Vorhandene ausdrücklich gesetzte Host-Ports bleiben erhalten. Alte Installationen
+ohne feste Portzeile müssen vor dem Update ihren bisherigen Port festhalten:
+[Bestandsschutz und Rollback](docs/funk/docker.md#9-aktualisieren).
+Die folgende Übersicht bezieht sich auf den separaten, unveränderten Stable-Kandidaten;
+dessen historischer Docker-Fallback bleibt 64739.
 
 **Gemeinsamer Stable-Kandidat; Versionsvorschlag `funk-v0.2.1`.** Ubuntu und Docker
 verwenden auf `stable` denselben Quellstand. Die Simplex-Engine bleibt v0.2 und
