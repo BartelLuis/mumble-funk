@@ -54,8 +54,10 @@ class SourceTests(unittest.TestCase):
         self.guard(True)
 
     def test_unknown_branch_rejected(self):
-        self.git("checkout", "-B", "dev", self.head)
-        self.guard(False)
+        for branch in ("dev", "feature/audio-engine", "feature/audio-feedback"):
+            with self.subTest(branch=branch):
+                self.git("checkout", "-B", branch, self.head)
+                self.guard(False)
 
     def test_local_branch_divergence_rejected(self):
         self.git("commit", "--allow-empty", "-m", "Unpublished local change")

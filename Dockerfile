@@ -7,7 +7,7 @@ RUN set -eu; export DEBIAN_FRONTEND=noninteractive; \
     apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build pkg-config git ca-certificates python3 \
       qtbase5-dev qtbase5-dev-tools libqt5sql5-sqlite libboost-dev libssl-dev \
-      libprotobuf-dev protobuf-compiler libprotoc-dev libcap-dev \
+      libopus-dev libprotobuf-dev protobuf-compiler libprotoc-dev libcap-dev \
       libavahi-compat-libdnssd-dev libzeroc-ice-dev; \
     rm -rf /var/lib/apt/lists/*
 ARG FUNK_BUILD_JOBS=2
@@ -39,7 +39,7 @@ RUN set -eu; export DEBIAN_FRONTEND=noninteractive; \
     apt-get update; \
     apt-get install -y --no-install-recommends python3 ca-certificates \
       libqt5core5t64 libqt5network5t64 libqt5sql5t64 libqt5dbus5t64 libqt5xml5t64 \
-      libqt5sql5-sqlite libssl3t64 libprotobuf32t64 libcap2 \
+      libqt5sql5-sqlite libopus0 libssl3t64 libprotobuf32t64 libcap2 \
       libavahi-compat-libdnssd1 libzeroc-ice3.7t64; \
     groupadd --gid 10001 mumble-funk; \
     useradd --uid 10001 --gid 10001 --no-create-home --home-dir /var/lib/mumble-funk \

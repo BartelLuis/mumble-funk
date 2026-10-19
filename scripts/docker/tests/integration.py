@@ -18,15 +18,48 @@ import time
 REPO = Path(__file__).resolve().parents[3]
 
 
+def check_compose_env_ports():
+    """Resolve isolated .env fixtures, without writing the operator's .env."""
+    current = os.environ.copy()
+    for key in ('FUNK_HOST_PORT', 'COMPOSE_PROJECT_NAME', 'COMPOSE_FILE',
+                'COMPOSE_ENV_FILES', 'COMPOSE_DISABLE_ENV_FILE'):
+        current.pop(key, None)
+    with tempfile.TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        compose_file = directory / 'compose.yaml'
+        compose_file.write_bytes((REPO / 'compose.yaml').read_bytes())
+        env_file = directory / '.env'
+        for configured, expected in ((64740, 64740), (65001, 65001), (None, 64739)):
+            original = ('# Existing operator settings must survive\n'
+                        'COMPOSE_PROJECT_NAME=funk-port-config-check\n'
+                        + (f'FUNK_HOST_PORT={configured}\n' if configured else '')).encode()
+            env_file.write_bytes(original)
+            result = subprocess.run(
+                ['docker', 'compose', '--project-directory', str(directory),
+                 '--env-file', str(env_file), '-f', str(compose_file), 'config', '--format', 'json'],
+                env=current, capture_output=True, check=True)
+            config = json.loads(result.stdout)
+            assert config['name'] == 'funk-port-config-check'
+            ports = config['services']['mumble-funk']['ports']
+            assert len(ports) == 2, 'No extra audio port may be published'
+            assert {(entry['protocol'], int(entry['published']), int(entry['target']))
+                    for entry in ports} == {('tcp', expected, 64739), ('udp', expected, 64739)}
+            assert env_file.read_bytes() == original, 'Existing .env must not be rewritten'
+    print('PASS: .env host 64740 and custom ports preserved; fallback remains 64739; TCP/UDP target 64739')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--probe',type=Path,required=True)
     parser.add_argument('--native-server',type=Path,required=True)
     parser.add_argument('--host-port',type=int,help='Explicit free TCP/UDP host port, e.g. 64740')
+    parser.add_argument('--ports-only',action='store_true',help='Only published-port and optional private-audio checks')
+    parser.add_argument('--audio-feedback',action='store_true',help='Also check private feedback in the isolated project')
     parser.add_argument('--image',default='mumble-funk-docker:local')
     parser.add_argument('--runtime-file',type=Path,help='Development-only read-only helper mount; omit for final image verification')
     parser.add_argument('--previous-image',help='Optional older local image for a real image-update retention test')
     args=parser.parse_args()
+    check_compose_env_ports()
     project='funk-docker-check-'+str(os.getpid())
     restored=project+'-restored'
     upgrade=project+'-upgrade'
@@ -120,6 +153,26 @@ def main():
             logs=compose('logs').stdout
             assert b'Simplex enabled:' in logs and values['serverpassword'].encode() not in logs
             assert b"Password for 'SuperUser'" not in logs
+            assert b'Experimental audio feedback enabled:' not in logs, 'Audio must default off in Docker'
+            if args.audio_feedback:
+                original_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                compose('stop')
+                # Keep deterministic ownership while the probe listens to the tone;
+                # only this disposable audio fixture uses longer leases. Restore bytes below.
+                enable="from pathlib import Path;p=Path('/etc/mumble-funk/server.ini');t=p.read_text().replace('simplextimeout=500\\n','simplextimeout=5000\\n').replace('simplexretrytimeout=500\\n','simplexretrytimeout=5000\\n');p.write_text('audiofeedback=true\\nbusytone=true\\nbusytonevolume=50\\n'+t)"
+                compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',enable)
+                compose('up','-d','--no-build');healthy()
+                result=command([str(args.probe),str(port),'--audio-feedback'],input=(values['serverpassword']+'\n').encode())
+                assert b'Private busy tone verified' in result.stdout
+                compose('stop')
+                restore="import sys;from pathlib import Path;Path('/etc/mumble-funk/server.ini').write_bytes(sys.stdin.buffer.read())"
+                compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',restore,input=original_config)
+                compose('up','-d','--no-build');healthy()
+                assert information()==values and certificate()==cert
+                print('PASS: private busy feedback over published ports, no channel leakage; default disabled')
+            if args.ports_only:
+                print(f'PASS: host TCP/UDP {port} -> container TCP/UDP 64739, existing Mumble audio connection')
+                return
             # Offline database + audio fixture: exercise retention of the full SQLite file and future assets.
             compose('stop')
             code="import sqlite3;from pathlib import Path;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');db.execute('CREATE TABLE docker_preserved(value TEXT)');db.execute(\"INSERT INTO docker_preserved VALUES ('accounts-channels-acls-preserved')\");db.execute(\"INSERT INTO users(server_id,user_id,name) VALUES(1,42,'PersistedUser')\");db.execute(\"INSERT INTO channels(server_id,channel_id,parent_id,name,inheritacl) VALUES(1,42,0,'PersistedChannel',1)\");db.execute(\"INSERT INTO acl(server_id,channel_id,priority,user_id,apply_here,apply_sub,grantpriv,revokepriv) VALUES(1,42,0,42,1,1,14,0)\");db.commit();db.close();Path('/var/lib/mumble-funk/audio/future.txt').write_text('future persistent audio directory')"
@@ -155,17 +208,8 @@ def main():
             assert restored_hash==before_restore
             compose('up','-d','--no-build',project_name=restored)
             # Independent root-level Mumble process and Docker run at the same time.
-            native_port=64738
-            try:
-                reservations=[]
-                for kind in (socket.SOCK_STREAM,socket.SOCK_DGRAM):
-                    sock=socket.socket(socket.AF_INET,kind);reservations.append(sock);sock.bind(('127.0.0.1',native_port))
-            except OSError:
-                native_port=0
-            finally:
-                for sock in reservations:sock.close()
-            if native_port==0:
-                with socket.socket() as sock:sock.bind(('127.0.0.1',0));native_port=sock.getsockname()[1]
+            with socket.socket() as sock:
+                sock.bind(('127.0.0.1',0));native_port=sock.getsockname()[1]
             config=directory/'native.ini'
             config.write_text(f'host=127.0.0.1\nport={native_port}\ndatabase={directory}/native.sqlite\nlogfile=\nice=\nbonjour=false\n')
             original=config.read_bytes();logfile=open(directory/'native.log','wb')
