@@ -61,6 +61,18 @@ sudo mumble-funk-audio-engine enable
 sudo mumble-funk-audio-engine-info
 ```
 
+Die Info-Ausgabe enthält standardmäßig **kein Passwort**, auch bei Umleitung in
+eine Datei. Für die ausdrückliche lokale Anzeige im interaktiven Terminal:
+
+```bash
+sudo mumble-funk-audio-engine-info --show-password
+```
+
+Diese Option verweigert Pipes und umgeleitete Standardausgabe. Das Passwort wird
+nur auf das steuernde Terminal geschrieben, nicht nach stdout/stderr.
+`--hide-password` bleibt kompatibel und entspricht dem neuen Standard.
+Details und Grenzen: [Sicherheitsprüfung zu PR #2](AUDIO-SECURITY-REVIEW.md).
+
 Der Import prüft mit demselben C++-WAV-Prüfer wie der Server, kopiert nach
 `/etc/mumble-funk-audio-engine/sounds/busy-<SHA256>.wav` und setzt `busytonefile`.
 Er startet ausschließlich `mumble-funk-audio-engine` neu. `set-busy-tone` schaltet

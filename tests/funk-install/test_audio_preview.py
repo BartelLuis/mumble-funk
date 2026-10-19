@@ -151,6 +151,7 @@ class PreviewTests(unittest.TestCase):
                     with sqlite3.connect(Path(temporary) / str(port) / 'server.sqlite') as db:
                         self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
                         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                        context.minimum_version = ssl.TLSVersion.TLSv1_2
                         context.check_hostname = False
                         context.verify_mode = ssl.CERT_NONE  # Disposable test server's self-signed certificate only.
                         with socket.create_connection(('127.0.0.1', port)) as raw:

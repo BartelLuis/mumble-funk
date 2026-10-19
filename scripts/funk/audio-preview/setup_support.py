@@ -149,6 +149,10 @@ class Installation:
                 raise SetupError(f"Der eigene Dienst lauscht noch nicht auf TCP und UDP Port {port}.")
         elif not lines:
             # Catch bound sockets that are not listening (and races with ss).
+            # Wildcard addresses are intentional: a loopback-only bind would miss
+            # conflicts on other local addresses. These short-lived probes never
+            # listen, accept, send or receive application data and close immediately.
+            # See docs/funk/AUDIO-SECURITY-REVIEW.md; do not weaken this collision check.
             for family, address in ((socket.AF_INET, "0.0.0.0"), (socket.AF_INET6, "::")):
                 for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
                     try:
@@ -243,7 +247,21 @@ class Installation:
                 time.sleep(0.2)
         raise SetupError(f"Startprüfung fehlgeschlagen: {error} Bitte sudo systemctl status mumble-funk-audio-engine und server.log prüfen.")
 
-    def info(self, hide_password=False):
+    def show_password(self):
+        # An explicit administrator request to the controlling terminal only.
+        # Never route a credential through stdout/stderr, pipes or setup logs.
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise SetupError("Passwortanzeige nur im interaktiven Terminal ohne Ausgabeumleitung erlaubt.")
+        with open("/dev/tty", "w", encoding="utf-8") as terminal:
+            if not terminal.isatty():
+                raise SetupError("Kein interaktives Terminal für die Passwortanzeige vorhanden.")
+            password = self.settings().get("serverpassword", "")
+            terminal.write("Zugangspasswort: " + (password or "(kein Zugangspasswort konfiguriert)") + "\n")
+            terminal.flush()
+
+    def info(self, hide_password=True):
+        # Keep the old argument for callers, but never put secrets in this report.
+        # Explicit interactive disclosure is handled separately by show_password().
         if not self.config.exists():
             raise SetupError("Keine Mumble-Funk-Konfiguration gefunden.")
         settings = self.settings()
@@ -277,11 +295,7 @@ class Installation:
         print(f"Audiofeedback: {settings.get('audiofeedback', 'false')}")
         print(f"Busy Tone:     {settings.get('busytone', 'true')}; Lautstärke {settings.get('busytonevolume', '50')}%")
         print(f"Signaldatei:   {settings.get('busytonefile') or '(synthetischer Standardton)'}")
-        password = settings.get("serverpassword", "")
-        if hide_password:
-            print("Zugangspasswort: lokal mit sudo mumble-funk-audio-engine-info abrufen")
-        else:
-            print(f"Zugangspasswort: {password if password else '(kein Zugangspasswort konfiguriert)'}")
+        print("Zugangspasswort: verborgen; im Terminal mit sudo mumble-funk-audio-engine-info --show-password anzeigen")
         print("========================================")
         print("In Mumla/Windows-Mumble: Adresse, Port, eigenen Benutzernamen und Zugangspasswort eintragen.")
         print("Das Zugangspasswort verleiht keine Administratorrechte.")
@@ -294,11 +308,15 @@ def main():
     parser.add_argument("command", choices=["preflight", "create-config", "verify", "info"], nargs="?", default="info")
     parser.add_argument("--root", type=Path, default=Path("/"), help=argparse.SUPPRESS)
     parser.add_argument("--port")
-    parser.add_argument("--hide-password", action="store_true")
+    password_options = parser.add_mutually_exclusive_group()
+    password_options.add_argument("--hide-password", action="store_true", help="Kompatibel: Passwort bleibt verborgen (Standard)")
+    password_options.add_argument("--show-password", action="store_true", help="Passwort ausdrücklich nur im interaktiven Terminal anzeigen")
     parser.add_argument("--template", type=Path)
     parser.add_argument("--simplex", action="store_true")
     parser.add_argument("--log-offset", type=int, default=0)
     args = parser.parse_args()
+    if args.show_password and args.command != "info":
+        parser.error("--show-password ist nur für info erlaubt")
     if args.root == Path("/") and os.geteuid() != 0:
         parser.error("Bitte mit sudo ausführen, z. B. sudo mumble-funk-audio-engine-info")
     instance = Installation(args.root)
@@ -312,7 +330,9 @@ def main():
         elif args.command == "verify":
             instance.verify(args.log_offset)
         else:
-            instance.info(args.hide_password)
+            instance.info()
+            if args.show_password:
+                instance.show_password()
     except (SetupError, OSError) as error:
         print(f"Mumble-Funk: {error}", file=sys.stderr)
         return 1

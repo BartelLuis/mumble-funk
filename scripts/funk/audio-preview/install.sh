@@ -107,7 +107,8 @@ if [[ -z $root ]]; then
     systemctl start mumble-funk-audio-engine.service
     python3 "$repo/scripts/funk/audio-preview/setup_support.py" verify --log-offset "$log_offset"
     systemctl --no-pager --full status mumble-funk-audio-engine.service
-    echo 'Installation abgeschlossen. Verbindungsdaten und Zugangspasswort: sudo mumble-funk-audio-engine-info'
+    echo 'Installation abgeschlossen. Verbindungsdaten: sudo mumble-funk-audio-engine-info'
+    echo 'Passwort nur im interaktiven Terminal: sudo mumble-funk-audio-engine-info --show-password'
 else
     echo "Testinstallation erstellt: $root (kein Dienst gestartet)"
 fi

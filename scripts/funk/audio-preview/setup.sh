@@ -96,8 +96,10 @@ sudo bash "$repo/scripts/funk/audio-preview/install.sh" --setup --port "$selecte
 printf '\n========================================\n MUMBLE-FUNK AUDIO-ENGINE PHASE 1 INSTALLIERT\n========================================\n'
 echo 'Der Dienst ist aktiv, startet automatisch und lauscht auf TCP und UDP.'
 echo 'Simplex wurde anhand der neuen Startmeldungen geprüft; vorhandene Einstellungen bleiben erhalten.'
-echo 'Verbindungsdaten und Zugangspasswort lokal anzeigen:'
+echo 'Verbindungsdaten anzeigen (Passwort bleibt verborgen):'
 echo '  sudo mumble-funk-audio-engine-info'
+echo 'Passwort ausdrücklich im interaktiven Terminal anzeigen:'
+echo '  sudo mumble-funk-audio-engine-info --show-password'
 echo 'In Mumla/Windows-Mumble die dort angezeigte Adresse, den Port und das Passwort verwenden.'
 echo 'Router und Firewalls wurden nicht verändert. Ggf. den gewählten Port für TCP und UDP freigeben.'
 sudo /usr/local/sbin/mumble-funk-audio-engine-info --hide-password
