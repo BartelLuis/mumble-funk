@@ -19,33 +19,72 @@ REPO = Path(__file__).resolve().parents[3]
 
 
 def check_compose_env_ports():
-    """Resolve isolated .env fixtures, without writing the operator's .env."""
+    """Resolve real Compose fixtures; never touch an operator's .env or containers."""
     current = os.environ.copy()
     for key in ('FUNK_HOST_PORT', 'COMPOSE_PROJECT_NAME', 'COMPOSE_FILE',
                 'COMPOSE_ENV_FILES', 'COMPOSE_DISABLE_ENV_FILE'):
         current.pop(key, None)
+    source = (REPO / 'compose.yaml').read_bytes()
+    assert source.count(b'${FUNK_HOST_PORT:-64740}') == 2
+    # Historical Compose differs only in its fallback, not its resource names.
+    legacy = source.replace(b'${FUNK_HOST_PORT:-64740}', b'${FUNK_HOST_PORT:-64739}')
     with tempfile.TemporaryDirectory() as temporary:
         directory = Path(temporary)
         compose_file = directory / 'compose.yaml'
-        compose_file.write_bytes((REPO / 'compose.yaml').read_bytes())
         env_file = directory / '.env'
-        for configured, expected in ((64740, 64740), (65001, 65001), (None, 64739)):
-            original = ('# Existing operator settings must survive\n'
-                        'COMPOSE_PROJECT_NAME=funk-port-config-check\n'
-                        + (f'FUNK_HOST_PORT={configured}\n' if configured else '')).encode()
-            env_file.write_bytes(original)
+
+        def resolve(compose, original):
+            compose_file.write_bytes(compose)
+            if original is None:
+                env_file.unlink(missing_ok=True)
+            else:
+                env_file.write_bytes(original)
+                env_file.chmod(0o600)
+            # No --env-file: exercise actual implicit .env discovery AND absence.
             result = subprocess.run(
                 ['docker', 'compose', '--project-directory', str(directory),
-                 '--env-file', str(env_file), '-f', str(compose_file), 'config', '--format', 'json'],
+                 '-f', str(compose_file), 'config', '--format', 'json'],
                 env=current, capture_output=True, check=True)
-            config = json.loads(result.stdout)
-            assert config['name'] == 'funk-port-config-check'
+            if original is None:
+                assert not env_file.exists(), 'Compose must not create .env'
+            else:
+                assert env_file.read_bytes() == original, 'Existing .env must not be rewritten'
+                assert env_file.stat().st_mode & 0o777 == 0o600
+            return json.loads(result.stdout)
+
+        prefix = b'# Existing operator settings must survive\nCOMPOSE_PROJECT_NAME=funk-port-config-check\n'
+        fixtures = [
+            ('no .env', None, 64740),
+            ('no port setting', prefix, 64740),
+            ('empty port setting', prefix + b'FUNK_HOST_PORT=\n', 64740),
+            ('explicit 64740', prefix + b'FUNK_HOST_PORT=64740\n', 64740),
+            ('legacy explicit 64739', prefix + b'FUNK_HOST_PORT=64739\n', 64739),
+            ('custom port', prefix + b'FUNK_HOST_PORT=65001\n', 65001),
+            ('new .env.example', (REPO / '.env.example').read_bytes(), 64740),
+        ]
+        for label, original, expected in fixtures:
+            config = resolve(source, original)
+            expected_name = ('funk-port-config-check' if original is not None
+                             and original.startswith(prefix) else 'mumble-funk-docker')
+            assert config['name'] == expected_name, label
             ports = config['services']['mumble-funk']['ports']
             assert len(ports) == 2, 'No extra audio port may be published'
             assert {(entry['protocol'], int(entry['published']), int(entry['target']))
-                    for entry in ports} == {('tcp', expected, 64739), ('udp', expected, 64739)}
-            assert env_file.read_bytes() == original, 'Existing .env must not be rewritten'
-    print('PASS: .env host 64740 and custom ports preserved; fallback remains 64739; TCP/UDP target 64739')
+                    for entry in ports} == {('tcp', expected, 64739), ('udp', expected, 64739)}, label
+            if label in ('explicit 64740', 'legacy explicit 64739', 'custom port'):
+                before = resolve(legacy, original)
+                assert before == config == resolve(source, original), 'Update changed existing Compose settings: ' + label
+                assert resolve(legacy, original) == before, 'Rollback changed existing settings'
+            print(f'PASS: Compose {label}, host {expected} TCP/UDP -> 64739, .env untouched')
+        # Without a pinned port the old default really differs. Updates must stop
+        # at the documented before/after comparison, then explicitly pin the old
+        # published port before recreating a container (no automatic migration).
+        old = resolve(legacy, prefix)
+        new = resolve(source, prefix)
+        assert old['services']['mumble-funk']['ports'] != new['services']['mumble-funk']['ports']
+        pinned = prefix + b'FUNK_HOST_PORT=64739\n'
+        assert resolve(source, pinned) == resolve(legacy, pinned)
+        print('PASS: unpinned legacy port change detected; explicit pin preserves update/rollback')
 
 
 def main():

@@ -149,13 +149,15 @@ es sind **keine zusätzlichen Audioports**, Firewall- oder Routeränderungen nö
 Die native, separat angelegte Engine-Preview auf 64741 ist eine andere Instanz und
 keine Zusatzverbindung für Docker-Audio.
 
-Die unverändert übernommene `.env.example` nennt derzeit **64739** als Host-Port;
-auch der Compose-Fallback lautet weiterhin 64739. Diese bekannte Abweichung wird
-in Phase 1 **nicht** angeglichen. Nicht die Beispiel-Datei über eine bestehende
-`.env` kopieren. Die spätere Umstellung des Beispiel-/Standardwerts auf 64740
-benötigt einen gesonderten Auftrag. Freiwillig gewählte andere Host-Ports bleiben
-erlaubt; intern bleibt es bei 64739. Compose-Projekt, Volumes, Datenbank,
-Passwörter und Zertifikate bleiben beim Update derselben Instanz erhalten.
+Historisch behielt die Audio-Integration in Phase 1 den Beispiel-/Fallbackwert
+64739 bei. Der gesonderte Entwicklungsstand `feature/docker-port-default`
+(Ziel: `dev`) setzt nun `.env.example` und Compose-Fallback auf **64740**.
+`stable` und die historische Audio-Integration werden dadurch nicht verändert.
+**Keine Beispiel-Datei über eine bestehende `.env` kopieren.** Vor einem Update
+aus einem alten Stand ohne ausdrücklich gesetzten Host-Port muss der bisherige
+Port festgehalten werden: [Bestandsschutz und Rollback](docker.md#9-aktualisieren).
+Freiwillig gewählte andere Host-Ports bleiben erlaubt; intern bleibt es bei 64739.
+Compose-Projekt, Volumes, Datenbank, Passwörter und Zertifikate bleiben erhalten.
 
 Die Engine ist in der Docker-Binärdatei enthalten, bleibt aber ohne ausdrückliche
 Konfiguration deaktiviert. Für eine bewusst angelegte neue Testinstanz kann ihre

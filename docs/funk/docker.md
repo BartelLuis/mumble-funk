@@ -7,7 +7,15 @@ v0.3 gehört nicht dazu. Der bisherige Docker-Feature-Branch bleibt unverändert
 
 **Bereits installiert?** Nicht neu klonen oder Volumes neu anlegen. Verwende die
 [Umstellung auf Stable mit Sicherung und Rollback](docker-stable-migration.md).
-Die folgenden Schritte sind für eine **neue** Installation.
+Die folgenden Schritte sind für eine **neue Testinstallation des Entwicklungsstands**
+`feature/docker-port-default` (Ziel: `dev`). Hier gilt erstmals der einheitliche
+Host-Standard **64740 TCP/UDP**; im Container bleibt es bei **64739 TCP/UDP**.
+`stable` wird durch diese Änderung nicht aktualisiert. Der bisherige Stable- und
+Docker-Feature-Stand verwendete ohne explizite Einstellung noch Host-Port 64739.
+Seine bestehende Installation darf deshalb nicht blind mit neuen Defaults neu
+erstellt werden: siehe [Bestandsschutz beim Update](#9-aktualisieren).
+
+[Prüfbericht zum neuen Portstandard](DOCKER-PORT-DEFAULT-STATUS.md).
 
 ## Voraussetzungen
 
@@ -28,7 +36,7 @@ Ubuntu-VM. Es wird nichts automatisch auf einer anderen VM oder Proxmox installi
   unkomprimiert; Build-Werkzeuge, Quellen, Zwischenstände und Cache mehrere GiB.
 - Internetzugriff auf Docker Hub, Ubuntu-Paketquellen und GitHub. Der erste Build
   lädt Pakete und die vorhandenen, auf konkrete Commits festgelegten Submodule.
-- Ein freier **Host-Port für TCP und UDP**, standardmäßig 64739.
+- Ein freier **Host-Port für TCP und UDP**, standardmäßig **64740** (dieser Entwicklungsstand).
 - Für die Bedienungs- und Sicherungsskripte wird ein Linux-Host vorausgesetzt.
   Windows-/Android-Clients benötigen selbst kein Docker.
 
@@ -49,15 +57,16 @@ installiert oder verändert Docker selbst nicht.
 
 | Eigenschaft | Ubuntu-Schnellinstallation | Docker-Installation |
 | --- | --- | --- |
-| Start | `scripts/funk/setup.sh` auf `stable` | `docker compose up -d --build` auf demselben `stable`-Commit |
+| Start | `scripts/funk/setup.sh` auf `stable` | `docker compose up -d --build`; Entwicklungsstand siehe unten |
 | Betrieb | Eigener systemd-Dienst | Eigener Container mit Neustartrichtlinie |
 | Dateien | Eigene Verzeichnisse direkt auf Ubuntu | Eigene benannte Docker-Volumes |
-| Port | Standardmäßig 64739 | Host-Port wählbar, intern immer 64739 |
+| Port (TCP/UDP) | Standardmäßig 64739 | Hier Host-Standard 64740, frei wählbar; intern immer 64739 |
 | Änderungen am anderen Weg | Keine | Keine |
 
-Docker ersetzt die vorhandene Installation nicht. Wenn dein nativer Funkserver
-schon 64739 verwendet, wähle für Docker zum Beispiel **64740**. Wenn auch dieser
-Port bereits durch v0.3 belegt ist, verwende beispielsweise 64741.
+Docker ersetzt die vorhandene Installation nicht. Der neue Host-Standard **64740**
+kann neben dem nativen Funkserver auf **64739** verwendet werden. Falls 64740 bereits
+belegt ist (zum Beispiel durch eine historische Audio-Preview), wähle bewusst einen
+anderen freien Host-Port. Audiofunktionen benötigen keine zusätzlichen Ports.
 
 ## 1. Herunterladen
 
@@ -65,7 +74,7 @@ Benutze ein neues Quellverzeichnis, damit vorhandene v0.2-/v0.3-Quellen erhalten
 bleiben:
 
 ```bash
-git clone --branch stable \
+git clone --branch feature/docker-port-default \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-docker
 cd mumble-funk-docker
 ```
@@ -76,16 +85,22 @@ Es werden weder der Desktop-Client noch die Android-App gebaut.
 
 ## 2. Optional den Host-Port festlegen
 
-Wenn 64739 frei ist, überspringe diesen Abschnitt. Für Parallelbetrieb mit dem
-nativen v0.2-Server:
+Ohne `.env` verwendet dieser Stand **64740 TCP und UDP**. Für eine neue Installation
+empfehlen wir, den gewünschten Port ausdrücklich festzuhalten:
 
 ```bash
-cp -n .env.example .env
-sed -i 's/^FUNK_HOST_PORT=.*/FUNK_HOST_PORT=64740/' .env
+# Nur eine fehlende .env anlegen; eine vorhandene Datei niemals überschreiben:
+if [ ! -e .env ]; then cp -n .env.example .env; fi
+nano .env
 ```
 
-`.env` enthält nur Docker-Einstellungen, **kein Serverpasswort**. `cp -n` ersetzt
-keine vorhandene Datei. Der Port steht damit dauerhaft für spätere Updates fest.
+In `nano` steht für den Standard `FUNK_HOST_PORT=64740`. Für einen eigenen freien
+Host-Port ändere ausschließlich diese Zeile, zum Beispiel auf `FUNK_HOST_PORT=65001`.
+Speichern: `Strg+O`, Eingabetaste; schließen: `Strg+X`.
+
+`.env` enthält nur Docker-Einstellungen, **kein Serverpasswort**. Vorhandene Werte
+werden nicht automatisch ersetzt. Der ausdrücklich eingetragene Port gilt auch
+bei späteren Updates oder beim Zurückwechseln zu einem älteren Compose-Stand.
 Der Server im Container bleibt auf **64739 TCP/UDP**; Docker bildet beide auf den
 gewählten Host-Port ab.
 
@@ -112,7 +127,7 @@ docker compose ps
 ```
 
 Der erste Build dauert einige Minuten, auf kleinen VMs länger. Dabei werden alle
-18 bestehenden Server-Testprogramme ausgeführt. Scheitert ein Test oder Build,
+20 Server-Testprogramme dieses Entwicklungsstands ausgeführt. Scheitert ein Test oder Build,
 wird kein erfolgreiches Laufzeit-Image daraus bereitgestellt.
 
 Beim ersten Start erzeugt die Instanz:
@@ -273,15 +288,88 @@ zwei Serverprozesse oder Offline-Verwaltung auf denselben Daten gleichzeitig.
 
 ## 9. Aktualisieren
 
-Bleibe im selben Verzeichnis mit demselben Projektnamen und denselben Volumes:
+Bleibe im selben Verzeichnis mit demselben Projektnamen, denselben Compose-Optionen
+und denselben Volumes. Kein Update wird hier automatisch ausgeführt.
+
+**Vor dem ersten Wechsel auf diesen neuen Standard:** Prüfe den tatsächlich
+veröffentlichten Port des bestehenden Containers:
 
 ```bash
-mkdir -p backups
-bash scripts/docker/manage.sh backup "backups/vor-update-$(date +%Y%m%d-%H%M%S).tar.gz"
-git pull --ff-only origin feature/docker-install
-docker compose up -d --build
-docker compose ps
+docker compose port --protocol tcp mumble-funk 64739
+docker compose port --protocol udp mumble-funk 64739
 ```
+
+Steht in deiner `.env` schon `FUNK_HOST_PORT=64740` oder ein eigener Host-Port,
+behalte ihn unverändert. **Fehlt `.env` oder fehlt/ist die Portzeile leer**, galt
+bisher der alte Fallback 64739. Vor jedem Quellstandwechsel mit `nano .env` eine
+Zeile `FUNK_HOST_PORT=64739` eintragen, sofern die obige Prüfung diesen bisherigen
+Port bestätigt. Bei einem anderen tatsächlichen Port genau diesen festhalten.
+Bestehende andere Zeilen nicht ersetzen. Das ist eine bewusste Festlegung des
+bisherigen Ports, keine automatische Migration. Auch Shell-Variablen und
+`--env-file`-Optionen beibehalten: sie können `.env` übersteuern. Wenn die beiden
+Protokolle unterschiedliche Ports zeigen, vor dem Update anhalten und klären.
+
+Ohne diese Festlegung würde Compose bei einem späteren `up`/Neuerstellen den neuen
+Fallback verwenden. Ein bereits laufender Container wird durch Git oder die
+Beispieldatei allein nicht verändert. Weder Firewall noch Router werden angepasst.
+
+Danach sichern und vor dem Neuerstellen die Zuordnung vergleichen:
+
+```bash
+umask 077
+backup_dir="$(pwd)/backups/vor-update-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$backup_dir"
+git rev-parse HEAD > "$backup_dir/previous-commit.txt"
+if test -f .env; then cp -p .env "$backup_dir/previous.env"; fi
+docker compose config --format json > "$backup_dir/compose-before.json"
+docker image tag "$(docker inspect "$(docker compose ps -q mumble-funk)" --format '{{.Image}}')" \
+  mumble-funk-rollback:before-update
+bash scripts/docker/manage.sh backup "$backup_dir/server.tar.gz"
+git pull --ff-only
+docker compose config --format json > "$backup_dir/compose-after.json"
+python3 - "$backup_dir" <<'CHECK'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+a = json.loads((root / 'compose-before.json').read_text())
+b = json.loads((root / 'compose-after.json').read_text())
+assert a['name'] == b['name'], 'Projektname verändert: anhalten'
+assert a['volumes'] == b['volumes'], 'Volume-Zuordnung verändert: anhalten'
+assert set(a['services']) == set(b['services']), 'Dienste verändert: anhalten'
+for key in ('ports', 'volumes', 'image'):
+    assert a['services']['mumble-funk'][key] == b['services']['mumble-funk'][key], key + ' verändert: anhalten'
+print('Ports, Projekt, Dienst, Image-Name und Volumes unverändert.')
+CHECK
+```
+
+**Nur wenn die Prüfung erfolgreich ist**, in derselben Sitzung fortfahren:
+
+```bash
+docker compose build
+docker compose up -d --no-build
+docker compose ps
+docker compose port --protocol tcp mumble-funk 64739
+docker compose port --protocol udp mumble-funk 64739
+```
+
+`git pull --ff-only` aktualisiert nur den bereits ausgewählten Tracking-Branch;
+es wechselt weder nach `dev` noch `stable`. Für einen bewussten Branchwechsel
+verwende die [Migrationsanleitung](docker-stable-migration.md) mit denselben
+Zuordnungsprüfungen. Wenn der Rollback-Image-Tag schon zu einer aufbewahrten
+Sicherung gehört, vor dem Ablauf einen neuen eindeutigen Tag wählen.
+
+Zur Rückkehr: den gespeicherten Commit und das gesicherte Image verwenden,
+`.env` inklusive ausdrücklich festgelegtem Host-Port **behalten**:
+
+```bash
+docker image tag mumble-funk-rollback:before-update \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["services"]["mumble-funk"]["image"])' "$backup_dir/compose-before.json")"
+git switch --detach "$(cat "$backup_dir/previous-commit.txt")"
+docker compose up -d --no-build
+```
+
+Bei eigenen Änderungen vor `git switch` anhalten. Es werden keine Branches
+zurückgesetzt. Die festgelegte Portzeile funktioniert auch mit dem alten
+Fallback. Kein `down -v`, kein Löschen und kein Neuerstellen von Datenvolumes.
 
 Bei Git-Konflikten nicht mit Zurücksetzen/Erzwingen weiterarbeiten. Den Fehler erst
 prüfen lassen. Ein fehlgeschlagener Image-Build ersetzt den laufenden Container
@@ -352,7 +440,7 @@ cd ~
 git clone --branch stable \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-wiederherstellung
 cd mumble-funk-wiederherstellung
-cp .env.example .env
+if [ ! -e .env ]; then cp -n .env.example .env; fi
 sed -i 's/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=mumble-funk-restored/' .env
 sed -i 's/^FUNK_HOST_PORT=.*/FUNK_HOST_PORT=64741/' .env
 docker compose build
