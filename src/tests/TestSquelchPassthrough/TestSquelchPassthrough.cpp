@@ -63,14 +63,22 @@ void TestSquelchPassthrough::unchangedVoice() {
 	std::vector<float> pcm(960*8);
 	for (std::size_t i=0;i<pcm.size();++i) pcm[i]=float(.15*std::sin(2*3.141592653589793*317*double(i)/48000));
 	const auto voice=AudioSignal::encode(pcm,100); QCOMPARE(voice.size(),std::size_t(8));
-	for (int i=0;i<4;++i) QVERIFY(sendOpus(a,voice[std::size_t(i)],std::uint64_t(i*2),false,udpIn));
+	// Model a real capture cadence. Instant bursts immediately after login can
+	// exceed the unchanged server bandwidth gate, especially on fast UDP paths.
+	for (int i=0;i<4;++i) {
+		QTest::qWait(20);
+		QVERIFY(sendOpus(a,voice[std::size_t(i)],std::uint64_t(i*2),false,udpIn));
+	}
 	if (udpIn) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier());
 	auto heard=udpOut ? receiveUDP(observer,4) : observer.audio(80,4); if (heard.size()!=4) { f.server.stop(); for (const auto &event : f.events("simplex")) qInfo().noquote()<<QJsonDocument(event).toJson(QJsonDocument::Compact); }
 	QCOMPARE(heard.size(),4);
 	b.audio(); QVERIFY(b.speak()); QVERIFY(b.barrier());
 	const auto busy=b.audio(400,13); QCOMPARE(busy.size(),13);
 	for (int i=0;i<busy.size();++i) { QCOMPARE(busy[i].session,b.session); QCOMPARE(busy[i].frame,std::uint64_t(i*2)); QCOMPARE(busy[i].last,i==12); }
-	for (int i=4;i<8;++i) QVERIFY(sendOpus(a,voice[std::size_t(i)],std::uint64_t(i*2),i==7,udpIn));
+	for (int i=4;i<8;++i) {
+		QTest::qWait(20);
+		QVERIFY(sendOpus(a,voice[std::size_t(i)],std::uint64_t(i*2),i==7,udpIn));
+	}
 	if (udpIn) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier());
 	heard += udpOut ? receiveUDP(observer,4) : observer.audio(80,4); QCOMPARE(heard.size(),8);
 	int error=0;
@@ -91,6 +99,8 @@ void TestSquelchPassthrough::unchangedVoice() {
 	// A blocked continuous attempt never inherits the newly released channel.
 	QVERIFY(b.speak()); QVERIFY(b.barrier()); QVERIFY(observer.audio().isEmpty());
 	if (udpOut) { QTest::qWait(40); QVERIFY(!observer.udp.hasPendingDatagrams()); }
+	f.server.stop();
+	QCOMPARE(f.count("denied", "not_eligible"), 0);
 }
 QTEST_MAIN(TestSquelchPassthrough)
 #include "TestSquelchPassthrough.moc"

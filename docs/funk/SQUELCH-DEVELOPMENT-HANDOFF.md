@@ -10,8 +10,8 @@ publication, deployment or changes to existing servers are authorized.
 The final external `SQUELCH-HANDOFF.md` records the exact local tip and changed files;
 a commit cannot include its own resulting hash.
 
-**Original milestone A:** architecture inspected and original WAV assets preserved.
-See the resume checkpoint below for subsequent code and tests.
+**Latest status:** assets and a tested planning foundation are saved locally.
+The final validation section supersedes the historical resume checkpoint below.
 This is not an enabled Squelch engine. On-air Open/Close are not implemented.
 
 ## Findings from the existing code
@@ -119,9 +119,9 @@ architecture change and must be justified and measured, not quietly added.
 | `assets/audio/squelch-close.wav` | 3122 | 65.0416667 ms | `8d9091e0e4ee36433eb8aa707a7fa4a19ccec8ce5dee85ef1d91fa478afd0e31` |
 
 Close reaches PCM peak 32767; retain the existing attenuation-only peak ceiling
-of 0.2 before applying volume. Do not normalize upward. The current loader requires
-20 ms and adds 20 ms silence for encoder lookahead. A signal-specific short-file
-policy is needed without loosening Busy's existing file contract. Padding and
+of 0.2 before applying volume. Do not normalize upward. The default Busy loader requires
+20 ms and adds 20 ms silence for encoder lookahead. The new explicitly selected
+ShortSignal policy permits 1 ms, without loosening Busy's existing file contract. Padding and
 encoder lookahead must be included in actual latency calculations.
 
 The maintainer supplies these two originals under CC0 1.0 Universal; see
@@ -212,3 +212,122 @@ No runtime queue, new port, speech transformation or synthetic session exists.
 The local backup restores the complete tracked tree and binary assets but is
 not an external backup until the owner has downloaded it. The earlier attempted
 browser output directory was not writable; do not invent a successful export.
+
+## Final local validation after resuming
+
+The new passthrough test now waits 20 ms before each 20-ms Opus packet.
+This models capture cadence instead of a four-packet instant burst immediately
+following authentication. The old failure logged `not_eligible`; Server.cpp checks
+mute/suppress/self-mute and BandwidthRecord at that gate. Fast startup/burst rate
+is consistent with the failure and the pacing remedy, but the old aggregate
+reason alone does not prove which eligibility predicate fired. No production
+rate limit, Simplex rule, transport, TLS setting or UDP helper was changed.
+The test now additionally asserts zero `not_eligible` events; every packet,
+sender identity, sequence, final marker and decoded sample is still checked.
+This is not a fix or a reliability claim for arbitrary startup bursts.
+
+| Check | Actual result and scope |
+| --- | --- |
+| Release server + 22 CTest programs build | Passed with ICE enabled; no full rebuild repeated on resume |
+| Earlier complete CTest run | 21/22 passed in 99.09 s; all 20 pre-existing programs passed; only the new passthrough fixture failed |
+| Corrected TestSquelchPassthrough | All 8 cases passed in 10.97 s; legacy/protobuf × TCP/encrypted-UDP input × TCP/encrypted-UDP output |
+| Passthrough stability repeats | 5 further complete passes, 40 transport cases, 53.85 s; no retries suppress failures |
+| TestSquelchFoundation final run | 14 case rows plus init/cleanup passed (Qt reports 16); 26 ms |
+| Existing Python audio-assets tests | 8/8 passed; actual server WAV validator and isolated temp-root administration |
+| Speex experiment rerun | 3/3 assertions passed against local libspeexdsp |
+| All 22 CTest program coverage | Each has a successful applicable result across the above runs; not a newly repeated full-suite run |
+
+Existing SimplexIntegration covers ownership, simultaneous attempts, timeout,
+disconnect, channel moves, permissions, alternate routes and the encrypted UDP
+nonce/ping boundary. Existing AudioFeedbackIntegration covers private Busy,
+channel-out-and-back cancellation, reconnect, custom tones and **actual reuse**
+of the disconnected session number. Those existing programs passed in the full
+run; their source and production routing remain byte-identical to the base.
+The new lifecycle planner tests validate model identities/invalidation only;
+they do not substitute for eventual Squelch dispatch integration tests.
+
+The real-Opus passthrough test proves sample-for-sample equality between decoding
+the sent and received speech packets using fresh reference decoders, plus no
+speech/Busy leakage to another channel or to the sender. It does not execute a
+Windows/Mumla audio device, test arbitrary packet loss, or demonstrate audible
+Open/Close. It uses temporary servers on ephemeral loopback ports only.
+
+Reproducible final checks (from repository root, with build dependencies active):
+
+```sh
+cmake --build /workspace/build/squelch --target TestSquelchPassthrough --parallel 2
+ctest --test-dir /workspace/build/squelch -R '^TestSquelchPassthrough$' --output-on-failure
+ctest --test-dir /workspace/build/squelch -R '^TestSquelchPassthrough$' --repeat until-fail:5 --output-on-failure
+/workspace/build/squelch/tests/TestSquelchFoundation
+python3 tests/funk-install/test_audio_assets.py /workspace/build/squelch/mumble-server
+python3 src/tests/TestSquelchFoundation/jitter_experiment.py
+```
+
+Logs in the local backup working directory: `resume-build.log`,
+`resume-passthrough.log`, `passthrough-repeat.log`, `foundation-final.log`,
+`audio-assets.log`, `jitter-final.log`; earlier failure logs retained there.
+These scratch logs are not needed to restore source. Results are preserved here.
+A full suite can be reproduced with `ctest --test-dir BUILD --output-on-failure`.
+Build configuration: Release, BUILD_NUMBER=939, client=OFF, server=ON, tests=ON,
+plugins=OFF, overlay=OFF, lto=OFF, CMAKE_UNITY_BUILD=OFF, ice=ON. Cloud Qt 5.15.15,
+Opus 1.5.2, GCC 14; existing pinned submodules are required after restoration.
+
+## Refined architecture conclusion and acceptance work
+
+Opus splice measurements with the supplied Open (PCM normalized to -1..1):
+
+| Voice bitrate | Maximum sample delta | RMS delta |
+| --- | ---: | ---: |
+| 16 kbit/s | 0.00109863 | 0.000436606 |
+| 24 kbit/s | 0.00145715 | 0.000308192 |
+| 64 kbit/s | 0.00577646 | 0.000402705 |
+
+These small synthetic-signal differences are not evidence of intelligibility
+loss or universally unacceptable audio. They disprove the stronger assertion
+that a naive independent Opus prefix leaves decoded speech unchanged. Loss/PLC,
+codec mode transitions, stereo and natural speech have not been evaluated.
+
+The desktop client's `prepareSampleBuffer` observes a terminator during playback,
+sets `nextalive=false`, fades audio and eventually retires the output object.
+Simply marking Open's last packet as an end before appending speech is therefore
+not a reliable reset boundary; retaining speech's terminator before an appended
+Close is likewise not a proven way to keep Close audible. Empty terminators are
+ignored by `addFrameToBuffer`. No server-side packet timing acknowledges completion
+of playback. The Speex experiments use the library directly, not the complete
+client mixer; Mumla internals and current deployed client versions remain to test.
+
+Decision: preserve direct voice forwarding; keep the lifecycle model disconnected
+from the server. No live Squelch switch or management command is advertised.
+No extra identity/bot, output stream, port, scheduler, speech buffering or
+transcoding is introduced. B/C remain incomplete; D covers the foundation and
+regression checks but not audible Squelch. This checkpoint is not release-ready.
+
+For the next GPT-6.1 Sol Hoch task:
+1. Restore and verify the patch/tree/WAV hashes before changing anything. Keep all
+   publication restrictions; work on a local feature branch only.
+2. Reuse successful tests; do not rebuild everything without a reason. Inspect
+   the aggregate startup-burst eligibility caveat if testing that traffic pattern.
+3. Build a local client-playout experiment around the actual output lifecycle and
+   record PCM for Open/voice/Close, including first/last speech samples, loss,
+   jitter, 10/20/40/60-ms packets, SILK/hybrid/CELT and rapid PTT changes.
+4. Compare same-identity splicing and independent-stream timing honestly. Require
+   explicit acceptance of any measured quality/latency compromise. A full
+   decode/mix/encode pipeline is not pre-approved as an unnecessary workaround.
+5. Only after a justified choice, add bounded dispatch with atomic revalidation
+   under the voice lock. Supply the actual Simplex decision/eligible recipients;
+   consume() is merely a reservation, not delivery confirmation. Explicitly
+   invalidate on timeouts/moves/disconnect/permission loss; define reclamation of
+   ended channel records (currently retained, bounded at 128) and dispatch failure.
+6. Preserve Busy sequence space and private routing; no bot connections. Test
+   initial/final syllables and tone timing with unchanged Windows and Android
+   clients before claiming audible ordering or production readiness.
+7. Then finish opt-in configuration, preview asset management and installers.
+   Preserve native 64739, Docker host 64740/container 64739, existing custom ports,
+   .env, volumes and credentials. No existing installations may be touched.
+8. Commit locally and regenerate/verify the complete binary patch and ZIP at each
+   real milestone. Never call an archive inside this workspace an external backup.
+
+No outstanding automated failure remains in the exercised checks. Unresolved:
+audible architecture, live Open/Close, real-client/loss/long-duration/stress tests,
+sanitizers, runtime settings and packaging. No new third-party code or dependencies,
+no external audio resources, no changes to Busy waveform or client code were made.
