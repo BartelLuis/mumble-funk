@@ -20,7 +20,7 @@ find_pkg(Qt5 COMPONENTS Sql REQUIRED)
 find_package(Threads REQUIRED)
 
 find_pkg("opus;Opus" REQUIRED)
-add_library(audio-feedback STATIC AudioFeedback.cpp AudioFeedback.h AudioSignal.cpp AudioSignal.h)
+add_library(audio-feedback STATIC AudioFeedback.cpp AudioFeedback.h AudioSignal.cpp AudioSignal.h SquelchPlan.cpp SquelchPlan.h)
 target_include_directories(audio-feedback PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${opus_INCLUDE_DIRS})
 target_link_libraries(audio-feedback PUBLIC Qt5::Core Threads::Threads ${opus_LIBRARIES})
 if(TARGET opus)

@@ -9,7 +9,7 @@
 #include <mutex>
 #include <vector>
 
-// Phase 2A planning model, deliberately NOT connected to Server::processMsg.
+// Transmission lifecycle and recipient model; independent of signal synthesis/delivery.
 // It plans optional cues, never grants speech, stores audio or sends packets.
 // The caller must supply the actual Simplex decision and eligible receiver set.
 // A future dispatcher must hold the server voice lock while revalidating identity,
@@ -36,6 +36,8 @@ public:
 	static constexpr std::size_t MaxRecipients = 64;
 	using Clock = std::function<std::int64_t()>;
 	static constexpr std::int64_t MaxCueAgeUs = 100000;
+	// A short transmission can finish before Open playback + retirement gap.
+	static constexpr std::int64_t MaxCloseCueAgeUs = 300000;
 	explicit SquelchPlan(bool enabled = false, Clock clock = {});
 	// validOpus refers to a validated nonempty payload. Empty markers cannot start
 	// a stream. Caller-accepted payloads stay untouched even when planning fails.
@@ -44,6 +46,8 @@ public:
 	// One-shot reservation immediately before a FUTURE dispatcher sends a cue.
 	// If Open was omitted, Close cannot be consumed. False = omit optional effect.
 	bool consume(const Cue &cue, Identity currentSender, Identity currentRecipient, bool stillEligible);
+	// Active playback validation; no cue-age limit once dispatch has started.
+	bool current(const Cue &cue) const;
 	// Call on channel leave (including out-and-back), permission loss, timeout or
 	// disconnect. These uncertain boundaries cancel; they do not synthesize Close.
 	void invalidate(std::uint64_t connection);

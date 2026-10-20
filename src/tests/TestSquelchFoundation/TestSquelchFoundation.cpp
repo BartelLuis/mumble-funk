@@ -1,6 +1,7 @@
 // Copyright The Mumble-Funk Contributors. All rights reserved.
 // Use of this source code is governed by a BSD-style license in the LICENSE file.
 #include "AudioSignal.h"
+#include "AudioFeedback.h"
 #include "SquelchPlan.h"
 #include "SimplexController.h"
 #include "MumbleProtocol.h"
@@ -41,6 +42,7 @@ class TestSquelchFoundation : public QObject {
 	Q_OBJECT
 private slots:
 	void originalAssetsAndPadding();
+	void signalTailAndArbitration();
 	void malformedAssets();
 	void shortLengthBoundaries();
 	void staleCues();
@@ -133,7 +135,7 @@ void TestSquelchFoundation::staleCues() {
 	auto cues=plan.observe(sourceIdentity,true,0,true,true,true,{listener});
 	now=-1; QVERIFY(!plan.consume(cues[0],sourceIdentity,listener,true));
 	now=0; QVERIFY(plan.consume(cues[0],sourceIdentity,listener,true));
-	now=Plan::MaxCueAgeUs+1; QVERIFY(!plan.consume(cues[1],sourceIdentity,listener,true));
+	now=Plan::MaxCloseCueAgeUs+1; QVERIFY(!plan.consume(cues[1],sourceIdentity,listener,true));
 	plan.clear();
 	cues=plan.observe(sourceIdentity,true,2,true,true,true,{listener});
 	now+=Plan::MaxCueAgeUs+1; QVERIFY(!plan.consume(cues[0],sourceIdentity,listener,true));
@@ -241,6 +243,10 @@ void TestSquelchFoundation::boundedAndConcurrent() {
 		}
 	});
 	for (auto &thread:threads) thread.join();
+	QVERIFY(plan.size() <= Plan::MaxChannels);
+	// try-lock may omit optional effects under contention. Fill sequentially to
+	// verify the hard bound independently of how many workers obtained the lock.
+	for (unsigned i=1000;i<1200;++i) plan.observe({i,i,i},true,0,true,false,true,{});
 	QCOMPARE(plan.size(), Plan::MaxChannels);
 	QVERIFY(plan.observe({90000,90000,90000},true,0,true,false,true,{}).empty());
 	plan.clear(); QCOMPARE(plan.size(),std::size_t(0));
@@ -302,5 +308,48 @@ void TestSquelchFoundation::naiveSpliceIsNotTransparent() {
 	qInfo("naive independent Opus splice: bitrate=%d max PCM delta=%g RMS delta=%g",bitrate,maximum,std::sqrt(difference/static_cast<double>(baseline.size())));
 	QVERIFY2(maximum>1e-7,"This counterexample must demonstrate decoder-state contamination; it does not quantify audibility");
 }
+
+void TestSquelchFoundation::signalTailAndArbitration() {
+	AudioFeedback feedback(50);
+	feedback.configureSquelch(asset("squelch-open.wav"),asset("squelch-close.wav"),50,50);
+	const auto &open=feedback.clip(AudioFeedback::Signal::SquelchOpen);
+	const auto &close=feedback.clip(AudioFeedback::Signal::SquelchClose);
+	QCOMPARE(open.size(),std::size_t(2)); QCOMPARE(close.size(),std::size_t(4));
+	// Actual lookahead-compensating duration, without altering the source WAV.
+	QCOMPARE(decode(open).size(),std::size_t(1920)); QCOMPARE(decode(close).size(),std::size_t(3840));
+	const auto full=decode(AudioSignal::encode(AudioSignal::loadWav(asset("squelch-open.wav"),AudioSignal::LengthPolicy::ShortSignal),50));
+	QVERIFY(full==decode(open)); // Open's old two-packet representation remains identical.
+	const auto longClose=decode(AudioSignal::encode(AudioSignal::loadWav(asset("squelch-close.wav")),50));
+	const auto shortClose=decode(close);
+	QVERIFY(std::equal(shortClose.begin(),shortClose.end(),longClose.begin()));
+	// Independent volume controls, with attenuation-only peak handling.
+	const auto silent=decode(AudioSignal::encodeWavSignal(asset("squelch-open.wav"),0));
+	for(float x:silent) QVERIFY(std::abs(x)<1e-5f);
+	std::int64_t now=0; Plan plan(true,[&]{return now;});
+	auto cue=plan.observe(sourceIdentity,true,0,true,false,true,{listener})[0];
+	QVERIFY(feedback.requestSquelch(cue));
+	std::vector<QByteArray> packets; std::vector<std::uint64_t> sequence; std::vector<bool> endings;
+	auto gate=[&](const Plan::Cue &c,bool starting){return starting ? plan.consume(c,c.sender,c.recipient,true):plan.current(c);};
+	bool recipientValid=true;
+	auto deliver=[&](const AudioFeedback::Recipient &to,const QByteArray &bytes,std::uint64_t frame,bool last){
+		recipientValid = recipientValid && to.connection==listener.connection; packets.push_back(bytes); sequence.push_back(frame); endings.push_back(last); return true;
+	};
+	// Busy interrupts only optional cues, with a nonempty end boundary, and then
+	// plays all original packets. Its cooldown is independent of Squelch starts.
+	feedback.tick(now,deliver,gate); QCOMPARE(packets.size(),std::size_t(1));
+	now=10000; QVERIFY(feedback.request(AudioFeedback::Signal::Busy,{listener.connection,listener.session,listener.channel},now));
+	for(now=20000;now<=400000;now+=20000) feedback.tick(now,deliver,gate);
+	QCOMPARE(packets.size(),std::size_t(15)); QVERIFY(endings[1]); QVERIFY(endings.back());
+	const auto busy=feedback.clip(AudioFeedback::Signal::Busy);
+	for(std::size_t i=0;i<busy.size();++i) QCOMPARE(packets[i+2],busy[i]);
+	for(std::size_t i=1;i<sequence.size();++i) QVERIFY(sequence[i]>sequence[i-1]);
+	QVERIFY(!decode(packets).empty()); QVERIFY(recipientValid);
+	// Cancelled generation cannot continue playback even with a reused session.
+	AudioFeedback canceled(50); canceled.configureSquelch(asset("squelch-open.wav"),asset("squelch-close.wav"),50,50);
+	plan.clear(); cue=plan.observe(sourceIdentity,true,2,true,false,true,{listener})[0];
+	QVERIFY(canceled.requestSquelch(cue)); const auto before=packets.size();
+	plan.invalidate(listener.connection); canceled.tick(now,deliver,gate); QCOMPARE(packets.size(),before);
+}
+
 QTEST_MAIN(TestSquelchFoundation)
 #include "TestSquelchFoundation.moc"

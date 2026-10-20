@@ -1,0 +1,7 @@
+add_executable(TestSquelchIntegration TestSquelchIntegration.cpp)
+set_target_properties(TestSquelchIntegration PROPERTIES AUTOMOC ON)
+target_link_libraries(TestSquelchIntegration PRIVATE shared Qt5::Test audio-feedback)
+target_compile_definitions(TestSquelchIntegration PRIVATE MUMBLE_SERVER_PATH="$<TARGET_FILE:mumble-server>" SQUELCH_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/audio")
+add_dependencies(TestSquelchIntegration mumble-server)
+add_test(NAME TestSquelchIntegration COMMAND $<TARGET_FILE:TestSquelchIntegration>)
+set_tests_properties(TestSquelchIntegration PROPERTIES TIMEOUT 180)

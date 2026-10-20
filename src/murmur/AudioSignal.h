@@ -14,6 +14,8 @@ public:
 	// both paths retain all other bounds, the lookahead tail and attenuation.
 	static std::vector< float > loadWav(const QString &path, LengthPolicy policy = LengthPolicy::Busy);
 	static std::vector< float > syntheticBusy();
+	// Short signal files use the actual Opus lookahead, rather than a full 20-ms tail.
+	static std::vector< QByteArray > encodeWavSignal(const QString &path, int volume);
 	static std::vector< QByteArray > encode(const std::vector< float > &pcm, int volume);
 };
 #endif

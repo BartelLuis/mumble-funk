@@ -313,6 +313,11 @@ void MetaParams::read(QString fname) {
 	voiceDiagnosticsMaxSize    = typeCheckedFromSettings("voicediagnosticsmaxsize", voiceDiagnosticsMaxSize);
 	audioFeedback              = typeCheckedFromSettings("audiofeedback", audioFeedback);
 	busyTone                   = typeCheckedFromSettings("busytone", busyTone);
+	squelch = typeCheckedFromSettings("squelch", squelch);
+	squelchOpenFile = typeCheckedFromSettings("squelchopenfile", squelchOpenFile);
+	squelchCloseFile = typeCheckedFromSettings("squelchclosefile", squelchCloseFile);
+	squelchOpenVolume = typeCheckedFromSettings("squelchopenvolume", squelchOpenVolume);
+	squelchCloseVolume = typeCheckedFromSettings("squelchclosevolume", squelchCloseVolume);
 	busyToneFile               = typeCheckedFromSettings("busytonefile", busyToneFile);
 	busyToneVolume             = typeCheckedFromSettings("busytonevolume", busyToneVolume);
 	simplex                    = typeCheckedFromSettings("simplex", simplex);
@@ -461,6 +466,11 @@ void MetaParams::read(QString fname) {
 	qmConfig.insert(QStringLiteral("audiofeedback"), audioFeedback ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("busytone"), busyTone ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("busytonefile"), busyToneFile);
+	qmConfig.insert(QStringLiteral("squelch"), squelch ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("squelchopenfile"), squelchOpenFile);
+	qmConfig.insert(QStringLiteral("squelchclosefile"), squelchCloseFile);
+	qmConfig.insert(QStringLiteral("squelchopenvolume"), QString::number(squelchOpenVolume));
+	qmConfig.insert(QStringLiteral("squelchclosevolume"), QString::number(squelchCloseVolume));
 	qmConfig.insert(QStringLiteral("busytonevolume"), QString::number(busyToneVolume));
 	qmConfig.insert(QStringLiteral("simplex"), simplex ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("simplextimeout"), QString::number(simplexTimeout));

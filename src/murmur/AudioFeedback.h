@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license in the LICENSE file.
 #ifndef MUMBLE_MURMUR_AUDIOFEEDBACK_H_
 #define MUMBLE_MURMUR_AUDIOFEEDBACK_H_
+#include "SquelchPlan.h"
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <cstdint>
@@ -15,7 +16,9 @@
 // tick/cancel and delivery run on the server's Qt main thread, never the UDP thread.
 class AudioFeedback {
 public:
-	enum class Signal { Busy }; // Future signal definitions belong in the tone bank.
+	enum class Signal { Busy, SquelchOpen, SquelchClose };
+	// Lifecycle/recipient snapshots are separate from clips. Future continuous
+	// effects can replace this bounded clip renderer, without changing Simplex.
 	struct Recipient {
 		std::uint64_t connection;
 		unsigned int session;
@@ -28,7 +31,10 @@ public:
 	QString warning() const { return m_warning; }
 	bool customBusy() const { return m_customBusy; }
 	bool request(Signal signal, Recipient recipient, std::int64_t nowUs);
-	void tick(std::int64_t nowUs, const Delivery &deliver);
+	using CueGate = std::function<bool(const SquelchPlan::Cue &, bool starting)>;
+	void configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume);
+	bool requestSquelch(const SquelchPlan::Cue &cue);
+	void tick(std::int64_t nowUs, const Delivery &deliver, const CueGate &gate = {});
 	void cancel(std::uint64_t connection);
 	const std::vector< QByteArray > &clip(Signal signal) const;
 
@@ -37,6 +43,7 @@ private:
 		Signal signal;
 		Recipient recipient;
 		std::int64_t time;
+		SquelchPlan::Cue cue{};
 	};
 	struct Playback {
 		Request request;
@@ -45,12 +52,15 @@ private:
 		std::uint64_t nextFrame = 0;
 		std::size_t index       = 0;
 		bool active             = true;
+		std::int64_t lastBusy = -1000000;
+		std::int64_t availableAt = 0;
+		bool finishEarly = false;
 	};
-	std::vector< QByteArray > m_busy;
+	std::vector< QByteArray > m_busy, m_open, m_close;
 	QString m_warning;
 	bool m_customBusy = false;
 	std::mutex m_mutex;
-	std::deque< Request > m_pending;
+	std::deque< Request > m_pending, m_cues;
 	std::map< std::uint64_t, Playback > m_playback;
 };
 #endif

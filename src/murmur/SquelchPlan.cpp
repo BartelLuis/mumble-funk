@@ -8,6 +8,7 @@
 constexpr std::size_t SquelchPlan::MaxChannels;
 constexpr std::size_t SquelchPlan::MaxRecipients;
 constexpr std::int64_t SquelchPlan::MaxCueAgeUs;
+constexpr std::int64_t SquelchPlan::MaxCloseCueAgeUs;
 
 SquelchPlan::SquelchPlan(bool enabled, Clock clock) : m_enabled(enabled), m_clock(std::move(clock)) {
 	if (!m_clock) m_clock = [] {
@@ -20,7 +21,8 @@ std::vector<SquelchPlan::Cue> SquelchPlan::observe(Identity sender, bool allowed
 	std::vector<Cue> cues;
 	if (!m_enabled || !allowed || !sender.connection || (payload && !validOpus) || (!payload && !last))
 		return cues;
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
+	if (!lock) return cues;
 	const auto now = m_clock();
 	auto it = m_channels.find(sender.channel);
 	const bool newStream = it == m_channels.end() || !(it->second.sender == sender) || it->second.ended;
@@ -66,7 +68,7 @@ bool SquelchPlan::consume(const Cue &cue, Identity currentSender, Identity curre
 		return false;
 	std::lock_guard<std::mutex> lock(m_mutex);
 	const auto now = m_clock();
-	if (now < cue.createdUs || now - cue.createdUs > MaxCueAgeUs)
+	if (now < cue.createdUs || now - cue.createdUs > (cue.kind == Kind::Close ? MaxCloseCueAgeUs : MaxCueAgeUs))
 		return false;
 	auto stream = m_channels.find(cue.sender.channel);
 	if (stream == m_channels.end() || stream->second.generation != cue.transmission
@@ -111,4 +113,15 @@ void SquelchPlan::clear() {
 std::size_t SquelchPlan::size() const {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	return m_channels.size();
+}
+
+bool SquelchPlan::current(const Cue &cue) const {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto stream = m_channels.find(cue.sender.channel);
+	if (stream == m_channels.end() || stream->second.generation != cue.transmission
+		|| !(stream->second.sender == cue.sender)) return false;
+	for (const auto &recipient : stream->second.recipients)
+		if (recipient.identity == cue.recipient)
+			return recipient.opened && (cue.kind == Kind::Open || (stream->second.ended && recipient.closed));
+	return false;
 }
