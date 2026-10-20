@@ -11,10 +11,12 @@
 #include <opus.h>
 #include <stdexcept>
 
-std::vector< float > AudioSignal::loadWav(const QString &path) {
-	const auto fail = [] {
+std::vector< float > AudioSignal::loadWav(const QString &path, LengthPolicy policy) {
+	const auto fail = [policy] {
 		throw std::runtime_error(
-			"Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 20-1000 ms, at most 128 KiB");
+			policy == LengthPolicy::Busy
+				? "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 20-1000 ms, at most 128 KiB"
+				: "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 1-1000 ms, at most 128 KiB");
 	};
 	QFile file(path);
 	if (!QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly) || file.size() > 131072)
@@ -56,7 +58,7 @@ std::vector< float > AudioSignal::loadWav(const QString &path) {
 		fail();
 	const auto rate = u32(fmt + 4);
 	if ((rate != 8000 && rate != 16000 && rate != 24000 && rate != 48000) || u32(fmt + 8) != rate * 2
-		|| size < rate / 50 * 2 || size > rate * 2)
+		|| size < rate / (policy == LengthPolicy::Busy ? 50 : 1000) * 2 || size > rate * 2)
 		fail();
 	const auto frames = size / 2;
 	const auto output = static_cast< std::size_t >(frames) * 48000 / rate;

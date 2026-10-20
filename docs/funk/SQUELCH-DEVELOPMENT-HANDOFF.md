@@ -10,7 +10,8 @@ publication, deployment or changes to existing servers are authorized.
 The final external `SQUELCH-HANDOFF.md` records the exact local tip and changed files;
 a commit cannot include its own resulting hash.
 
-**Current milestone A:** architecture inspected and original WAV assets preserved.
+**Original milestone A:** architecture inspected and original WAV assets preserved.
+See the resume checkpoint below for subsequent code and tests.
 This is not an enabled Squelch engine. On-air Open/Close are not implemented.
 
 ## Findings from the existing code
@@ -157,3 +158,57 @@ patch checksums, file manifest, tests and restoration commands. Apply the patch
 only to the base commit above in a separate clean checkout. It contains originals,
 code, tests and documentation, but not Git history, build tools or dependencies.
 No external backup is established until the owner downloads the files.
+
+## Resume checkpoint — saved before further investigation
+
+The pre-interruption server build completed with ICE enabled, Release, client OFF.
+No build or test process was left running. All 20 existing CTest programs passed;
+new TestSquelchFoundation passed; new TestSquelchPassthrough failed (21/22 total).
+These are automated checks, not Windows/Android listening tests.
+
+Implemented locally:
+- AudioSignal::LengthPolicy::ShortSignal accepts 1–1000 ms PCM WAV signals.
+  The default Busy policy remains 20–1000 ms with unchanged format, peak and size
+  limits. Open loads only using the explicit short policy. Existing encoding
+  adds 20 ms lookahead padding: supplied Open yields two 20 ms packets (40 ms),
+  Close five packets (100 ms). Original WAV bytes remain unchanged.
+- SquelchPlan is a test-only, disabled-by-default lifecycle model, NOT linked into
+  the server. It accepts externally established routing decisions and recipients,
+  caps states at 128 channels and 64 recipients, expires cues after 100 ms,
+  consumes each cue once and keys it by connection/session/channel/transmission.
+  Open precedes Close; Close requires a confirmed marker and consumed Open.
+  Explicit invalidation handles timeout, channel changes, permission loss and
+  reused sessions. New transmissions cancel unsent old cues. No audio is sent.
+- TestSquelchFoundation exercises original asset hashes, malformed/short WAVs,
+  padding/volume, Simplex eligibility, bounded concurrent consumption, stale cues,
+  session reuse/channel invalidation, sequence units and Opus splice differences.
+- TestSquelchPassthrough exercises real Opus speech and private Busy on a local
+  isolated server over TLS tunnel and encrypted UDP, in eight protocol/transport
+  combinations. It currently sends four packets in a burst and can fail before
+  forwarding with Simplex `not_eligible`. The bandwidth gate is a hypothesis,
+  not yet an established diagnosis. Preserve assertions and investigate the
+  fixture; do not relax production eligibility or ignore lost packets.
+- jitter_experiment.py against existing libspeexdsp passed three experiments:
+  ordering within one buffer, independent stream clocks and late-prefix loss.
+
+Existing local logs: /workspace/work/squelch-backup/{all-tests.log,
+squelch-tests.log,burst-diagnostic.log,jitter.log}. The separate audio-assets
+Python suite was not executed before the usage limit interrupted tool approval.
+No end-to-end audible Squelch, config/management integration, Docker packaging,
+real client hearing tests or sanitizer run is complete. Milestones B and C
+(on-air Open/Close) are NOT complete. Milestone D is partial.
+
+Build environment: source /workspace/.cloud-deps/funk-v0.1/activate.sh;
+cmake build directory /workspace/build/squelch. Existing pinned dependencies
+were reused locally, without adding third-party versions. Incremental build:
+`cmake --build /workspace/build/squelch --parallel 2`.
+Test command: `ctest --test-dir /workspace/build/squelch --output-on-failure`.
+Socket tests require loopback access in the execution sandbox.
+
+Immediate next steps for GPT-6.1 Sol Hoch: preserve this checkpoint, diagnose the
+new passthrough fixture, run pending asset tests, record actual results, then
+resolve the audible architecture before wiring any Squelch into production.
+No runtime queue, new port, speech transformation or synthetic session exists.
+The local backup restores the complete tracked tree and binary assets but is
+not an external backup until the owner has downloaded it. The earlier attempted
+browser output directory was not writable; do not invent a successful export.
