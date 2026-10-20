@@ -62,6 +62,7 @@ private slots:
 	void disabled_data(); void disabled();
 	void boundaries_data(); void boundaries();
 	void reusedSession();
+	void switches_data(); void switches();
 	void rapidHandoff_data(); void rapidHandoff();
 };
 void TestSquelchIntegration::transport_data() {
@@ -230,6 +231,33 @@ void TestSquelchIntegration::rapidHandoff() {
 		for(float v:pcm) QVERIFY(std::isfinite(v));
 	}
 	f.server.stop(); QCOMPARE(f.count("granted"),6); QCOMPARE(f.count("denied","not_eligible"),0);
+}
+
+
+void TestSquelchIntegration::switches_data() {
+	QTest::addColumn<bool>("open"); QTest::addColumn<bool>("close"); QTest::addColumn<bool>("udp");
+	for (bool open:{false,true}) for(bool close:{false,true}) for(bool udp:{false,true})
+		QTest::newRow(qPrintable(QString("open-%1-close-%2-%3").arg(open).arg(close).arg(udp?"UDP":"TCP"))) << open << close << udp;
+}
+void TestSquelchIntegration::switches() {
+	QFETCH(bool,open); QFETCH(bool,close); QFETCH(bool,udp);
+	QByteArray config=settings()+"busytone=false\nsquelchopen="+(open?"true":"false")+"\nsquelchclose="+(close?"true":"false")+"\n";
+	// A disabled signal's missing file must not disable the other signal.
+	if(!open) config+="squelchopenfile=/nonexistent/open.wav\n";
+	if(!close) config+="squelchclosefile=/nonexistent/close.wav\n";
+	Fixture f; QVERIFY(f.start("true",5000,5000,true,config));
+	Client a,b; QVERIFY(a.login(f.port,"A",true)); QVERIFY(b.login(f.port,"B",true));
+	if(udp) { QVERIFY(a.udp.bind(QHostAddress(QHostAddress::LocalHost),0)); QVERIFY(a.udpBarrier()); }
+	const auto voice=speech(); QTest::qWait(30); QVERIFY(sendOpus(a,voice[0],0,true,udp));
+	if(udp) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier());
+	const auto all=b.audio(350); const auto heard=from(all,a.session), cues=from(all,b.session);
+	QCOMPARE(heard.size(),1); QCOMPARE(heard[0].payload,voice[0]); QCOMPARE(heard[0].frame,std::uint64_t(0)); QVERIFY(heard[0].last);
+	QCOMPARE(cues.size(),(open?2:0)+(close?4:0));
+	std::vector<QByteArray> expected;
+	if(open) { const auto packets=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50); expected.insert(expected.end(),packets.begin(),packets.end()); }
+	if(close) { const auto packets=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50); expected.insert(expected.end(),packets.begin(),packets.end()); }
+	for(int i=0;i<cues.size();++i) { QCOMPARE(cues[i].payload,expected[std::size_t(i)]); if(i) QVERIFY(cues[i].frame>cues[i-1].frame); }
+	QVERIFY(a.audio().isEmpty());
 }
 
 QTEST_MAIN(TestSquelchIntegration)

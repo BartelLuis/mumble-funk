@@ -156,11 +156,14 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 					.arg(m_audioFeedback->customBusy() ? QStringLiteral("custom PCM WAV")
 													   : QStringLiteral("synthetic double tone")));
 			if (squelchRequested) {
+				m_squelchOpenEnabled = getConf("squelchopen", Meta::mp.squelchOpen).toBool();
+				m_squelchCloseEnabled = getConf("squelchclose", Meta::mp.squelchClose).toBool();
 				try {
 					m_audioFeedback->configureSquelch(getConf("squelchopenfile", Meta::mp.squelchOpenFile).toString(),
 						getConf("squelchclosefile", Meta::mp.squelchCloseFile).toString(),
 						getConf("squelchopenvolume", Meta::mp.squelchOpenVolume).toInt(),
-						getConf("squelchclosevolume", Meta::mp.squelchCloseVolume).toInt());
+						getConf("squelchclosevolume", Meta::mp.squelchCloseVolume).toInt(),
+						m_squelchOpenEnabled, m_squelchCloseEnabled);
 					m_squelchPlan = std::make_unique<SquelchPlan>(true);
 					log(QStringLiteral("Experimental Squelch enabled: private receiver-session signals; speech unchanged"));
 				} catch (const std::exception &error) {
@@ -1569,7 +1572,15 @@ void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, Au
 		const auto cues = m_squelchPlan->observe({u->diagnosticConnection, u->uiSession,
 			static_cast<unsigned int>(u->cChannel->iId)}, true, audioData.frameNumber, payload,
 			audioData.isLastFrame, valid, recipients);
-		for (const auto &cue : cues) m_audioFeedback->requestSquelch(cue);
+		for (const auto &cue : cues) {
+			if (cue.kind == SquelchPlan::Kind::Open && !m_squelchOpenEnabled) {
+				// Acknowledge the accepted start/recipient in Close-only mode,
+				// without sending Open. Denied starts never reach this path.
+				m_squelchPlan->consume(cue, cue.sender, cue.recipient, true);
+			} else if (cue.kind != SquelchPlan::Kind::Close || m_squelchCloseEnabled) {
+				m_audioFeedback->requestSquelch(cue);
+			}
+		}
 	}
 }
 

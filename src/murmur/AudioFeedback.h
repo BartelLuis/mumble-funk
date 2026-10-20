@@ -32,7 +32,8 @@ public:
 	bool customBusy() const { return m_customBusy; }
 	bool request(Signal signal, Recipient recipient, std::int64_t nowUs);
 	using CueGate = std::function<bool(const SquelchPlan::Cue &, bool starting)>;
-	void configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume);
+	void configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume,
+		bool openEnabled = true, bool closeEnabled = true);
 	bool requestSquelch(const SquelchPlan::Cue &cue);
 	void tick(std::int64_t nowUs, const Delivery &deliver, const CueGate &gate = {});
 	void cancel(std::uint64_t connection);
@@ -59,6 +60,7 @@ private:
 	std::vector< QByteArray > m_busy, m_open, m_close;
 	QString m_warning;
 	bool m_customBusy = false;
+	bool m_squelchConfigured = false;
 	std::mutex m_mutex;
 	std::deque< Request > m_pending, m_cues;
 	std::map< std::uint64_t, Playback > m_playback;

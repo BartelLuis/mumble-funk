@@ -1,4 +1,4 @@
-# Squelch Phase 2B — local experimental preview
+# Squelch Phase 2C — experimental preview
 
 This experimental preview is developed on `feature/squelch-audio`, based on dev
 `f82f5aeda5111711b8e0c351e3f8b2400fc4a90a`. It is not a published release.
@@ -26,7 +26,9 @@ short retirement gap (normally within about 80 ms). This avoids injecting Busy
 into an unterminated cue. Queued Squelch for a recipient currently hearing Busy
 is omitted. The existing Busy-only path retains its behaviour when Squelch is off.
 
-Close requires an Open dispatch and a confirmed end marker. Timeout, disconnect,
+Close requires an accepted transmission start and a confirmed end marker. With
+Open enabled it also requires Open dispatch; in Close-only mode that start is
+acknowledged silently, without sending an Open packet. Timeout, disconnect,
 channel changes, deaf/mute/permission changes invalidate optional work. A new
 transmission cancels the previous generation's unsent cues. Audio already buffered
 on a client cannot be recalled. Late/congested cues are omitted, never speech.
@@ -61,41 +63,118 @@ port **64739 TCP/UDP**. No new preview service/directory or port 64742 is needed
 Docker remains **host 64740 TCP/UDP → container 64739 TCP/UDP**; preserve custom
 host ports, `.env`, project names, volumes, passwords and certificates.
 
-This phase implements server configuration but does NOT yet integrate the new
-assets with setup/update commands. The normal source guard still accepts stable,
-funk-v0.1 and published version tags, not this experimental feature branch.
-Do not bypass it by relabeling this branch as stable. Sol's next task is explicit
-feature/version installation support on the clean snapshot VM, plus WAV management
-and Docker asset delivery. No new parallel-preview installer should be created.
+Phase 2C adds explicit experimental installation and WAV management to the normal
+installation. See the [German snapshot-VM installation and hearing-test guide](squelch-ubuntu.md).
+`setup.sh`, `build.sh` and a direct `install.sh` accept this exact feature branch
+only with **`--experimental-squelch`**. Tracked files must be clean, the official
+origin and cached feature revision must match, and the actual published feature
+head must equal HEAD. Other unapproved branches remain rejected. This is an opt-in,
+not a Stable designation. Existing Stable/version checks are retained.
 
-For that later installation, place the original files in a service-readable
-normal asset directory such as `/etc/mumble-funk/sounds/`. The following is the
-configuration contract (not an instruction to modify an existing installation):
+New native installs supply the two original WAVs and their CC0 notice under
+`/usr/local/share/mumble-funk/audio/` (readable standards, mode 0644). The normal
+service account can read custom imports in `/etc/mumble-funk/sounds/` (directory
+root:mumble-funk 0750, files root:mumble-funk 0640). Configuration stays at
+`/etc/mumble-funk/server.ini`; existing configuration is never rewritten by setup.
+The release directory contains BUILD-INFO with revision, branch and experimental
+status; `sudo mumble-funk-info` displays these along with connection information.
+It displays the server password unless `--hide-password` is used; run it only
+locally in your terminal and never paste that password into reports. Audio status never displays passwords.
+
+New-install defaults (native and Docker):
 
 ```ini
-simplex=true
-audiofeedback=true
-squelch=true
-squelchopenfile=/etc/mumble-funk/sounds/squelch-open.wav
-squelchclosefile=/etc/mumble-funk/sounds/squelch-close.wav
+audiofeedback=false
+busytone=true
+busytonefile=
+busytonevolume=50
+squelch=false
+squelchopen=true
+squelchclose=true
+squelchopenfile=/usr/local/share/mumble-funk/audio/squelch-open.wav
+squelchclosefile=/usr/local/share/mumble-funk/audio/squelch-close.wav
 squelchopenvolume=50
 squelchclosevolume=50
 ```
 
-INI keys belong before any section header, without duplicates. `squelch` defaults
-to false; file paths default empty and both volumes to 50. Existing `busytone`,
-`busytonefile` and `busytonevolume` settings continue to apply. Squelch can also
-operate with `busytone=false`. Volume is separately clamped to 0–100 per cue;
-0 is silent. Peak handling only attenuates, capped at 0.2 PCM before volume.
-Supported files: PCM WAV, mono, signed 16-bit LE, 8/16/24/48 kHz, 1–1000 ms,
-maximum 128 KiB. Use absolute paths. Invalid/missing files disable Squelch with a
-startup log message; ordinary speech and Busy continue. There is no synthetic
-Squelch fallback; the Busy fallback remains unchanged.
+Server-level defaults for file paths remain empty if no installer/configuration
+supplies them. Both switches default true, but the master Squelch switch defaults
+false. Squelch still requires Simplex and master audio feedback. Root INI keys
+belong before any section header, without duplicates. Missing/invalid **enabled**
+files disable Squelch with a startup log; disabled signals need no valid file.
+There is no synthetic Squelch fallback. Busy's existing fallback is unchanged.
 
-After separately authorized setup/start, `Experimental Squelch enabled` confirms
-successful loading. WAV/volume changes require restarting that test server, but
-no recompilation. `squelch=false` disables Squelch; `audiofeedback=false` disables
-all effects. There is no hot reload. No extra audio network ports are introduced.
+## Normal native audio management
+
+Every modifying command validates input, saves `server.ini.before-audio-change`,
+updates only the relevant audio keys and restarts **only mumble-funk**. Status is
+read-only. Service identity and the installer lock are checked. A failed restart
+attempt restores the old configuration and attempts to start it again; check the
+service/log if it still cannot start. The backup contains private configuration,
+retains its permissions and must not be shared publicly.
+
+| Command after `sudo mumble-funk-audio` | Result |
+| --- | --- |
+| `status` | Audio settings only; no password |
+| `enable-squelch` / `disable-squelch` | Squelch on/off; enabling also enables master audio feedback and requires Simplex already enabled |
+| `enable-open` / `disable-open` | Open independently on/off |
+| `enable-close` / `disable-close` | Close independently on/off |
+| `open-volume 30` / `close-volume 40` | Independent gain, integer 0–100; 0 is silent |
+| `set-open /absolute/file.wav` / `set-close /absolute/file.wav` | Validate and import a custom cue |
+| `reset-open` / `reset-close` | Select the shipped standard again |
+| `set-busy-tone /absolute/file.wav` / `reset-busy-tone` | Existing custom Busy / synthetic Busy fallback |
+| `volume 50` | Busy volume |
+| `enable` / `disable` | Master feedback switch, including Busy and Squelch |
+
+Enabling an individual cue does not turn on master Squelch. Disabling Squelch
+leaves Busy and master feedback untouched. `enable-squelch` can make an already
+configured Busy tone audible too; use `busytone=false` in the configuration if
+intentionally testing without Busy. The commands never alter Simplex rules.
+
+Import accepts regular files only, no symlinks/FIFOs/directories, maximum 128 KiB.
+The actual C++ WAV parser and Opus encoder validate before selecting the file:
+PCM WAV, mono, signed 16-bit little-endian, 8/16/24/48 kHz, **1–1000 ms** for Squelch.
+Busy retains its existing **20–1000 ms** minimum/maximum. Peak attenuation caps
+signals at 0.2 PCM before the selected volume. Imports have content-addressed names;
+updates refresh only packaged standards/helpers and retain custom files, selection,
+gain and other configuration. Reset does not delete imports. An invalid import
+leaves the selected configuration unchanged. No recompilation or hot reload is
+needed: WAV/configuration changes take effect at the controlled service restart.
+
+## Docker assets and management
+
+The same standards, validator and shared admin code are included in the existing
+runtime image. UID/GID 10001 can read the standards. New configuration keeps
+Squelch and master feedback off. Existing configuration is preserved byte-for-byte
+at initialization, including files created before these keys existed.
+
+From the **existing Compose checkout/project** on the Docker host:
+
+```sh
+bash scripts/docker/audio.sh status
+bash scripts/docker/audio.sh enable-squelch
+bash scripts/docker/audio.sh disable-open
+bash scripts/docker/audio.sh close-volume 40
+bash scripts/docker/audio.sh set-close /absolute/local/close.wav
+bash scripts/docker/audio.sh reset-close
+bash scripts/docker/audio.sh disable-squelch
+```
+
+The same command names as the native table are supported. The host wrapper stops
+only its Compose service for modifications, runs offline administration, then
+restarts it **only if it was running before** (also on errors). Expect a brief
+connection interruption. The custom WAV is copied through a bounded temporary
+read-only bind mount into the existing persistent state volume at
+`/var/lib/mumble-funk/audio/`. Source files are not modified. Config backups and
+imports are covered by the existing Docker backup/restore. No new volumes,
+project/service names, ports, automatic enablement or `.env` updates are introduced.
+Status works without stopping the server; direct modifying `funk-container audio`
+commands refuse while the server holds its existing instance lock.
+
+Use the existing [Docker backup/update procedure](docker.md#9-aktualisieren).
+Preserve `.env`, Compose project name and volumes. Never use `down -v` to update.
+The feature must be built from `feature/squelch-audio` to obtain these commands;
+the old Stable image is not silently changed by this work.
 
 ## Practical check with unchanged clients
 

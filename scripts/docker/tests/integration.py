@@ -195,10 +195,33 @@ def main():
             assert b'Experimental audio feedback enabled:' not in logs, 'Audio must default off in Docker'
             if args.audio_feedback:
                 original_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+                assert state['squelch']=='false' and state['audiofeedback']=='false'
+                assert values['serverpassword'] not in json.dumps(state)
+                asset_check="import hashlib,os;from pathlib import Path;p=Path('/usr/local/share/mumble-funk/audio');assert os.getuid()==10001;assert hashlib.sha256((p/'squelch-open.wav').read_bytes()).hexdigest()=='81573e3a11db089de7cf2bbb2918e0747a2edde12923c399ac5042513d038770';assert hashlib.sha256((p/'squelch-close.wav').read_bytes()).hexdigest()=='8d9091e0e4ee36433eb8aa707a7fa4a19ccec8ce5dee85ef1d91fa478afd0e31'"
+                compose('exec','-T','mumble-funk','python3','-c',asset_check)
+                assert compose('exec','-T','mumble-funk','funk-container','audio','enable-squelch',check=False).returncode!=0
+                # Exercise the operator wrapper on this test's unique project.
+                command(['bash','scripts/docker/audio.sh','enable-squelch']);healthy()
+                command(['bash','scripts/docker/audio.sh','disable-open']);healthy()
+                command(['bash','scripts/docker/audio.sh','close-volume','29']);healthy()
+                command(['bash','scripts/docker/audio.sh','set-close',str(REPO/'assets/audio/squelch-close.wav')]);healthy()
+                state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+                custom_close=state['squelchclosefile']
+                assert custom_close.startswith('/var/lib/mumble-funk/audio/close-')
+                assert state['squelchopen']=='false' and state['squelchclose']=='true' and state['squelchclosevolume']=='29'
+                assert compose('exec','-T','mumble-funk','stat','-c','%a',custom_close).stdout.strip()==b'640'
+                compose('up','-d','--no-build','--force-recreate');healthy()
+                assert json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)==state
+                assert b'Experimental Squelch' in compose('logs').stdout
+                probe()
+                command(['bash','scripts/docker/audio.sh','reset-close']);healthy()
+                command(['bash','scripts/docker/audio.sh','enable-open']);healthy()
+                command(['bash','scripts/docker/audio.sh','disable-squelch']);healthy()
                 compose('stop')
                 # Keep deterministic ownership while the probe listens to the tone;
                 # only this disposable audio fixture uses longer leases. Restore bytes below.
-                enable="from pathlib import Path;p=Path('/etc/mumble-funk/server.ini');t=p.read_text().replace('simplextimeout=500\\n','simplextimeout=5000\\n').replace('simplexretrytimeout=500\\n','simplexretrytimeout=5000\\n');p.write_text('audiofeedback=true\\nbusytone=true\\nbusytonevolume=50\\n'+t)"
+                enable="from pathlib import Path;p=Path('/etc/mumble-funk/server.ini');t=p.read_text().replace('simplextimeout=500\\n','simplextimeout=5000\\n').replace('simplexretrytimeout=500\\n','simplexretrytimeout=5000\\n').replace('audiofeedback=false\\n','audiofeedback=true\\n');p.write_text(t)"
                 compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',enable)
                 compose('up','-d','--no-build');healthy()
                 result=command([str(args.probe),str(port),'--audio-feedback'],input=(values['serverpassword']+'\n').encode())
@@ -235,6 +258,9 @@ def main():
             healthy();assert backup_path.stat().st_mode & 0o777==0o600
             with tarfile.open(backup_path) as archive:
                 names=archive.getnames();assert 'config/server.ini' in names and 'state/server.sqlite' in names and 'state/audio/future.txt' in names
+                if args.audio_feedback:
+                    saved=archive.extractfile('state/audio/'+Path(custom_close).name).read()
+                    assert saved==(REPO/'assets/audio/squelch-close.wav').read_bytes()
             # Restoring to populated volumes refuses and restarts the original instance.
             assert command(['bash','scripts/docker/manage.sh','restore',str(backup_path)],check=False).returncode!=0
             healthy();assert information()['serverpassword']==values['serverpassword']
@@ -245,6 +271,9 @@ def main():
             restored_code="import sqlite3,hashlib;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');tables=[(name,db.execute('SELECT * FROM \"'+name+'\" ORDER BY rowid').fetchall()) for (name,) in db.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='slog' ORDER BY name\")];print(hashlib.sha256(repr(tables).encode()).hexdigest())"
             restored_hash=compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',restored_code,project_name=restored).stdout.strip()
             assert restored_hash==before_restore
+            if args.audio_feedback:
+                saved=compose('run','--rm','--no-deps','-T','--entrypoint','cat','mumble-funk',custom_close,project_name=restored).stdout
+                assert saved==(REPO/'assets/audio/squelch-close.wav').read_bytes()
             compose('up','-d','--no-build',project_name=restored)
             # Independent root-level Mumble process and Docker run at the same time.
             with socket.socket() as sock:

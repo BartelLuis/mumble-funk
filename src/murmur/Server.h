@@ -112,6 +112,7 @@ protected:
 	std::unique_ptr< AudioFeedback > m_audioFeedback;
 	std::unique_ptr< SquelchPlan > m_squelchPlan;
 	bool m_busyEnabled = false;
+	bool m_squelchOpenEnabled = true, m_squelchCloseEnabled = true;
 	QTimer *m_audioFeedbackTimer = nullptr;
 	void deliverAudioFeedback();
 	void updateSimplexPermission(const ServerUser &user);

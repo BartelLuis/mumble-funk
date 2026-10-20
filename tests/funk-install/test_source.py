@@ -39,10 +39,10 @@ class SourceTests(unittest.TestCase):
     def git(self, *args):
         return self.run_git(*args)
 
-    def guard(self, allowed):
+    def guard(self, allowed, experimental=False):
         result = subprocess.run(["bash", "-eu", "-c",
-                                 'source "$1"; funk_require_supported_source "$2"', "source-test",
-                                 str(REPO / "scripts/funk/source.sh"), str(self.repo)],
+                                 'source "$1"; funk_require_supported_source "$2" "$3"', "source-test",
+                                 str(REPO / "scripts/funk/source.sh"), str(self.repo), "--experimental-squelch" if experimental else ""],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode == 0, allowed, result.stdout + result.stderr)
         if allowed:
@@ -58,6 +58,31 @@ class SourceTests(unittest.TestCase):
             with self.subTest(branch=branch):
                 self.git("checkout", "-B", branch, self.head)
                 self.guard(False)
+
+    def feature(self):
+        self.git("checkout", "-B", "feature/squelch-audio", self.head)
+        self.git("update-ref", "refs/remotes/origin/feature/squelch-audio", self.head)
+        self.git("push", str(self.remote), "HEAD:refs/heads/feature/squelch-audio")
+
+    def test_experimental_branch_requires_explicit_opt_in(self):
+        self.feature()
+        self.guard(False)
+        self.guard(True, experimental=True)
+
+    def test_experimental_publication_must_match_cached_and_live_revision(self):
+        self.feature()
+        self.git("update-ref", "refs/remotes/origin/feature/squelch-audio", "dfbac8d3d9c967003e74b4ffc5610f7d45e8f666")
+        self.guard(False, experimental=True)
+        self.git("update-ref", "refs/remotes/origin/feature/squelch-audio", self.head)
+        self.run_git("--git-dir", str(self.remote), "update-ref", "refs/heads/feature/squelch-audio", "dfbac8d3d9c967003e74b4ffc5610f7d45e8f666")
+        self.guard(False, experimental=True)
+
+    def test_experimental_flag_does_not_whitelist_other_branches_or_dirty_source(self):
+        self.git("checkout", "-B", "dev", self.head)
+        self.guard(False, experimental=True)
+        self.feature()
+        (self.repo/"README.md").write_text("uncommitted change")
+        self.guard(False, experimental=True)
 
     def test_local_branch_divergence_rejected(self):
         self.git("commit", "--allow-empty", "-m", "Unpublished local change")

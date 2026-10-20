@@ -1,4 +1,4 @@
-# Squelch Phase 2B — experimental development handoff
+# Squelch Phase 2C — experimental development handoff
 
 Repository: https://github.com/Shawna7han/mumble-funk
 Original dev base: `f82f5aeda5111711b8e0c351e3f8b2400fc4a90a`.
@@ -51,7 +51,10 @@ synthesis. Identities include connection generation, real session, channel and a
 monotonic transmission generation. Session numbers alone are insufficient.
 Open occurs on the first accepted valid nonempty Opus packet; standalone empty
 markers do not start it. Close is produced on a confirmed end, even on a single
-payload+terminator packet. It is consumed only after Open was consumed. Duplicate
+payload+terminator packet. It is consumed only after Open was consumed. Phase 2C
+adds Close-only mode: disabled Open is silently acknowledged in the post-forward
+path, preserving the accepted-start and recipient-generation prerequisites without
+queueing audio. Enabled Open still must actually start before Close can start. Duplicate
 or stale input remains subject to the existing Simplex decision.
 
 Timeout, disconnect, channel changes and relevant mute/deaf/permission changes
@@ -133,25 +136,104 @@ measurements do not prove audible speech damage. The chosen separate private
 feedback stream avoids that speech-state splice; it deliberately accepts overlap.
 No further mixing/architecture experiment is required before real-client trials.
 
-## Configuration and installation status
+## Phase 2C installation and management
 
-See [squelch-preview.md](squelch-preview.md) for the configuration contract and tests.
-Defaults: squelch=false; squelchopenfile/squelchclosefile empty;
-squelchopenvolume/squelchclosevolume=50 (clamped 0–100). Files must be PCM WAV,
-mono, signed 16-bit LE, 8/16/24/48 kHz, 1–1000 ms, at most 128 KiB. Missing/invalid
-files disable Squelch with a startup log; there is no synthetic Squelch fallback.
-Both paths should be absolute and readable by the service account. File/volume
-changes need a server restart, not recompilation. No hot reload or management
-command for Squelch exists yet. AudioFeedback=false disables all signals.
+Read [squelch-preview.md](squelch-preview.md) and the concrete German
+[snapshot-VM guide](squelch-ubuntu.md). No new audio architecture was introduced.
+The following changes are additional to the Phase 2B implementation:
 
-The normal installer/source guard still rejects this feature branch. It accepts
-stable, funk-v0.1 and published version tags. Do not disguise the experimental
-branch as stable. Feature/version selection for the normal snapshot-VM installation,
-asset installation/update retention and friendly WAV management are still Sol work.
-Docker packaging/configuration of Squelch assets is also pending; defaults and
-existing ports/volumes were NOT modified. No test-VM installation was performed.
+- `scripts/funk/source.sh`, `setup.sh`, `build.sh`, `install.sh`: only the exact
+  `feature/squelch-audio` branch may opt in with `--experimental-squelch`. Require
+  clean tracked files, the official origin, cached origin head and live published
+  branch head equality. Stable/funk-v0.1 and annotated version-tag guards remain.
+  No fake Stable designation, no acceptance of arbitrary development branches.
+- Normal `mumble-funk` service/paths and native port 64739 retained. Both 24.04 and
+  26.04 OS checks retained. BUILD-INFO records source revision/branch/experimental
+  status; normal `mumble-funk-info` displays it. Never publish its password output.
+- Installer validates the original signals with the real server binary before
+  deployment writes. Public CC0 standards go to `/usr/local/share/mumble-funk/audio/`
+  (0644); imports to `/etc/mumble-funk/sounds/` (root:mumble-funk 0750/0640).
+  Existing config and imports survive updates. Packaged standards are not user files.
+- New normal `mumble-funk-audio` uses the existing safe INI/atomic-file/WAV-copy
+  helpers. Status whitelists audio keys; no secrets. Separate Open/Close switches,
+  gains, custom imports, reset, master enable/disable and existing Busy operations.
+  Config backup before modifications; only its own verified systemd service is
+  restarted. Invalid assets/values rejected before selecting a configuration.
+- Minimal server settings `squelchopen=true`, `squelchclose=true` independently gate
+  signals. Disabled files are not loaded. A separate configured-state flag preserves
+  private sequence state in Close-only mode across cancellation. No Simplex changes.
+- `--validate-squelch-wav` uses existing AudioSignal::encodeWavSignal (1–1000 ms).
+  Busy retains its existing validator and 20–1000 ms bounds. Both allow PCM mono
+  signed 16-bit LE 8/16/24/48 kHz, maximum 128 KiB, attenuation to 0.2 before gain.
+- Docker copies standards/license and the same admin Python into the existing image.
+  Fresh config has master feedback/Squelch false; file paths point to the standards.
+  Existing INI remains untouched. Custom files use existing state-volume `audio/`.
+- `scripts/docker/audio.sh` administers only the current Compose project, with a
+  temporary bounded read-only WAV import. It stops its service for changes, and
+  resumes only if previously running, including failure cleanup. Runtime mutation
+  uses the existing exclusive instance lock; status is read-only during operation.
+  No .env rewrite, ports/volume/project names changed, or automatic activation.
+- Workflow changes add the normal-admin suite and shellcheck for the new wrapper.
+  Docker integration now checks original asset hashes/readability as UID10001,
+  switches/gain/import/reset, rootless file permissions, force-recreate, private
+  Busy, TCP/encrypted UDP routing and inclusion/restoration of imported WAVs.
+  Its old Busy fixture now updates the existing key instead of duplicating new
+  default keys; no routing assertion or failure check was removed.
 
-## Tests performed and actual results
+New-install audio defaults are the same for native and Docker: audiofeedback=false,
+Squelch=false, Busy=true (inaudible while master off), both individual cues=true,
+all gains=50, standard Squelch paths and empty Busy path (synthetic fallback).
+The C++ file defaults remain empty when no configuration supplies them. Disabled
+Squelch retains normal voice and the original Busy-only path. Disabled individual
+cue files need not exist. WAV/volume changes restart the server, never recompile.
+No hot reload, new dependency/audio source, parallel preview service or port64742.
+
+Changed-file groups: Dockerfile; build/pr-checks workflows; native source/setup/build/
+install/setup_support/template; shared legacy copy helper (backward-compatible
+optional arguments); new native admin; Docker runtime/new wrapper/tests; Meta,
+Server, AudioFeedback, main validator; SquelchIntegration; native source/setup/new
+admin tests; these Squelch docs plus Docker/native installation cross-links.
+
+## Phase 2C local verification
+
+The existing cloud environment was reused. Server and all test targets rebuilt
+successfully using GCC14, Qt5.15.15, Opus1.5.2, Release with ICE. After an aborted
+container attempt and storage recovery, the complete suite was rerun:
+
+- **23/23 CTest programs passed**, 115.21 seconds. Includes all existing Simplex,
+  Busy, Squelch transport/audience/session-reuse and disabled-path regressions.
+- Eight additional integration rows cover every Open/Close enable combination
+  over TCP and encrypted UDP. Disabled files deliberately do not exist; first/last
+  speech packet/sequence/marker remains exact and expected private cue packets match.
+- **89 Python checks passed**: source guards17, setup17, native installer5,
+  AudioSignal assets8, legacy preview5, audio security13, new normal audio admin9,
+  Docker helpers/wrapper15. No tests removed. Staged installs use temporary roots;
+  setup orchestration uses explicit command fixtures, not a booted Ubuntu VM.
+- New admin tests verify original assets/permissions, configuration/password privacy,
+  independent switches/gains, unsafe/corrupt/oversized inputs, Busy bounds/fallback,
+  update/config/custom-file preservation, no binary change and container storage.
+- Wrapper tests verify read-only status, conditional resume, failure cleanup and
+  unchanged .env. Compose rendering confirms 64740TCP/UDP→64739TCP/UDP; historical
+  custom-port/default rendering assertions remain in the real integration runner.
+- Python compilation, Bash syntax and git diff whitespace checks passed.
+
+**Local Docker/Ubuntu-container limitation:** the cloud disk was already nearly
+full (32 GiB, Docker VFS). Attempting to start the old 2-GiB Ubuntu24 build-cache
+image failed with no space before a container was registered. It is not a passed
+Ubuntu test. No containers were running. Only regenerable local C++ objects and
+one unused Ubuntu26 test-cache image were removed to regain working space; sources,
+Git history, binaries, volumes and existing servers were not removed. No second
+full local Docker build was attempted under this constraint. The current GitHub
+build workflow runs on Ubuntu24 and must independently pass the complete native
+build/CTest/admin suite, production Dockerfile build/CTest and real isolated Docker
+integration at the pushed commit. See PR #4 checks for the exact SHA and results;
+do not infer CI success from the local results above.
+
+Local evidence: `/workspace/work/squelch-backup/phase2c-*.log`. These are temporary
+cloud paths, not external backups. The feature branch and Draft PR are authorized
+for publication; there is no separate required ZIP refresh in this phase.
+
+## Historical Phase 2B tests and results
 
 Build: GCC 14, Qt 5.15.15, Opus 1.5.2, Release, BUILD_NUMBER=939,
 client=OFF, server=ON, tests=ON, ICE=ON, plugins/overlay/LTO=OFF.
@@ -204,26 +286,27 @@ these are not recordings or proof of human perception. No claim of production re
 
 ## Next tasks for GPT-6.1 Sol Hoch
 
-1. Check the Draft PR and CI at the exact current head; keep it experimental and
-   unmerged. Read this handoff and the operator document before editing.
-2. Complete normal Ubuntu installation on the owner-managed clean snapshot VM:
-   explicit authorized source selection, standard mumble-funk service and paths,
-   port 64739, reproducible asset installation. No port 64742 or parallel layout.
-3. Extend management to set/reset Open/Close WAVs and volumes safely, preserving
-   unrelated configuration. Retain startup validation and restart semantics.
-4. Add Docker asset/configuration support using the existing image/Compose project,
-   ports 64740→64739 TCP/UDP, existing .env and volumes; no automatic data migration.
-5. After owner authorization, test with unchanged Windows and Android clients:
-   first/last syllables, effect audibility/level, quick PTT, Busy priority, channel
-   transitions and reconnect. Compare with Squelch disabled. No remote VM actions
-   without permission. Fix observed faults on this feature branch, not stable/dev.
-6. Retain lifecycle/recipient separation for later continuous noise. A future
-   renderer/mixer can extend or replace finite-clip rendering using the accepted
-   transmission and invalidation events plus the shared feedback sequence owner.
-   Different signal files/gains already exist. Do not implement noise/mixing now.
-7. Get explicit practical approval before changing PR readiness or merging.
+1. Read the current handoff and PR #4 checks at its exact head. Keep Draft/unmerged.
+2. Follow up any failing CI at the feature branch; never weaken tests or merge
+   unproven code. Native Ubuntu24 and full production Docker build/integration are
+   checked by CI; the local disk limitation above must remain visible.
+3. Let the owner install the documented feature opt-in on their clean Ubuntu VM,
+   after managing their own snapshot. Real systemd start/autoboot, service-account
+   filesystem permissions and actual package/setup behaviour remain VM acceptance
+   checks. Codex must not execute remote installation or snapshot operations.
+4. Owner hearing tests with unchanged Windows Mumble and Android Mumla: first/last
+   syllables, Open/Close-only modes and gains, own WAVs/reset, Busy priority, rapid
+   PTT, channels and reconnect. Compare effects off/on and TCP/UDP. No claim that
+   automated decodability proves device playback. Record exact installed SHA.
+5. Arbitrary loss/jitter, long-term load and sanitizers remain open. Optional cues
+   may overlap speech or be omitted. No production claim until practical approval.
+6. Keep accepted-transmission lifecycle/recipient separation for possible later
+   continuous noise; signal kinds/files/gains already differ. A future renderer may
+   extend/replace finite-clip dispatch without rebuilding Simplex/recipient rules.
+   No noise, mixer, new session identity, client protocol or additional port now.
+7. No dev/stable changes, release, deployment or merge without explicit approval.
 
-## Final local validation addendum
+## Historical Phase 2B final local validation addendum
 
 The extended TestSquelchIntegration, including fast TCP/encrypted-UDP handoffs,
 passed **three complete consecutive runs**, 96.82 seconds in total. No test was

@@ -40,6 +40,7 @@ public:
 	bool audioFeedback           = false;
 	bool busyTone                = true;
 	bool squelch                 = false;
+	bool squelchOpen = true, squelchClose = true;
 	QString squelchOpenFile, squelchCloseFile;
 	int squelchOpenVolume = 50, squelchCloseVolume = 50;
 	QString busyToneFile;

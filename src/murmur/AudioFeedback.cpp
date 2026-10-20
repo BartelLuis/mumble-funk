@@ -35,15 +35,16 @@ bool AudioFeedback::request(Signal signal, Recipient recipient, std::int64_t now
 	return true;
 }
 
-void AudioFeedback::configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume) {
+void AudioFeedback::configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume, bool openEnabled, bool closeEnabled) {
 	// All file access and Opus encoding happen before the voice thread starts.
-	auto open = AudioSignal::encodeWavSignal(openFile, openVolume);
-	auto close = AudioSignal::encodeWavSignal(closeFile, closeVolume);
-	m_open = std::move(open); m_close = std::move(close);
+	auto open = openEnabled ? AudioSignal::encodeWavSignal(openFile, openVolume) : std::vector<QByteArray>{};
+	auto close = closeEnabled ? AudioSignal::encodeWavSignal(closeFile, closeVolume) : std::vector<QByteArray>{};
+	m_open = std::move(open); m_close = std::move(close); m_squelchConfigured = true;
 }
 bool AudioFeedback::requestSquelch(const SquelchPlan::Cue &cue) {
 	std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
-	if (!lock || m_cues.size() >= MaxPending || m_open.empty() || m_close.empty()) return false;
+	const auto signal = cue.kind == SquelchPlan::Kind::Open ? Signal::SquelchOpen : Signal::SquelchClose;
+	if (!lock || m_cues.size() >= MaxPending || clip(signal).empty()) return false;
 	m_cues.push_back({cue.kind == SquelchPlan::Kind::Open ? Signal::SquelchOpen : Signal::SquelchClose,
 		{cue.recipient.connection, cue.recipient.session, cue.recipient.channel}, cue.createdUs, cue});
 	return true;
@@ -150,7 +151,7 @@ void AudioFeedback::cancel(std::uint64_t connection) {
 	m_cues.erase(std::remove_if(m_cues.begin(), m_cues.end(), [connection](const Request &r) {
 		return r.recipient.connection == connection || r.cue.sender.connection == connection;
 	}), m_cues.end());
-	if (m_open.empty()) {
+	if (!m_squelchConfigured) {
 		m_playback.erase(connection); // Preserve the original Busy-only behaviour.
 	} else {
 		auto it = m_playback.find(connection);

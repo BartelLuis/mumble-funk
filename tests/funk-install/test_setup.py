@@ -168,10 +168,11 @@ if name=='df':
     print('Filesystem 1024-blocks Used Available Capacity Mounted')
     print('test 33554432 1000 '+os.environ.get('MOCK_FREE_KIB','16777216')+' 1% /')
 elif name=='git':
-    if '--show-current' in args: print('funk-v0.1')
+    if '--show-current' in args: print(os.environ.get('MOCK_BRANCH','funk-v0.1'))
     elif 'config' in args: print('https://github.com/Shawna7han/mumble-funk.git')
     elif '--git-path' in args: print(repo/'.git/funk-setup.lock')
     elif 'rev-parse' in args: print('a'*40)
+    elif 'ls-remote' in args: print('a'*40+'\trefs/heads/feature/squelch-audio')
     if 'submodule' in args and fail=='network': sys.exit(128)
 elif name=='systemctl': print('259')
 elif name=='dpkg-query':
@@ -208,6 +209,7 @@ class OrchestrationTests(unittest.TestCase):
         self.repo = Path(self.temp.name) / "repo"
         self.repo.mkdir()
         shutil.copytree(REPO / "scripts", self.repo / "scripts")
+        shutil.copytree(REPO / "assets/audio", self.repo / "assets/audio")
         (self.repo / ".git").mkdir()
         (self.repo / "test-os-release").write_text('ID=ubuntu\nVERSION_ID="26.04"\n')
         (self.repo / "test-meminfo").write_text("MemTotal: 8388608 kB\nSwapTotal: 0 kB\n")
@@ -260,6 +262,22 @@ class OrchestrationTests(unittest.TestCase):
         base = self.repo / "stage/opt/mumble-funk"
         for directory in (base, base / "releases", (base / "current").resolve()):
             self.assertEqual(directory.stat().st_mode & 0o777, 0o755, str(directory))
+
+    def test_experimental_ubuntu24_install_requires_and_forwards_opt_in(self):
+        self.env['MOCK_BRANCH'] = 'feature/squelch-audio'
+        (self.repo / 'test-os-release').write_text('ID=ubuntu\nVERSION_ID="24.04"\n')
+        refused = self.execute()
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('--experimental-squelch', refused.stderr)
+        self.assertFalse((self.repo / 'stage/etc/mumble-funk/server.ini').exists())
+        result = self.execute(args=('--experimental-squelch',))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('EXPERIMENTELL', result.stderr)
+        installers = [call for call in self.calls() if call[0] == 'sudo' and any(arg.endswith('install.sh') for arg in call)]
+        self.assertTrue(installers)
+        self.assertIn('--experimental-squelch', installers[-1])
+        info = (self.repo / 'stage/opt/mumble-funk/current/BUILD-INFO').read_text()
+        self.assertIn('experimental=true', info)
 
     def test_failure_before_deployment(self):
         for failure in ("apt-update", "apt-install", "build", "tests", "network"):

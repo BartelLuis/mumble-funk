@@ -1,0 +1,159 @@
+"""Native staged installation and shared native/container audio administration."""
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+BINARY = Path(sys.argv.pop(1)).resolve()
+REPO = Path(__file__).resolve().parents[2]
+SPEC = importlib.util.spec_from_file_location('native_audio', REPO/'scripts/funk/audio.py')
+AUDIO = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(AUDIO)
+
+
+class SquelchAdminTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.install = ['bash', str(REPO/'scripts/funk/install.sh'), '--setup', '--stage', str(self.root), str(BINARY)]
+        subprocess.run(self.install, check=True, capture_output=True)
+        self.config = self.root/'etc/mumble-funk/server.ini'
+        self.control = self.root/'usr/local/sbin/mumble-funk-audio'
+        self.sound = self.root/'usr/local/share/mumble-funk/audio'
+        self.sounds = self.root/'etc/mumble-funk/sounds'
+        self.binary_hash = hashlib.sha256(BINARY.read_bytes()).digest()
+
+    def command(self, *args, ok=True):
+        result = subprocess.run([sys.executable, str(self.control), *args, '--root', str(self.root), '--binary', str(BINARY)], capture_output=True, text=True)
+        self.assertEqual(result.returncode == 0, ok, result.stdout+result.stderr)
+        return result
+
+    def status(self):
+        return json.loads(self.command('status').stdout)
+
+    def test_defaults_assets_permissions_and_safe_status(self):
+        state = self.status()
+        self.assertEqual(state['squelch'], 'false')
+        self.assertEqual(state['audiofeedback'], 'false')
+        self.assertEqual(state['squelchopen'], 'true')
+        self.assertEqual(state['squelchclose'], 'true')
+        for name in ('squelch-open.wav', 'squelch-close.wav', 'LICENSE.md'):
+            path = self.sound/name
+            self.assertEqual(path.read_bytes(), (REPO/'assets/audio'/name).read_bytes())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.sounds.stat().st_mode & 0o777, 0o750)
+        self.assertEqual(self.config.stat().st_mode & 0o777, 0o640)
+        secret = [line for line in self.config.read_text().splitlines() if line.startswith('serverpassword=')][0].split('=', 1)[1]
+        self.assertNotIn(secret, self.command('status').stdout)
+        info = (self.root/'opt/mumble-funk/current/BUILD-INFO').read_text()
+        self.assertIn('experimental=true', info)
+        self.assertIn('branch=feature/squelch-audio', info)
+        self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())
+
+    def test_master_and_independent_switches_keep_busy_settings(self):
+        self.command('enable-squelch')
+        self.assertEqual(self.status()['squelch'], 'true')
+        self.assertEqual(self.status()['audiofeedback'], 'true')
+        self.command('disable-open'); self.command('enable-close')
+        self.assertEqual(self.status()['squelchopen'], 'false')
+        self.assertEqual(self.status()['squelchclose'], 'true')
+        self.command('disable-close'); self.command('enable-open')
+        self.assertEqual(self.status()['squelchclose'], 'false')
+        self.assertEqual(self.status()['squelchopen'], 'true')
+        self.command('disable-squelch')
+        self.assertEqual(self.status()['squelch'], 'false')
+        self.assertEqual(self.status()['audiofeedback'], 'true')
+        self.assertEqual(self.status()['busytone'], 'true')
+
+    def test_independent_volumes_and_invalid_values(self):
+        for cmd, key, value in [('open-volume', 'squelchopenvolume', '17'), ('close-volume', 'squelchclosevolume', '83'), ('volume', 'busytonevolume', '31')]:
+            self.command(cmd, value)
+            self.assertEqual(self.status()[key], value)
+        before = self.config.read_bytes()
+        for cmd in ('open-volume', 'close-volume', 'volume'):
+            for value in ('101', '-1', '1.5', 'loud', '1000'):
+                self.command(cmd, value, ok=False)
+                self.assertEqual(self.config.read_bytes(), before)
+
+    def test_custom_wavs_and_update_preservation_without_recompilation(self):
+        for signal in ('open', 'close'):
+            self.command('set-'+signal, str(REPO/'assets/audio'/('squelch-'+signal+'.wav')))
+            value = self.status()['squelch'+signal+'file']
+            target = self.root/value.lstrip('/')
+            self.assertEqual(target.read_bytes(), (REPO/'assets/audio'/('squelch-'+signal+'.wav')).read_bytes())
+            self.assertEqual(target.stat().st_mode & 0o777, 0o640)
+        self.command('open-volume', '73'); self.command('enable-squelch')
+        before = self.config.read_bytes()
+        custom = {p: p.read_bytes() for p in self.sounds.glob('*.wav')}
+        subprocess.run(self.install, check=True, capture_output=True)
+        self.assertEqual(self.config.read_bytes(), before)
+        for p, data in custom.items(): self.assertEqual(p.read_bytes(), data)
+        self.assertEqual(hashlib.sha256(BINARY.read_bytes()).digest(), self.binary_hash)
+        for signal in ('open', 'close'):
+            self.command('reset-'+signal)
+            self.assertEqual(self.status()['squelch'+signal+'file'], AUDIO.DEFAULTS['squelch'+signal+'file'])
+        # Reset does not delete the imported files; a previous configuration can use them again.
+        for p, data in custom.items(): self.assertEqual(p.read_bytes(), data)
+
+    def test_busy_parser_and_fallback_unchanged(self):
+        before = self.config.read_bytes()
+        self.command('set-busy-tone', str(REPO/'assets/audio/squelch-open.wav'), ok=False)  # <20ms remains invalid for Busy.
+        self.assertEqual(self.config.read_bytes(), before)
+        self.command('set-busy-tone', str(REPO/'assets/audio/squelch-close.wav'))
+        self.assertTrue(self.status()['busytonefile'].startswith('/etc/mumble-funk/sounds/busy-'))
+        self.command('reset-busy-tone')
+        self.assertEqual(self.status()['busytonefile'], '')
+        self.command('enable'); self.command('disable')
+        self.assertEqual(self.status()['audiofeedback'], 'false')
+
+    def test_bad_or_unsafe_files_do_not_change_configuration(self):
+        original = self.config.read_bytes()
+        bad = self.root/'bad.wav'; bad.write_bytes(b'corrupt')
+        huge = self.root/'huge.wav'; huge.write_bytes(b'x'*131073)
+        link = self.root/'link.wav'; link.symlink_to(REPO/'assets/audio/squelch-open.wav')
+        fifo = self.root/'pipe.wav'; os.mkfifo(fifo)
+        for path in (bad, huge, link, fifo, self.root/'missing.wav', self.root):
+            for signal in ('open', 'close'):
+                self.command('set-'+signal, str(path), ok=False)
+                self.assertEqual(self.config.read_bytes(), original)
+
+    def test_duplicates_and_other_sections_preserved(self):
+        self.config.write_text(self.config.read_text()+'\n[Other]\nsquelch=true\nkeep=value\n')
+        self.command('disable-squelch')
+        self.assertIn('[Other]\nsquelch=true\nkeep=value\n', self.config.read_text())
+        self.config.write_text('squelchopenfile=/duplicate\n'+self.config.read_text())
+        before = self.config.read_bytes()
+        self.command('set-open', str(REPO/'assets/audio/squelch-open.wav'), ok=False)
+        self.assertEqual(self.config.read_bytes(), before)
+
+    def test_enable_requires_simplex_and_valid_assets(self):
+        self.config.write_text(self.config.read_text().replace('simplex=true', 'simplex=false'))
+        original = self.config.read_bytes()
+        self.command('enable-squelch', ok=False)
+        self.assertEqual(self.config.read_bytes(), original)
+
+        self.config.write_bytes(original.replace(b'simplex=false', b'simplex=true').replace(b'squelch-open.wav', b'missing.wav'))
+        original = self.config.read_bytes()
+        self.command('enable-squelch', ok=False)
+        self.assertEqual(self.config.read_bytes(), original)
+        self.command('enable-open', ok=False)
+        self.assertEqual(self.config.read_bytes(), original)
+
+    def test_container_storage_and_status_without_systemd(self):
+        code = "import importlib.util,sys;s=importlib.util.spec_from_file_location('audio',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);sys.exit(m.main(sys.argv[2:],container=True))"
+        command = [sys.executable, '-c', code, str(REPO/'scripts/funk/audio.py'), 'set-open', str(REPO/'assets/audio/squelch-open.wav'), '--root', str(self.root), '--binary', str(BINARY)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = self.status()['squelchopenfile']
+        self.assertTrue(value.startswith('/var/lib/mumble-funk/audio/open-'))
+        self.assertEqual((self.root/value.lstrip('/')).stat().st_mode & 0o777, 0o640)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

@@ -16,7 +16,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y shellcheck iproute2
       - name: Shell and patch checks
         run: |
-          shellcheck scripts/funk/audio-preview/*.sh scripts/funk/*.sh scripts/docker/manage.sh tests/funk-install/ubuntu_container_check.sh
+          shellcheck scripts/funk/audio-preview/*.sh scripts/funk/*.sh scripts/docker/*.sh tests/funk-install/ubuntu_container_check.sh
           git diff --check HEAD^ HEAD
       - name: Source guards and setup orchestration
         run: |
