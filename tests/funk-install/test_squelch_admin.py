@@ -52,8 +52,13 @@ class SquelchAdminTests(unittest.TestCase):
         secret = [line for line in self.config.read_text().splitlines() if line.startswith('serverpassword=')][0].split('=', 1)[1]
         self.assertNotIn(secret, self.command('status').stdout)
         info = (self.root/'opt/mumble-funk/current/BUILD-INFO').read_text()
-        self.assertIn('experimental=true', info)
-        self.assertIn('branch=feature/squelch-audio', info)
+        # PR CI stages an isolated install from a detached synthetic merge commit.
+        # Staging must report its actual source, not pretend to be the feature head.
+        branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
+        self.assertIn('branch='+branch+'\n', info)
+        self.assertIn('experimental='+str(branch == 'feature/squelch-audio').lower()+'\n', info)
+        revision = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
+        self.assertIn('revision='+revision+'\n', info)
         self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())
 
     def test_master_and_independent_switches_keep_busy_settings(self):
