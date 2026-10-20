@@ -16,6 +16,9 @@ output
 **/*.pem
 **/*.key
 **/*.wav
+# Public CC0 fixtures required by the Squelch tests in the build stage.
+!assets/audio/squelch-open.wav
+!assets/audio/squelch-close.wav
 backups
 *.tar
 *.tar.gz

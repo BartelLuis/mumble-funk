@@ -231,3 +231,26 @@ removed, skipped or relaxed to hide a server failure. The full 23-program run
 preceded these two additional cases; production code did not change afterward.
 All 72 additional Python checks also completed successfully. CI results must be
 checked separately on GitHub; local success is not a claim of completed Actions.
+
+
+## First published CI: Docker build-context correction
+
+At published commit 96db44a980efba232eee5ec38537054df2356997, GitHub's native
+server/installation tests and CodeQL passed. The Docker build compiled successfully
+but failed its SquelchFoundation/Integration tests because .dockerignore excluded
+all WAV files, including the two required public CC0 fixtures. Missing assets made
+the test server disable optional Squelch. This was a build-context packaging error,
+not evidence of a speech transport failure. The Docker runtime integration step
+could not run after that build failed.
+
+The feature branch now explicitly allows only assets/audio/squelch-open.wav and
+assets/audio/squelch-close.wav into the build context; arbitrary private WAVs remain
+excluded. No test assertions, runtime audio, ports or data paths were changed.
+The existing two failing test programs are the regression checks in Docker's build
+stage. Check the subsequent GitHub run at the branch's new head for final results.
+
+The correction was checked with real local Docker/BuildKit scratch builds using
+the original and corrected ignore files. Before: both fixtures absent. After:
+both fixtures byte-identical to the originals. Dummy private WAV, .env and key
+files remained excluded in both contexts. This verifies context selection without
+repeating the complete server compilation; the GitHub build reruns full tests.
