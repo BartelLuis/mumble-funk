@@ -492,3 +492,14 @@ full Docker image build and actual container integration run in GitHub CI instea
 of duplicating that large build here. Verify current-head CI before declaring it
 passed. No local or remote user installation has been modified; real-device boost
 hearing tests and final approval remain outstanding.
+
+First current-head CI: native and Docker builds, both 26-test suites, installer
+checks and CodeQL succeeded. Actual Docker integration reached private audio and
+boost/recreate checks but then failed the full settings comparison after the new
+backup fixture intentionally selected boost9: info --json returns all INI keys,
+while the old expected snapshot still contained boost0. Correct the expected
+snapshot for precisely feedbackboostdb=9; retain equality of all other keys,
+password/certificate/database checks and restored audio status=9. A unit regression
+now compares complete info JSON after intentional settings changes. This is a test
+fixture correction, not a server behavior change or suppressed container failure.
+Rerun the full current-head GitHub pipelines after pushing the follow-up commit.

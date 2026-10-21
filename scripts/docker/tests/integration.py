@@ -249,6 +249,9 @@ def main():
             compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',code)
             if args.audio_feedback:
                 compose('run','--rm','--no-deps','-T','mumble-funk','audio','boost','9')
+                # info --json includes every INI setting. Only this deliberately
+                # modified gain may differ; retain full equality for all others.
+                values = dict(values, feedbackboostdb='9')
                 assert json.loads(compose('run','--rm','--no-deps','-T','mumble-funk','audio','status').stdout)['feedbackboostdb']=='9'
             admin_password='test-only-'+os.urandom(24).hex()
             result=compose('run','--rm','--no-deps','-T','mumble-funk','admin-password',input=((admin_password+'\n')*2).encode())

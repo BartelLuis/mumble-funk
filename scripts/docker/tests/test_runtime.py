@@ -1,4 +1,6 @@
 """Unit checks for Docker-only lifecycle logic, with temporary directories."""
+import contextlib
+import json
 import importlib.util
 import io
 import os
@@ -61,11 +63,15 @@ class RuntimeTests(unittest.TestCase):
                 self.runtime.configure('simplex','false')
 
     def test_configuration_changes_preserved(self):
-        self.runtime.initialize();password=self.runtime.settings()['serverpassword']
+        self.runtime.initialize();initial=self.runtime.settings();password=initial['serverpassword']
         self.runtime.CONFIG.write_text(self.runtime.CONFIG.read_text().replace('feedbackboostdb=0', 'feedbackboostdb=9'))
         self.runtime.configure('simplexdiagnostics','false');self.runtime.configure('simplextimeout','700')
         self.runtime.initialize();values=self.runtime.settings()
         self.assertEqual(values['feedbackboostdb'],'9')
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output): self.runtime.info(as_json=True)
+        self.assertEqual(json.loads(output.getvalue()), dict(initial, feedbackboostdb='9',
+                         simplexdiagnostics='false', simplextimeout='700'))
         self.assertEqual(values['simplexdiagnostics'],'false');self.assertEqual(values['simplextimeout'],'700')
         self.assertEqual(values['serverpassword'],password)
         with self.assertRaises(RuntimeError):self.runtime.configure('database','/etc/foreign.sqlite')
