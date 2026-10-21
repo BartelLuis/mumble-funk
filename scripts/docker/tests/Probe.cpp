@@ -94,6 +94,18 @@ static void installedAudio(Client &a, Client &b, Client &observer, bool muted) {
  const auto close=cues(ending,observer.session);verify(close,clip("squelch-close.wav",false),observer.session);
  check(close.first().frame>open.last().frame,"Close sequence reused Open");
  check(a.audio().isEmpty(),"Feedback sent to original sender");
+ check(observer.audio(650).isEmpty(),"Confirmed end produced a second timeout Close");
+ check(speak() && a.barrier(),"Timeout stream start failed");
+ const auto restarted=observer.audio(150,3);
+ verify(cues(restarted,observer.session),clip("squelch-open.wav",false),observer.session);
+ voices=0;for(const auto &p:restarted) if(p.session==a.session) {++voices;check(!p.last && p.payload==voice,"Timeout speech changed");}
+ check(voices==1,"Timeout speech missing");
+ const auto expired=observer.audio(800);
+ const auto timeoutClose=cues(expired,observer.session);
+ check(expired.size()==timeoutClose.size(),"Timeout fabricated a speech end marker");
+ verify(timeoutClose,clip("squelch-close.wav",false),observer.session);
+ check(timeoutClose.first().frame>close.last().frame,"Timeout Close reused sequence");
+ check(observer.audio(600).isEmpty(),"Repeated timeout duplicated Close");
  std::cout<<"Installed audio defaults verified: Open, Close, Busy, boost8, volume50; TCP/encrypted UDP and Simplex"<<(muted?"; volume0 silent":"")<<std::endl;
 }
 int main(int argc,char **argv) {

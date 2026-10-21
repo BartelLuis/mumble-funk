@@ -4,7 +4,7 @@
 
 **This branch: experimental audio defaults (`feature/audio-defaults`).**
 Fresh Ubuntu and Docker installations enable Simplex, the packaged CC0 Busy tone
-and Squelch Open/Close at **50% volume and +8 dB boost**. Timeout Close remains off.
+and Squelch Open/Close at **50% volume and +8 dB boost**. Mumla timeout Close is enabled for fresh installations.
 Updates preserve existing settings and custom WAVs, including missing INI keys
 and disabled effects. Speech, Simplex rules and the audio architecture stay intact.
 Native feature installation requires `--experimental-audio-defaults`.

@@ -147,7 +147,7 @@ with `released/timeout_suspected`. This is an operator report, not a Codex heari
 test or evidence about every Mumla version/configuration. Device acceptance of
 the changed fallback is still outstanding.
 
-Policy: **`squelchclosetimeoutfallback=false`** in C++ Meta, new-install native and
+Historical policy for this follow-up: **`squelchclosetimeoutfallback=false`** in C++ Meta, new-install native and
 Docker defaults and the common admin status whitelist. A missing key is false.
 `mumble-funk-audio enable-timeout-close` / `disable-timeout-close` changes only
 that policy and performs the existing controlled restart. Docker uses the same
@@ -572,7 +572,7 @@ Windows/Mumla hearing tests and deployment remain the operator's next steps.
 Base dev: `35f83e9315945c50cbc3c0dc60c0b6f89ca83bb1`, including merged Busy
 asset PR #6. Only new native/Docker configuration generation enables
 simplex/audiofeedback/busytone/squelch/open/close, volume50 each, boost8 and
-timeout-close false. Core Meta defaults, AudioSignal, AudioFeedback, SquelchPlan
+timeout-close true (PR #7 follow-up). Core Meta defaults, AudioSignal, AudioFeedback, SquelchPlan
 and Server.cpp remain unchanged; so do admin DEFAULTS. Existing INIs, including
 absent keys, retain the previous disabled/boost0 semantics and are never migrated.
 Native template now has active simplex=true even for manual fresh installation;
@@ -613,3 +613,19 @@ resolution verified default64740, pinned64739/64740 and custom ports with unchan
 git diff --check passed. Full local Docker image/integration and CodeQL are not
 claimed successful for this feature; they remain for GitHub CI. No VM hearing
 test, deployment or live service modification was performed.
+
+### PR #7: enable Mumla timeout Close for fresh configurations
+
+Only the native template and Docker initialize() fresh-INI text now select
+squelchclosetimeoutfallback=true. Core Meta and admin DEFAULTS remain false;
+existing missing/false/true keys are never migrated. Existing native and Docker
+configuration/restore cases explicitly retain false and absent keys. The fresh
+protocol probe also waits past the lease after a confirmed end (no second Close),
+then sends a valid new stream without a marker (one timeout Close, no fabricated
+speech marker), and checks repeated expiry cannot duplicate the cue. The existing
+Simplex/BUSY/timeout lifecycle regressions remain in place. No server code changed.
+A timeout still cannot prove release of the physical PTT key.
+
+Local follow-up validation: build succeeded; 34 Python cases and all 10 relevant
+CTest entries passed (244.82 s), including timeout lifecycle, Simplex and Busy.
+GitHub CI is intentionally not polled or awaited after publication.

@@ -18,7 +18,7 @@ squelchclose=true
 squelchopenvolume=50
 squelchclosevolume=50
 feedbackboostdb=8
-squelchclosetimeoutfallback=false
+squelchclosetimeoutfallback=true
 ```
 
 Beide Squelch-Dateien werden weiterhin aus
@@ -27,7 +27,9 @@ der zusätzliche gemeinsame Boost beträgt +8 dB. Der Boost gilt für alle drei
 Effekte. Sprachlautstärke und weitergeleitete Sprachpakete werden nicht verändert.
 Simplex-Regeln, Empfängerzuordnung, Busy-Priorität und Squelch-Architektur bleiben
 unverändert. Ein Timeout beweist kein Loslassen von PTT; der experimentelle
-Mumla-Timeout-Close bleibt ausdrücklich ausgeschaltet.
+Mumla-Timeout-Close ist für neue Konfigurationen eingeschaltet. Ohne bestätigte
+Ende-Markierung kann nach dem bestehenden Timeout einmal Close folgen. Ein
+bestätigtes Ende erzeugt weiterhin sofort Close und keinen zusätzlichen Timeout-Close.
 
 ## Bestehende Installation: keine automatische Umstellung
 
@@ -36,7 +38,9 @@ Eine vorhandene INI wird nicht ergänzt oder migriert. Das gilt auch für fehlen
 Schlüssel, ausgeschaltetes Simplex/Audio/Squelch, Boost 0, Volume 0, eigene WAVs
 und einen leeren Busy-Pfad für den synthetischen Ton. Die bisherigen C++-Defaults
 und die Ersatzwerte der Audioverwaltung bleiben deshalb unverändert: fehlendes
-`audiofeedback`/`squelch` bleibt aus, fehlender Boost bleibt 0.
+`audiofeedback`/`squelch` bleibt aus, fehlender Boost bleibt 0 und ein fehlendes
+`squelchclosetimeoutfallback` bleibt false. Auch ein ausdrücklich gespeichertes
+false bleibt bei Updates erhalten.
 
 Vorhandene Datenbanken, Konten, Kanäle, Passwörter, Zertifikate und eigene Dateien
 bleiben erhalten. Docker behält `.env`, Projektnamen und Volumes. Kein automatisches
@@ -121,7 +125,10 @@ CodeQL aus; deren Abschluss wird in diesem Arbeitsablauf nicht abgewartet.
 Auf der eigenen Test-VM zwei Clients im selben Kanal verbinden. Windows-Mumble
 und Android-Mumla abwechselnd senden lassen: vollständige erste/letzte Silben und
 Open prüfen; Windows mit bestätigtem Ende sollte Close erzeugen. Bei Mumla ohne
-Ende-Markierung kann Close fehlen, weil der Timeout-Fallback weiterhin aus ist.
+Ende-Markierung sollte nach dem bestehenden Timeout ebenfalls einmal Close
+zu hören sein. Dabei PTT tatsächlich loslassen: Paketruhe kann ebenso durch Sprechpausen
+oder Netzwerkstörungen entstehen. Bestätigtes Ende darf auch nach Ablauf des
+Timeouts keinen zweiten Close-Ton erzeugen.
 Während A sendet, versucht B zu senden: nur B hört Busy, B übernimmt den Kanal
 nicht automatisch. Volume 0, eigene WAV und synthetischen Fallback bewusst
 vergleichen. Hörtests auf echten Geräten und eine Stable-Freigabe bleiben offen.

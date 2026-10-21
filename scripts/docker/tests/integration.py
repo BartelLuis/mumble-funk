@@ -178,13 +178,13 @@ def main():
             values=information();assert values['simplex']=='true';assert values['simplextimeout']=='500';assert values['simplexretrytimeout']=='500'
             for key in ('audiofeedback','squelch','squelchopen','squelchclose','busytone'):
                 assert values[key]=='true', 'Fresh installation must enable '+key
-            assert values['feedbackboostdb']=='8' and values['squelchclosetimeoutfallback']=='false'
+            assert values['feedbackboostdb']=='8' and values['squelchclosetimeoutfallback']=='true'
             for key in ('busytonevolume','squelchopenvolume','squelchclosevolume'): assert values[key]=='50'
             fresh=command([str(args.probe),str(port),'--audio-defaults'],input=(values['serverpassword']+'\n').encode())
             assert b'Installed audio defaults verified' in fresh.stdout
             # Preserve the complete existing explicit-off/legacy regression fixture.
             # Fresh automatic audio was exercised above against the actual container.
-            for action in (('disable-squelch',),('disable',),('boost','0')):
+            for action in (('disable-squelch',),('disable',),('boost','0'),('disable-timeout-close',)):
                 command(['bash','scripts/docker/audio.sh',*action]);healthy()
             values=information()
             assert len(values['serverpassword'])==48

@@ -5,7 +5,7 @@
 **Dieser Branch: experimentelle Audio-Defaults (`feature/audio-defaults`).**
 Neue Ubuntu- und Docker-Konfigurationen aktivieren Simplex, den mitgelieferten
 CC0-Busy-Tone und Squelch Open/Close bei **50 % und +8 dB Boost**. Timeout-Close
-bleibt aus. Updates erhalten bestehende Einstellungen und eigene WAVs, auch
+ist bei Neuinstallationen eingeschaltet. Updates erhalten bestehende Einstellungen und eigene WAVs, auch
 fehlende INI-Einträge und ausgeschaltete Effekte. Sprache, Simplex-Regeln und
 Audioarchitektur bleiben unverändert. Native Installation nur ausdrücklich mit
 `--experimental-audio-defaults`.

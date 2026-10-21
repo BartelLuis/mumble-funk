@@ -44,7 +44,7 @@ class SquelchAdminTests(unittest.TestCase):
         self.assertEqual(state['audiofeedback'], 'true')
         self.assertEqual(state['squelchopen'], 'true')
         self.assertEqual(state['squelchclose'], 'true')
-        self.assertEqual(state['squelchclosetimeoutfallback'], 'false')
+        self.assertEqual(state['squelchclosetimeoutfallback'], 'true')
         for name in ('busy-tone.wav', 'squelch-open.wav', 'squelch-close.wav', 'LICENSE.md'):
             path = self.sound/name
             self.assertEqual(path.read_bytes(), (REPO/'assets/audio'/name).read_bytes())

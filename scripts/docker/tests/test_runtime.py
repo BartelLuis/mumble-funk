@@ -38,7 +38,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(values['simplex'],'true');self.assertEqual(values['simplexretrytimeout'],'500')
         self.assertEqual(values['squelch'],'true');self.assertEqual(values['audiofeedback'],'true')
         self.assertEqual(values['squelchopen'],'true');self.assertEqual(values['squelchclose'],'true')
-        self.assertEqual(values['squelchclosetimeoutfallback'],'false')
+        self.assertEqual(values['squelchclosetimeoutfallback'],'true')
         self.assertEqual(values['feedbackboostdb'],'8')
         self.assertEqual(values['busytonefile'],'/usr/local/share/mumble-funk/audio/busy-tone.wav')
         self.assertEqual(values['squelchopenfile'],'/usr/local/share/mumble-funk/audio/squelch-open.wav')
@@ -65,7 +65,8 @@ class RuntimeTests(unittest.TestCase):
                     'busytonefile','busytonevolume','squelchopenvolume','squelchclosevolume','squelchclosetimeoutfallback')
         missing='\n'.join(line for line in original.splitlines() if not line.startswith(tuple(k+'=' for k in audio_keys)))+'\n'
         variants=[missing, original.replace('audiofeedback=true','audiofeedback=false')
-                  .replace('squelch=true','squelch=false').replace('feedbackboostdb=8','feedbackboostdb=0'),
+                  .replace('squelch=true','squelch=false').replace('feedbackboostdb=8','feedbackboostdb=0')
+                  .replace('squelchclosetimeoutfallback=true','squelchclosetimeoutfallback=false'),
                   original.replace('busytonevolume=50','busytonevolume=0').replace('feedbackboostdb=8','feedbackboostdb=12')
                   .replace('busytonefile=/usr/local/share/mumble-funk/audio/busy-tone.wav',
                            'busytonefile=/var/lib/mumble-funk/audio/own.wav')]

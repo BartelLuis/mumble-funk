@@ -8,7 +8,7 @@ eigene WAVs werden bei Updates nicht automatisch geändert.
 Dieser Feature-Stand **`feature/audio-defaults`** enthält die gemeinsame Audio-Engine
 und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
 Stable-Freigabe. Neue Konfigurationen aktivieren Simplex, Busy, Squelch Open/Close
-bei 50 % und +8 dB; Timeout-Close bleibt aus. Vorhandene INIs bleiben unverändert.
+bei 50 % und +8 dB; Mumla-Timeout-Close ist ebenfalls aktiv. Vorhandene INIs bleiben unverändert.
 Details und Bestandsschutz: [Standard-Audioeinstellungen](audio-defaults.md).
 Die Anleitung für Aktivierung, eigene WAVs und getrennte Open-/Close-Einstellungen
 steht in [squelch-preview.md](squelch-preview.md#docker-assets-and-management).

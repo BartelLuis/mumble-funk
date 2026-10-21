@@ -20,7 +20,7 @@ EXPECTED = {
     'busytonefile': '/usr/local/share/mumble-funk/audio/busy-tone.wav',
     'busytonevolume': '50', 'squelch': 'true', 'squelchopen': 'true',
     'squelchclose': 'true', 'squelchopenvolume': '50', 'squelchclosevolume': '50',
-    'feedbackboostdb': '8', 'squelchclosetimeoutfallback': 'false',
+    'feedbackboostdb': '8', 'squelchclosetimeoutfallback': 'true',
 }
 
 
@@ -74,7 +74,7 @@ class AudioDefaults(unittest.TestCase):
         base = 'port=64739\ndatabase=/var/lib/mumble-funk/server.sqlite\nserverpassword=private-fixture\n'
         variants = [
             '',  # All radio/audio keys absent: core defaults must stay off/boost0.
-            'simplex=false\naudiofeedback=false\nsquelch=false\nfeedbackboostdb=0\nbusytonefile=\n',
+            'simplex=false\naudiofeedback=false\nsquelch=false\nfeedbackboostdb=0\nbusytonefile=\nsquelchclosetimeoutfallback=false\n',
             'simplex=true\naudiofeedback=false\nsquelch=false\nbusytone=false\nfeedbackboostdb=12\n'
             'busytonefile=/etc/mumble-funk/sounds/own.wav\nbusytonevolume=0\n'
             'squelchopen=false\nsquelchclose=false\nsquelchclosetimeoutfallback=true\n',
@@ -96,6 +96,7 @@ class AudioDefaults(unittest.TestCase):
         status = json.loads(result.stdout)
         self.assertEqual((status['audiofeedback'], status['squelch'], status['feedbackboostdb'], status['busytonefile']),
                          ('false', 'false', '0', ''))
+        self.assertEqual(status['squelchclosetimeoutfallback'], 'false')
         self.assertEqual(config.read_bytes(), before)
 
     def test_actual_fresh_audio_and_volume_zero_native_and_docker(self):
