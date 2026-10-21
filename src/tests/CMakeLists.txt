@@ -30,6 +30,9 @@ if(server)
 	use_test("TestSimplexIntegration")
 	use_test("TestAudioFeedback")
 	use_test("TestAudioFeedbackIntegration")
+	use_test("TestSquelchFoundation")
+	use_test("TestSquelchPassthrough")
+	use_test("TestSquelchIntegration")
 endif()
 
 # Shared tests

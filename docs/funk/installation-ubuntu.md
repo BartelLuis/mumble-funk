@@ -1,4 +1,10 @@
 > Gemeinsamer Stable-Kandidat: Ubuntu und Docker verwenden denselben Commit.
+
+**Experimentelle Squelch-Version auf einer frischen Snapshot-Test-VM:**
+Bitte die [Phase-2C-Anleitung](squelch-ubuntu.md) verwenden. Sie nutzt ausdrücklich
+`feature/squelch-audio` mit `--experimental-squelch`, den normalen Dienst und Port
+64739; keine Stable-Freigabe und keine zusätzliche Preview-Installation.
+
 > Für die einfache Installation und den Wechsel aus `funk-v0.1` zuerst
 > [setup.md](setup.md) lesen. Die manuellen Schritte unten bleiben verfügbar;
 > Pfade und Dienstname sind unverändert. Kein neuer Release-Tag ist freigegeben.

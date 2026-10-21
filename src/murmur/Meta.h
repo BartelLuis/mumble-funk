@@ -39,6 +39,11 @@ public:
 	int voiceDiagnosticsMaxSize  = 10 * 1024 * 1024;
 	bool audioFeedback           = false;
 	bool busyTone                = true;
+	bool squelch                 = false;
+	bool squelchOpen = true, squelchClose = true;
+	bool squelchCloseTimeoutFallback = false;
+	QString squelchOpenFile, squelchCloseFile;
+	int squelchOpenVolume = 50, squelchCloseVolume = 50;
 	QString busyToneFile;
 	int busyToneVolume      = 50;
 	bool simplex            = false;

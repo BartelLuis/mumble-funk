@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Validate the selected project revision; this is a guard, not a signature check.
 funk_require_supported_source() {
-    local repo=$1 branch head upstream tag published
+    local repo=$1 experimental=${2:-} branch head upstream tag published
     git -C "$repo" merge-base --is-ancestor dfbac8d3d9c967003e74b4ffc5610f7d45e8f666 HEAD || {
         echo 'Erwartet wird die Mumble-Funk-Basis Mumble 1.5.939.' >&2; return 1;
     }
@@ -20,6 +20,18 @@ funk_require_supported_source() {
             [[ $head == "$upstream" ]] || {
                 echo 'Der lokale Branch weicht von origin ab. Bitte den Quellstand vor dem Setup prüfen.' >&2; return 1;
             }
+            ;;
+        feature/squelch-audio)
+            [[ $experimental == --experimental-squelch ]] || {
+                echo 'EXPERIMENTELL: feature/squelch-audio benötigt --experimental-squelch.' >&2; return 1;
+            }
+            upstream=$(git -C "$repo" rev-parse --verify "refs/remotes/origin/$branch^{commit}") || return 1
+            [[ $head == "$upstream" ]] || { echo 'Experimenteller Branch weicht von origin ab.' >&2; return 1; }
+            published=$(git -C "$repo" ls-remote --heads origin "refs/heads/$branch") || return 1
+            [[ $(awk '$2=="refs/heads/feature/squelch-audio" {print $1}' <<< "$published") == "$head" ]] || {
+                echo 'Experimenteller Commit ist nicht der veröffentlichte Feature-Stand. Bitte git fetch und prüfen.' >&2; return 1;
+            }
+            echo 'EXPERIMENTELL: Squelch-Vorschau, keine Stable-Freigabe und noch keine Geräte-Hörtests.' >&2
             ;;
         '')
             # Detached checkouts must be an annotated, remotely published project

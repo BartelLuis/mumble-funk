@@ -2,11 +2,14 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
-**Dieser Branch: neuer Docker-Host-Standard (`feature/docker-port-default`, Ziel: `dev`).**
-Die bestehende Busy-Tone-Funktion ist mit der aktuellen Ubuntu-/Docker-Basis
-integriert, standardmäßig deaktiviert. Keine neuen Funk-Audioeffekte, kein Release.
-[Bedienung, eigene WAV und sichere parallele Preview](docs/funk/audio-engine.md) ·
-[Phase-1-Prüfbericht](docs/funk/AUDIO-ENGINE-STATUS.md).
+**Dieser Branch: experimentelles Squelch Phase 2C (`feature/squelch-audio`, Draft-PR #4).**
+Open/Close und privater Busy Tone nutzen den bestehenden Audio-Feedback-Weg;
+die Sprache wird weiterhin unverändert weitergeleitet. Effekte sind standardmäßig
+**aus**. Keine Release- oder Hörtestfreigabe. Die normale Ubuntu-Installation
+verlangt eine ausdrückliche experimentelle Auswahl; keine parallele Preview nötig.
+[Ubuntu-Snapshot-VM installieren](docs/funk/squelch-ubuntu.md) ·
+[Verhalten, WAV-Verwaltung und Docker](docs/funk/squelch-preview.md) ·
+[Technische Übergabe](docs/funk/SQUELCH-DEVELOPMENT-HANDOFF.md).
 
 Neue Docker-Installationen dieses Entwicklungsstands verwenden **Host 64740
 TCP/UDP → Container 64739 TCP/UDP**. Ubuntu nativ bleibt auf **64739 TCP/UDP**.
@@ -158,7 +161,8 @@ Die automatisierten Ergebnisse selbst ersetzen keine Hörprobe mit Endgeräten. 
   Whisper, Kanalverknüpfungen, zusätzliche Kanal-Abonnements und Server-Loopback
   bieten keine alternativen Sprachwege; ihre Clientanzeigen können bestehen bleiben.
 - Stable enthält keine Audioeffekte. Dieser Branch ergänzt optionales privates
-  Busy-Feedback; Roger Beep, Squelch und Grundrauschen sind nicht implementiert.
+  Busy-Feedback und experimentelles Squelch Open/Close. Roger Beep und Grundrauschen
+  sind nicht implementiert.
 - Begrenzte Praxiserfahrung und kein abgeschlossener Langzeit-/Lasttest.
 
 ## Installation und Bedienung

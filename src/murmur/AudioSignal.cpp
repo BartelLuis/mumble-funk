@@ -11,10 +11,12 @@
 #include <opus.h>
 #include <stdexcept>
 
-std::vector< float > AudioSignal::loadWav(const QString &path) {
-	const auto fail = [] {
+std::vector< float > AudioSignal::loadWav(const QString &path, LengthPolicy policy) {
+	const auto fail = [policy] {
 		throw std::runtime_error(
-			"Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 20-1000 ms, at most 128 KiB");
+			policy == LengthPolicy::Busy
+				? "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 20-1000 ms, at most 128 KiB"
+				: "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 1-1000 ms, at most 128 KiB");
 	};
 	QFile file(path);
 	if (!QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly) || file.size() > 131072)
@@ -56,7 +58,7 @@ std::vector< float > AudioSignal::loadWav(const QString &path) {
 		fail();
 	const auto rate = u32(fmt + 4);
 	if ((rate != 8000 && rate != 16000 && rate != 24000 && rate != 48000) || u32(fmt + 8) != rate * 2
-		|| size < rate / 50 * 2 || size > rate * 2)
+		|| size < rate / (policy == LengthPolicy::Busy ? 50 : 1000) * 2 || size > rate * 2)
 		fail();
 	const auto frames = size / 2;
 	const auto output = static_cast< std::size_t >(frames) * 48000 / rate;
@@ -93,7 +95,7 @@ std::vector< float > AudioSignal::syntheticBusy() {
 	return pcm;
 }
 
-std::vector< QByteArray > AudioSignal::encode(const std::vector< float > &pcm, int volume) {
+static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail) {
 	if (pcm.empty() || pcm.size() > 48960)
 		throw std::runtime_error("Feedback PCM length outside limits");
 	int error = OPUS_OK;
@@ -101,6 +103,14 @@ std::vector< QByteArray > AudioSignal::encode(const std::vector< float > &pcm, i
 		opus_encoder_create(48000, 1, OPUS_APPLICATION_AUDIO, &error), opus_encoder_destroy);
 	if (!encoder || error != OPUS_OK || opus_encoder_ctl(encoder.get(), OPUS_SET_BITRATE(24000)) != OPUS_OK)
 		throw std::runtime_error("Cannot initialize feedback Opus encoder");
+	std::size_t length = pcm.size();
+	if (signalTail) {
+		int lookahead = 0;
+		if (pcm.size() < 960 || opus_encoder_ctl(encoder.get(), OPUS_GET_LOOKAHEAD(&lookahead)) != OPUS_OK
+			|| lookahead < 0 || lookahead > 960)
+			throw std::runtime_error("Unexpected Opus lookahead");
+		length = pcm.size() - 960 + static_cast<std::size_t>(lookahead);
+	}
 	float peak = 0;
 	for (float sample : pcm) {
 		if (!std::isfinite(sample) || std::abs(sample) > 1)
@@ -111,7 +121,7 @@ std::vector< QByteArray > AudioSignal::encode(const std::vector< float > &pcm, i
 	const float gain =
 		(peak > 0.2f ? 0.2f / peak : 1.0f) * static_cast< float >(std::max(0, std::min(100, volume))) / 100;
 	std::vector< QByteArray > result;
-	for (std::size_t offset = 0; offset < pcm.size(); offset += 960) {
+	for (std::size_t offset = 0; offset < length; offset += 960) {
 		std::array< float, 960 > frame{};
 		for (std::size_t i = 0; i < 960 && offset + i < pcm.size(); ++i)
 			frame[i] = pcm[offset + i] * gain;
@@ -123,4 +133,11 @@ std::vector< QByteArray > AudioSignal::encode(const std::vector< float > &pcm, i
 		result.emplace_back(reinterpret_cast< const char * >(bytes.data()), size);
 	}
 	return result;
+}
+
+std::vector<QByteArray> AudioSignal::encode(const std::vector<float> &pcm, int volume) {
+	return encodePCM(pcm, volume, false); // Busy waveform and tail are unchanged.
+}
+std::vector<QByteArray> AudioSignal::encodeWavSignal(const QString &path, int volume) {
+	return encodePCM(loadWav(path, LengthPolicy::ShortSignal), volume, true);
 }

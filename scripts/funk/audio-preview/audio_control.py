@@ -63,7 +63,8 @@ def atomic_config(path, content):
             os.unlink(temporary)
 
 
-def managed_copy(source, sounds, binary, production):
+def managed_copy(source, sounds, binary, production, instance=INSTANCE,
+                 validator="--validate-feedback-wav", prefix="busy"):
     # Limit before reading, including special files and accidental huge recordings.
     descriptor = os.open(source, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
     try:
@@ -86,10 +87,10 @@ def managed_copy(source, sounds, binary, production):
             os.fsync(file.fileno())
             os.fchmod(file.fileno(), 0o640)
             if production:
-                os.fchown(file.fileno(), 0, pwd.getpwnam(INSTANCE).pw_gid)
+                os.fchown(file.fileno(), 0, pwd.getpwnam(instance).pw_gid)
         # Exactly the same C++ parser and Opus encoder as the running server.
-        checked([str(binary), '--validate-feedback-wav', temporary])
-        target = sounds / ('busy-' + hashlib.sha256(data).hexdigest() + '.wav')
+        checked([str(binary), validator, temporary])
+        target = sounds / (prefix + '-' + hashlib.sha256(data).hexdigest() + '.wav')
         os.replace(temporary, target)
         return target.name
     finally:

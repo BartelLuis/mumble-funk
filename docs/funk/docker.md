@@ -1,21 +1,22 @@
 # Mumble-Funk mit Docker — experimentell
 
-Die Docker- und Ubuntu-Installation sind im gemeinsamen **`stable`-Kandidaten**
-zusammengeführt: Simplex-Engine v0.2 auf Basis Mumble Server 1.5.939, aus demselben
-Git-Commit. `git rev-parse HEAD` zeigt die vollständige Quellrevision. Audio-Feedback
-v0.3 gehört nicht dazu. Der bisherige Docker-Feature-Branch bleibt unverändert.
+Dieser Feature-Stand **`feature/squelch-audio`** enthält die gemeinsame Audio-Engine
+und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
+Stable-Freigabe. Squelch und Audio-Feedback bleiben bei Neuinstallation deaktiviert.
+Die Anleitung für Aktivierung, eigene WAVs und getrennte Open-/Close-Einstellungen
+steht in [squelch-preview.md](squelch-preview.md#docker-assets-and-management).
 
-**Bereits installiert?** Nicht neu klonen oder Volumes neu anlegen. Verwende die
-[Umstellung auf Stable mit Sicherung und Rollback](docker-stable-migration.md).
-Die folgenden Schritte sind für eine **neue Testinstallation des Entwicklungsstands**
-`feature/docker-port-default` (Ziel: `dev`). Hier gilt erstmals der einheitliche
-Host-Standard **64740 TCP/UDP**; im Container bleibt es bei **64739 TCP/UDP**.
-`stable` wird durch diese Änderung nicht aktualisiert. Der bisherige Stable- und
-Docker-Feature-Stand verwendete ohne explizite Einstellung noch Host-Port 64739.
-Seine bestehende Installation darf deshalb nicht blind mit neuen Defaults neu
-erstellt werden: siehe [Bestandsschutz beim Update](#9-aktualisieren).
+Host **64740 TCP/UDP** → Container **64739 TCP/UDP**. `.env`, individuell gewählte
+Host-Ports, Compose-Projektname und alle bestehenden Volumes bleiben erhalten.
+Ein Update wechselt keine Ports automatisch. Native Ubuntu-Installation: 64739.
 
-[Prüfbericht zum neuen Portstandard](DOCKER-PORT-DEFAULT-STATUS.md).
+**Bereits installiert?** Im vorhandenen Projekt arbeiten und zuerst sichern.
+Die [Stable-Migration](docker-stable-migration.md) beschreibt den historischen
+Simplex-v0.2-Kandidaten; sie ist keine Freigabe, eine bestehende Stable-Installation
+ungefragt durch diesen experimentellen Feature-Branch zu ersetzen. Der damalige
+Stand verwendete ohne explizite Einstellung noch Host-Port 64739. Historische
+Prüfberichte bleiben unverändert. Siehe [Bestandsschutz beim Update](#9-aktualisieren)
+und den [Prüfbericht zum Portstandard](DOCKER-PORT-DEFAULT-STATUS.md).
 
 ## Voraussetzungen
 
@@ -57,7 +58,7 @@ installiert oder verändert Docker selbst nicht.
 
 | Eigenschaft | Ubuntu-Schnellinstallation | Docker-Installation |
 | --- | --- | --- |
-| Start | `scripts/funk/setup.sh` auf `stable` | `docker compose up -d --build`; Entwicklungsstand siehe unten |
+| Start | `scripts/funk/setup.sh --experimental-squelch` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
 | Betrieb | Eigener systemd-Dienst | Eigener Container mit Neustartrichtlinie |
 | Dateien | Eigene Verzeichnisse direkt auf Ubuntu | Eigene benannte Docker-Volumes |
 | Port (TCP/UDP) | Standardmäßig 64739 | Hier Host-Standard 64740, frei wählbar; intern immer 64739 |
@@ -74,7 +75,7 @@ Benutze ein neues Quellverzeichnis, damit vorhandene v0.2-/v0.3-Quellen erhalten
 bleiben:
 
 ```bash
-git clone --branch feature/docker-port-default \
+git clone --branch feature/squelch-audio \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-docker
 cd mumble-funk-docker
 ```
@@ -478,7 +479,8 @@ alter Volumes, keine automatische Migration und keine Freigabe eines belegten Po
 6. Falls du Netzwerkprobleme untersuchen möchtest, TCP-erzwungenen Clientbetrieb
    und normalen UDP-Betrieb getrennt testen; Client-Version und Netzweg notieren.
 
-Ein Busy Tone wird hier **nicht** erwartet: Diese Docker-Version enthält nur v0.2.
+Busy und Squelch sind zunächst ausgeschaltet. Für bewusst aktivierte Effekte
+zusätzlich die [Squelch-/Busy-Testanleitung](squelch-preview.md) verwenden.
 Die bisherigen realen Mumla-/Windows-Erfahrungen mit v0.2 ersetzen keinen neuen
 Hörtest über deinen konkreten Docker-Host, Router und die Proxmox-Firewall.
 
@@ -505,14 +507,15 @@ Hörtest über deinen konkreten Docker-Host, Router und die Proxmox-Firewall.
 ## 15. Automatisierte Prüfung und bekannte Grenzen
 
 Die ausgeführten Prüfungen und Commits stehen im [Docker-Prüfbericht](DOCKER-STATUS.md).
-Die Multi-Stage-Builds führen alle **18** bisherigen CTest-Serverprogramme aus.
+Die Multi-Stage-Builds führen alle **23** CTest-Serverprogramme einschließlich Audio und Squelch aus.
 Zusätzlich gibt es Docker-spezifische Tests für Initialisierung, sichere Rechte,
 Sperren, Konfiguration und Archivprüfung sowie echte Compose-Integrationstests.
 
 Die Protokollprobe benutzt authentifizierte Testclients und verschlüsselte UDP-
 Pakete mit überprüften Testnutzdaten durch den veröffentlichten Host-Port. Sie
 prüft die Weiterleitungs-/Simplex-Entscheidungen, keine hörbare Opus-Wiedergabe.
-Der Server benötigt dafür keinen Opus-Encoder. Der echte Gerätetest des neuen Integrationscommits bleibt offen.
+Die Routingprobe benötigt keine hörbare Opus-Wiedergabe; die zusätzlichen
+Audio-/Squelch-Servertests prüfen echte Opus-Decodierung. Der echte Gerätetest des neuen Integrationscommits bleibt offen.
 
 Die Simplex-Regeln bleiben unverändert. Der gemeinsame Integrationsstand behebt
 gezielt den UDP-Nonce-/Versionsfehler, nachdem ein deterministischer Test ihn am
@@ -536,32 +539,20 @@ Keine Behauptung von Produktionsreife, abgeschlossenem Langzeittest oder geteste
 ARM-/Windows-/macOS-Hostunterstützung. Ein echter Host-Neustart und der externe
 Netzweg bleiben Praxistests. Es wird **kein öffentliches Container-Image** veröffentlicht.
 
-## 16. Lizenz und spätere Audio-Integration
+## 16. Audioassets, Verwaltung und Lizenz
 
-Die bestehende BSD-Projektlizenz und Copyright-Hinweise bleiben erhalten. Das
-Laufzeit-Image enthält die Projektlizenz, die vorhandenen Drittanbieter-Hinweise und
-die Ubuntu-Paket-Lizenzdateien. Es werden ausschließlich die bisherigen
-Serverabhängigkeiten und Python für die Containerverwaltung verwendet. Kein neuer
-Codec-/Audioinhalt und kein unbekannter Drittanbieter-Code wird hinzugefügt.
+Die BSD-Projektlizenz und Copyright-Hinweise bleiben erhalten. Das Laufzeit-Image
+enthält die Projektlizenz, Drittanbieter-Hinweise und Ubuntu-Paket-Lizenzdateien.
+Die bereits integrierte Audio-Engine benötigt Opus auch zur Laufzeit. Für Phase 2C
+werden keine neuen Drittanbieter-Abhängigkeiten oder fremden Audioressourcen
+hinzugefügt. Die beiden unveränderten Squelch-WAVs stammen vom Projektinhaber;
+ihre CC0-Erklärung liegt zusammen mit ihnen im Image.
 
-`ldd` bestätigt Qt5, OpenSSL, Protobuf, Ice, Avahi/DBus und Systembibliotheken;
-Qt-SQLite wird als Laufzeit-Plugin ausdrücklich installiert. **Opus ist für diesen
-v0.2-Server keine Laufzeitabhängigkeit**; Sprachpakete werden unverändert weitergeleitet.
-Compiler, Git, CMake, Testprogramme und Quellbäume sind nicht im Laufzeit-Image.
-
-Für eine spätere, bewusst durchgeführte Übernahme in `feature/audio-feedback`:
-
-1. Docker-Dateien in einem separaten Integrationszweig gezielt übernehmen und
-   Konflikte prüfen. Kein automatisches Merge und keine Änderung von `funk-v0.1`.
-2. Im Build `libopus-dev`, im Laufzeit-Image die passende Opus-Bibliothek und ihre
-   Lizenzhinweise ergänzen. Versionsanzeigen und Testumfang auf v0.3 aktualisieren.
-3. Den bereits persistenten Bereich `/var/lib/mumble-funk/audio/` für eigene WAV-
-   Dateien nutzen und den v0.3-Verwaltungsbefehl an diesen Containerpfad anpassen.
-4. Den Testhilfe-Abgleich mit den zusätzlichen Audio-/Simplex-/Diagnosetests
-   prüfen. Die gemeinsame UDP-Korrektur und ihre Regressionstests erhalten;
-   keine alten Nonce-Testadapter wieder einführen.
-5. Feedback zunächst bewusst konfigurieren, vorhandene Dateien erhalten und alle
-   Audio-, Routing-, Sicherungs- und Neustarttests erneut ausführen.
-
-Hier wird nur der Speicherort vorbereitet, keine Audiofunktion eingebaut und keine
-Änderung am aktuellen Audio-Feedback-Zweig vorgenommen.
+Standards: `/usr/local/share/mumble-funk/audio/`. Eigene WAVs: bestehendes
+State-Volume unter `/var/lib/mumble-funk/audio/`. Die sichere Verwaltung nutzt
+`bash scripts/docker/audio.sh status` und die in
+[squelch-preview.md](squelch-preview.md#docker-assets-and-management) dokumentierten
+Befehle. Bei Änderungen wird nur der eigene Compose-Dienst kurz gestoppt und,
+wenn vorher aktiv, wieder gestartet. Keine zusätzlichen Audioports oder Volumes.
+Eigene WAVs benötigen keinen neuen Build und sind Teil der vorhandenen Sicherung.
+Compiler, Git, CMake, Testprogramme und Quellbäume bleiben außerhalb des Laufzeit-Images.

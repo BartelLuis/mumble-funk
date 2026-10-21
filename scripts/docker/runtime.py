@@ -3,6 +3,7 @@
 import contextlib
 import fcntl
 import getpass
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -104,6 +105,18 @@ simplexlogfile=/var/log/mumble-funk/simplex
 simplexlogmaxsize=10485760
 voicediagnostics=false
 voicediagnosticsfile=/var/log/mumble-funk/voice
+audiofeedback=false
+busytone=true
+busytonefile=
+busytonevolume=50
+squelch=false
+squelchopen=true
+squelchclose=true
+squelchclosetimeoutfallback=false
+squelchopenfile=/usr/local/share/mumble-funk/audio/squelch-open.wav
+squelchclosefile=/usr/local/share/mumble-funk/audio/squelch-close.wav
+squelchopenvolume=50
+squelchclosevolume=50
 '''
         write_private(CONFIG, text.encode())
     settings()
@@ -301,10 +314,21 @@ def main():
             restore()
         elif command == 'admin-password':
             admin_password()
+        elif command == 'audio':
+            settings()  # Validate this container's own configuration without rewriting it.
+            spec = importlib.util.spec_from_file_location('funk_audio', '/usr/local/lib/mumble-funk/audio.py')
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            arguments = sys.argv[2:]
+            if not arguments or arguments == ['status']:
+                return module.main(arguments, container=True)
+            # Mutations are offline; the host wrapper stops only this Compose service.
+            with instance_lock():
+                return module.main(arguments, container=True)
         elif command == 'set' and len(sys.argv) == 4:
             configure(sys.argv[2],sys.argv[3])
         else:
-            raise RuntimeError('Aufruf: funk-container serve|info [--json]|health|backup|restore|admin-password|set SCHLÜSSEL WERT')
+            raise RuntimeError('Aufruf: funk-container serve|info [--json]|health|backup|restore|admin-password|audio BEFEHL [WERT]|set SCHLÜSSEL WERT')
         return 0
     except (OSError, ValueError, RuntimeError, sqlite3.Error, tarfile.TarError) as error:
         print('Mumble-Funk Docker: '+str(error), file=sys.stderr)

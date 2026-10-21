@@ -9,6 +9,7 @@ root=
 binary=
 setup=false
 port_args=()
+source_args=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --stage)
@@ -17,10 +18,11 @@ while [[ $# -gt 0 ]]; do
             [[ $root != / ]] || { echo 'Stage darf nicht / sein.' >&2; exit 1; }
             binary=$(realpath -- "$3"); shift 3 ;;
         --setup) setup=true; shift ;;
+        --experimental-squelch) source_args=(--experimental-squelch); shift ;;
         --port)
             [[ $# -ge 2 ]] || { echo 'Port fehlt.' >&2; exit 1; }
             port_args=(--port "$2"); shift 2 ;;
-        *) echo 'Aufruf: install.sh [--setup] [--port PORT] [--stage TESTZIEL SERVERBINARY]' >&2; exit 1 ;;
+        *) echo 'Aufruf: install.sh [--setup] [--port PORT] [--experimental-squelch] [--stage TESTZIEL SERVERBINARY]' >&2; exit 1 ;;
     esac
 done
 root_args=()
@@ -32,10 +34,10 @@ else
     # shellcheck source=/dev/null
     . /etc/os-release
     funk_require_supported_os "${ID:-}" "${VERSION_ID:-}" || exit 1
-    # Experimental builds must not replace the existing native Stable service.
+    # Experimental source requires explicit opt-in and verified publication.
     # shellcheck source=scripts/funk/source.sh
     source "$repo/scripts/funk/source.sh"
-    funk_require_supported_source "$repo"
+    funk_require_supported_source "$repo" "${source_args[@]}"
     exec 9>/run/lock/mumble-funk-install.lock
     flock -n 9 || { echo 'Eine andere Funkserver-Installation läuft bereits.' >&2; exit 1; }
     binary="$repo/build/funk/mumble-server"
@@ -45,6 +47,10 @@ port=$(python3 "$repo/scripts/funk/setup_support.py" preflight "${root_args[@]}"
 [[ -x $binary ]] || { echo "Serverbinary fehlt: $binary" >&2; exit 1; }
 version=$("$binary" --version 2>&1)
 [[ $version == *1.5.939* ]] || { echo 'Erwartet wird Mumble 1.5.939.' >&2; exit 1; }
+# Validate the shipped short signals before writing deployment files.
+for asset in squelch-open.wav squelch-close.wav; do
+    "$binary" --validate-squelch-wav "$repo/assets/audio/$asset" >/dev/null
+done
 release=$(sha256sum -- "$binary" | cut -d ' ' -f 1)
 base="$root/opt/mumble-funk"
 if [[ -z $root ]]; then
@@ -53,7 +59,7 @@ if [[ -z $root ]]; then
     fi
 fi
 install -d -m 0755 "$base" "$base/releases" "$base/releases/$release" "$root/etc/systemd/system" "$root/etc/logrotate.d"
-install -d -m 0750 "$root/etc/mumble-funk" "$root/var/lib/mumble-funk" "$root/var/log/mumble-funk"
+install -d -m 0750 "$root/etc/mumble-funk" "$root/var/lib/mumble-funk" "$root/var/log/mumble-funk" "$root/etc/mumble-funk/sounds"
 if [[ ! -e $base/releases/$release/mumble-server ]]; then
     install -m 0755 "$binary" "$base/releases/$release/mumble-server"
 else
@@ -61,6 +67,17 @@ else
         echo 'Vorhandene Release-Datei stimmt nicht mit ihrer Prüfsumme überein.' >&2; exit 1;
     }
 fi
+# Public standards and helper library are separate from user WAVs/configuration.
+install -d -m 0755 "$root/usr/local/share/mumble-funk/audio" "$root/usr/local/lib/mumble-funk"
+install -m 0644 "$repo/assets/audio/squelch-open.wav" "$repo/assets/audio/squelch-close.wav" \
+    "$repo/assets/audio/LICENSE.md" "$root/usr/local/share/mumble-funk/audio/"
+install -m 0644 "$repo/scripts/funk/audio-preview/audio_control.py" "$root/usr/local/lib/mumble-funk/audio_control.py"
+branch=$(git -C "$repo" branch --show-current)
+revision=$(git -C "$repo" rev-parse HEAD)
+experimental=false
+if [[ $branch == feature/squelch-audio ]]; then experimental=true; fi
+printf 'revision=%s\nbranch=%s\nexperimental=%s\n' "$revision" "$branch" "$experimental" > "$base/releases/$release/BUILD-INFO"
+chmod 0644 "$base/releases/$release/BUILD-INFO"
 config_existed=false
 if [[ -f $root/etc/mumble-funk/server.ini ]]; then config_existed=true; fi
 simplex_args=()
@@ -68,11 +85,12 @@ if [[ $setup == true ]]; then simplex_args=(--simplex); fi
 python3 "$repo/scripts/funk/setup_support.py" create-config "${root_args[@]}" \
     --template "$templates/server.ini" --port "$port" "${simplex_args[@]}"
 install -d -m 0755 "$root/usr/local/sbin"
+install -m 0755 "$repo/scripts/funk/audio.py" "$root/usr/local/sbin/mumble-funk-audio"
 install -m 0755 "$repo/scripts/funk/setup_support.py" "$root/usr/local/sbin/mumble-funk-info"
 install -m 0644 "$templates/mumble-funk.service" "$root/etc/systemd/system/mumble-funk.service"
 install -m 0644 "$templates/logrotate" "$root/etc/logrotate.d/mumble-funk"
 if [[ -z $root ]]; then
-    chown root:mumble-funk /etc/mumble-funk /etc/mumble-funk/server.ini
+    chown root:mumble-funk /etc/mumble-funk /etc/mumble-funk/sounds /etc/mumble-funk/server.ini
     chown mumble-funk:mumble-funk /var/lib/mumble-funk /var/log/mumble-funk
     touch /var/log/mumble-funk/server.log
     chown mumble-funk:mumble-funk /var/log/mumble-funk/server.log

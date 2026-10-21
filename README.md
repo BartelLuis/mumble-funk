@@ -2,11 +2,14 @@
 
 **Server-side simplex radio communication for Mumble**
 
-**This branch: Docker host-port default update (`feature/docker-port-default`, targeting `dev`).**
-Private busy feedback from the existing audio preview is integrated with current
-Ubuntu/Docker and UDP fixes. It defaults to **off**; no new radio effects or release.
-[Audio setup, own WAV and safe parallel preview](docs/funk/audio-engine.md) ·
-[Phase-1 verification](docs/funk/AUDIO-ENGINE-STATUS.md).
+**This branch: experimental Squelch Phase 2C (`feature/squelch-audio`, Draft PR #4).**
+Open/Close signals and private Busy use the existing feedback transport; speech
+forwarding stays intact. Effects default **off**. No release or device hearing-test
+approval. Native installation uses the normal service with an explicit experimental
+opt-in; no parallel preview instance is required.
+[Ubuntu snapshot-VM guide (German)](docs/funk/squelch-ubuntu.md) ·
+[Behaviour, WAV management and Docker](docs/funk/squelch-preview.md) ·
+[Technical handoff](docs/funk/SQUELCH-DEVELOPMENT-HANDOFF.md).
 
 New Docker installations from this development candidate default to **host 64740
 TCP/UDP → container 64739 TCP/UDP**. Native Ubuntu remains **64739 TCP/UDP**.
@@ -176,8 +179,8 @@ claim of continuously passing CI.
   **Whisper, linked-channel forwarding, extra channel-listener reception and server
   loopback do not provide alternative voice routes.** Their saved settings or
   client UI may still exist.
-- Stable has no audio effects. This branch adds optional private busy feedback;
-  roger beep, squelch and background noise are not implemented.
+- Stable has no audio effects. This feature branch adds optional private Busy
+  and experimental Squelch Open/Close. Roger beep and background noise are not implemented.
 - Practical testing is limited; **no completed long-term or load test** establishes
   production reliability.
 

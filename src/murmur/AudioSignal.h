@@ -9,8 +9,13 @@
 // Future signals share this loader/encoder and supply their own fallback waveform.
 class AudioSignal {
 public:
-	static std::vector< float > loadWav(const QString &path);
+	enum class LengthPolicy { Busy, ShortSignal };
+	// Busy keeps its existing 20-ms minimum. Optional short cues accept >=1 ms;
+	// both paths retain all other bounds, the lookahead tail and attenuation.
+	static std::vector< float > loadWav(const QString &path, LengthPolicy policy = LengthPolicy::Busy);
 	static std::vector< float > syntheticBusy();
+	// Short signal files use the actual Opus lookahead, rather than a full 20-ms tail.
+	static std::vector< QByteArray > encodeWavSignal(const QString &path, int volume);
 	static std::vector< QByteArray > encode(const std::vector< float > &pcm, int volume);
 };
 #endif
