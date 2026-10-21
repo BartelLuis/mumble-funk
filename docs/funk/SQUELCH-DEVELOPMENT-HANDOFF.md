@@ -199,8 +199,20 @@ Busy cutoff checks require the full original Busy clip and decodable monotonic
 private output. Speech assertions preserve first/last payload/frame/end bits.
 The extra admin test checks opt-in/off and update retention without enabling effects.
 
-Local build succeeded. **23/23 CTest programs passed** (198.37 seconds), including
-the expanded integration (52 new rows) and four new deterministic foundation
+Local build succeeded. The first enlarged run passed 23/23 CTest entries locally
+(198.37 seconds) and in the PR's native and Docker jobs. The additional push job
+hit the existing 180-second watchdog in the enlarged Squelch executable on a slow
+runner, without an assertion failure before termination. This is a real incomplete
+run, not a pass.
+
+Correction: CMake registers the same executable in three bounded groups: the six
+original methods, timeoutEnd, and timeoutBoundaries/sessionReuse/handoff. All ten
+QTest methods were compared with `-functions` and are registered exactly once;
+each group retains its **180-second** watchdog and every original assertion.
+No packet/cue timing condition was loosened. The final full local grouped run
+passed **25/25 CTest entries** (188.78 seconds), still using 23 test executables.
+The three Squelch groups took 38.72, 44.49 and 32.73 seconds respectively. This
+includes the 52 new integration data rows and four new deterministic foundation
 methods. **90 Python checks passed**: source17, setup17, native install5, assets8,
 legacy preview5, audio security13, common audio admin10, Docker helpers/wrapper15.
 The six timing-sensitive handoff and actual session-reuse rows also passed in
