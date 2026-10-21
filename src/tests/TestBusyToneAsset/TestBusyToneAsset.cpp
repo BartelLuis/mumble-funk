@@ -103,7 +103,7 @@ void TestBusyToneAsset::limits() {
 void TestBusyToneAsset::levels() {
     const auto pcm=AudioSignal::loadWav(asset());
     const auto base=decode(AudioSignal::encode(pcm,100)); QVERIFY(base.valid); QVERIFY(base.rms>0);
-    for(int volume:{0,50,100}) for(int boost:{0,6,12}) {
+    for(int volume:{0,50,100}) for(int boost:{0,6,8,12}) {
         AudioFeedback bank(volume,asset(),boost); QVERIFY(bank.customBusy()); QVERIFY(bank.warning().isEmpty());
         const auto &clip=bank.clip(AudioFeedback::Signal::Busy); QCOMPARE(clip.size(),std::size_t(61));
         const auto measured=decode(clip); QVERIFY(measured.valid);

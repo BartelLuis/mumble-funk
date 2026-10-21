@@ -1,5 +1,10 @@
 # Audio Boost: experimenteller Lautstärketest
 
+**Neuer Nachfolgestand:** [Standard-Audioeinstellungen](audio-defaults.md) auf
+`feature/audio-defaults` aktiviert Funk-Audio bei Neuinstallationen mit +8 dB.
+Die branchspezifischen Defaults und Installationsoptionen unten dokumentieren den
+vorherigen Entwicklungsstand; bestehende Installationen werden nicht migriert.
+
 **Aktueller Nachfolgestand:** [Standard-Busy-Tone Phase A](busy-tone.md) auf
 `feature/busy-tone-asset` enthält diesen Boost bereits. Für dessen Installation
 die dortige Option `--experimental-busy-tone` verwenden. Die unten dokumentierten

@@ -2,16 +2,16 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
-**Dieser Branch: experimenteller Standard-Busy-Tone (`feature/busy-tone-asset`).**
-Enthält die integrierten Squelch- und Audio-Boost-Funktionen. Neue Ubuntu-/Docker-
-Konfigurationen wählen die eigene CC0-Aufnahme des Projektinhabers; Updates
-behalten bisherige Auswahl, eigene WAVs und Einstellungen bei. Busy akzeptiert
-20–1250 ms; Squelch-Grenzen und Sprachweiterleitung bleiben erhalten. Effekte sind
-standardmäßig **aus**. Keine Release- oder Geräte-Hörtestfreigabe. Die native
-Installation erfordert `--experimental-busy-tone`.
-[Installation, Update, Tonwahl und Hörtest](docs/funk/busy-tone.md) ·
-[Squelch-Verhalten und WAV-Verwaltung](docs/funk/squelch-preview.md) ·
-[Technische Übergabe](docs/funk/SQUELCH-DEVELOPMENT-HANDOFF.md).
+**Dieser Branch: experimentelle Audio-Defaults (`feature/audio-defaults`).**
+Neue Ubuntu- und Docker-Konfigurationen aktivieren Simplex, den mitgelieferten
+CC0-Busy-Tone und Squelch Open/Close bei **50 % und +8 dB Boost**. Timeout-Close
+ist bei Neuinstallationen eingeschaltet. Updates erhalten bestehende Einstellungen und eigene WAVs, auch
+fehlende INI-Einträge und ausgeschaltete Effekte. Sprache, Simplex-Regeln und
+Audioarchitektur bleiben unverändert. Native Installation nur ausdrücklich mit
+`--experimental-audio-defaults`.
+[Installation, Update und Test](docs/funk/audio-defaults.md) ·
+[Busy-Tone und Fallback](docs/funk/busy-tone.md) ·
+[Squelch-Verhalten](docs/funk/squelch-preview.md).
 
 Neue Docker-Installationen dieses Entwicklungsstands verwenden **Host 64740
 TCP/UDP → Container 64739 TCP/UDP**. Ubuntu nativ bleibt auf **64739 TCP/UDP**.
@@ -195,7 +195,7 @@ mit dem zusätzlichen Server und brauchen keine Anpassung.
 | --- | --- |
 | **Implementiert** | Simplex-Engine v0.2, optionale Diagnosesysteme und automatische parallele Ubuntu-Installation. |
 | **Aktuelle Entwicklungsziele** | Umfangreichere Praxistests, schnelle PTT-Wechsel innerhalb der Protokollgrenzen verbessern, Netzwerkstörungen untersuchen sowie Stabilität und Zuverlässigkeit durch längere Tests absichern. |
-| **Experimenteller Audiobranch** | Bestehender privater Busy Tone integriert; standardmäßig deaktiviert. |
+| **Experimenteller Audiobranch** | Neue Installationen aktivieren Busy und Squelch bei 50 % / +8 dB; bestehende Einstellungen bleiben erhalten. |
 | **Unverbindliche Zukunftsideen** | Roger Beep, analoge Funk-Audioeffekte, Squelch, digitale Funkprofile und erweiterte Konfiguration. |
 
 Die Zukunftsideen sind angedacht, noch nicht implementiert und ohne zugesagten

@@ -21,10 +21,11 @@ funk_require_supported_source() {
                 echo 'Der lokale Branch weicht von origin ab. Bitte den Quellstand vor dem Setup prüfen.' >&2; return 1;
             }
             ;;
-        feature/squelch-audio|feature/audio-volume|feature/busy-tone-asset)
+        feature/squelch-audio|feature/audio-volume|feature/busy-tone-asset|feature/audio-defaults)
             local required=--experimental-squelch
             if [[ $branch == feature/audio-volume ]]; then required=--experimental-audio-volume; fi
             if [[ $branch == feature/busy-tone-asset ]]; then required=--experimental-busy-tone; fi
+            if [[ $branch == feature/audio-defaults ]]; then required=--experimental-audio-defaults; fi
             [[ $experimental == "$required" ]] || {
                 echo "EXPERIMENTELL: $branch benötigt $required." >&2; return 1;
             }

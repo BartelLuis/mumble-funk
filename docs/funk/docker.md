@@ -5,9 +5,11 @@ Der neue [Standard-Busy-Tone](busy-tone.md) enthält Squelch und **Audio Boost
 eigene WAVs werden bei Updates nicht automatisch geändert.
 
 
-Dieser Feature-Stand **`feature/busy-tone-asset`** enthält die gemeinsame Audio-Engine
+Dieser Feature-Stand **`feature/audio-defaults`** enthält die gemeinsame Audio-Engine
 und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
-Stable-Freigabe. Squelch und Audio-Feedback bleiben bei Neuinstallation deaktiviert.
+Stable-Freigabe. Neue Konfigurationen aktivieren Simplex, Busy, Squelch Open/Close
+bei 50 % und +8 dB; Mumla-Timeout-Close ist ebenfalls aktiv. Vorhandene INIs bleiben unverändert.
+Details und Bestandsschutz: [Standard-Audioeinstellungen](audio-defaults.md).
 Die Anleitung für Aktivierung, eigene WAVs und getrennte Open-/Close-Einstellungen
 steht in [squelch-preview.md](squelch-preview.md#docker-assets-and-management).
 
@@ -63,7 +65,7 @@ installiert oder verändert Docker selbst nicht.
 
 | Eigenschaft | Ubuntu-Schnellinstallation | Docker-Installation |
 | --- | --- | --- |
-| Start | `scripts/funk/setup.sh --experimental-busy-tone` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
+| Start | `scripts/funk/setup.sh --experimental-audio-defaults` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
 | Betrieb | Eigener systemd-Dienst | Eigener Container mit Neustartrichtlinie |
 | Dateien | Eigene Verzeichnisse direkt auf Ubuntu | Eigene benannte Docker-Volumes |
 | Port (TCP/UDP) | Standardmäßig 64739 | Hier Host-Standard 64740, frei wählbar; intern immer 64739 |
@@ -80,7 +82,7 @@ Benutze ein neues Quellverzeichnis, damit vorhandene v0.2-/v0.3-Quellen erhalten
 bleiben:
 
 ```bash
-git clone --branch feature/busy-tone-asset \
+git clone --branch feature/audio-defaults \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-docker
 cd mumble-funk-docker
 ```

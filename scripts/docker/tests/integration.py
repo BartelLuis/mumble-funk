@@ -176,6 +176,17 @@ def main():
             compose('down')
             compose('up','-d','--no-build');healthy()
             values=information();assert values['simplex']=='true';assert values['simplextimeout']=='500';assert values['simplexretrytimeout']=='500'
+            for key in ('audiofeedback','squelch','squelchopen','squelchclose','busytone'):
+                assert values[key]=='true', 'Fresh installation must enable '+key
+            assert values['feedbackboostdb']=='8' and values['squelchclosetimeoutfallback']=='true'
+            for key in ('busytonevolume','squelchopenvolume','squelchclosevolume'): assert values[key]=='50'
+            fresh=command([str(args.probe),str(port),'--audio-defaults'],input=(values['serverpassword']+'\n').encode())
+            assert b'Installed audio defaults verified' in fresh.stdout
+            # Preserve the complete existing explicit-off/legacy regression fixture.
+            # Fresh automatic audio was exercised above against the actual container.
+            for action in (('disable-squelch',),('disable',),('boost','0'),('disable-timeout-close',)):
+                command(['bash','scripts/docker/audio.sh',*action]);healthy()
+            values=information()
             assert len(values['serverpassword'])==48
             cid=compose('ps','--quiet','mumble-funk').stdout.decode().strip()
             inspection=json.loads(docker('inspect',cid).stdout)[0]
@@ -192,7 +203,8 @@ def main():
             logs=compose('logs').stdout
             assert b'Simplex enabled:' in logs and values['serverpassword'].encode() not in logs
             assert b"Password for 'SuperUser'" not in logs
-            assert b'Experimental audio feedback enabled:' not in logs, 'Audio must default off in Docker'
+            assert b'Experimental audio feedback enabled:' in logs and b'Experimental Squelch enabled:' in logs
+            assert values['audiofeedback']=='false' and values['squelch']=='false'  # Explicit-off fixture, not fresh defaults.
             if args.audio_feedback:
                 original_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
                 state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
@@ -254,7 +266,7 @@ def main():
                 compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',restore,input=original_config)
                 compose('up','-d','--no-build');healthy()
                 assert information()==values and certificate()==cert
-                print('PASS: private busy feedback over published ports, no channel leakage; default disabled')
+                print('PASS: fresh Open/Close/Busy boost8; explicit-off regression and private feedback, no channel leakage')
             if args.ports_only:
                 print(f'PASS: host TCP/UDP {port} -> container TCP/UDP 64739, existing Mumble audio connection')
                 return

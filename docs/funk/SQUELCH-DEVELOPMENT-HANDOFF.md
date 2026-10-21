@@ -147,7 +147,7 @@ with `released/timeout_suspected`. This is an operator report, not a Codex heari
 test or evidence about every Mumla version/configuration. Device acceptance of
 the changed fallback is still outstanding.
 
-Policy: **`squelchclosetimeoutfallback=false`** in C++ Meta, new-install native and
+Historical policy for this follow-up: **`squelchclosetimeoutfallback=false`** in C++ Meta, new-install native and
 Docker defaults and the common admin status whitelist. A missing key is false.
 `mumble-funk-audio enable-timeout-close` / `disable-timeout-close` changes only
 that policy and performs the existing controlled restart. Docker uses the same
@@ -566,3 +566,66 @@ are recorded in the feature PR; do not infer success from older commits.
 The cloud host lacks disk space for another full local Docker build; use the
 actual current-head GitHub build/Compose integration, not a mocked success.
 Windows/Mumla hearing tests and deployment remain the operator's next steps.
+
+## Fresh-install audio defaults (feature/audio-defaults)
+
+Base dev: `35f83e9315945c50cbc3c0dc60c0b6f89ca83bb1`, including merged Busy
+asset PR #6. Only new native/Docker configuration generation enables
+simplex/audiofeedback/busytone/squelch/open/close, volume50 each, boost8 and
+timeout-close true (PR #7 follow-up). Core Meta defaults, AudioSignal, AudioFeedback, SquelchPlan
+and Server.cpp remain unchanged; so do admin DEFAULTS. Existing INIs, including
+absent keys, retain the previous disabled/boost0 semantics and are never migrated.
+Native template now has active simplex=true even for manual fresh installation;
+create_config handles either a commented or active unique new-template key.
+The existing early return for an existing INI remains first.
+
+Exact feature branch installation requires `--experimental-audio-defaults` and
+all existing source checks. [Operator guide](audio-defaults.md) distinguishes
+new defaults from the older phase guides. Assets, licensing, ports, .env, project
+names, volumes, custom WAVs and reset-to-synthetic behavior are unchanged.
+
+test_audio_defaults.py compares native setup/manual and real Docker runtime INI
+generation. It launches isolated native servers with the generated configurations
+and tests actual effects and volume0 for each config source; no live deployment.
+FunkDockerProbe --audio-defaults uses valid Opus test speech, the existing 30-ms
+fresh bandwidth-window allowance, and owner keepalives under the unmodified
+500-ms lease. It compares exact shipped Open/Close/Busy packets at volume50/boost8,
+decodes effects, verifies sessions/sequence/terminators and unchanged first/last
+speech. --audio-defaults-muted checks Busy omission and silent Squelch packets
+(the same <1e-7 float decoder threshold as TestAudioVolume). Server code is not
+changed for these tests. Explicit QString materialization avoids QStringBuilder
+temporary lifetimes in this new test helper.
+
+Docker integration first tests fresh automatic audio against the actual container,
+then explicitly selects the pre-existing off/boost0 regression fixture. All earlier
+assertions and private-WAV backup/restore checks remain. Unit restore tests add
+missing-key, disabled and custom/volume0 INIs with exact byte comparisons.
+Full local container builds are constrained by cloud disk space; current-head
+Docker/CodeQL results belong to GitHub CI. The owner requested no waiting or
+repeated CI polling after publication; the new Draft PR must remain unmerged.
+
+Local final validation: incremental server/probe build succeeded, 27/27 CTest
+entries passed (266.31 s), and all 106 Python cases passed. The latter include
+three new default tests (four live config/volume subcases) and 18 Docker helper
+cases with real temporary SQLite/tar backup/restore. Real Compose configuration
+resolution verified default64740, pinned64739/64740 and custom ports with unchanged
+.env, including update/rollback comparison. Bash syntax, Python compilation and
+git diff --check passed. Full local Docker image/integration and CodeQL are not
+claimed successful for this feature; they remain for GitHub CI. No VM hearing
+test, deployment or live service modification was performed.
+
+### PR #7: enable Mumla timeout Close for fresh configurations
+
+Only the native template and Docker initialize() fresh-INI text now select
+squelchclosetimeoutfallback=true. Core Meta and admin DEFAULTS remain false;
+existing missing/false/true keys are never migrated. Existing native and Docker
+configuration/restore cases explicitly retain false and absent keys. The fresh
+protocol probe also waits past the lease after a confirmed end (no second Close),
+then sends a valid new stream without a marker (one timeout Close, no fabricated
+speech marker), and checks repeated expiry cannot duplicate the cue. The existing
+Simplex/BUSY/timeout lifecycle regressions remain in place. No server code changed.
+A timeout still cannot prove release of the physical PTT key.
+
+Local follow-up validation: build succeeded; 34 Python cases and all 10 relevant
+CTest entries passed (244.82 s), including timeout lifecycle, Simplex and Busy.
+GitHub CI is intentionally not polled or awaited after publication.
