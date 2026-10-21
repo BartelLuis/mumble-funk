@@ -26,9 +26,10 @@ short retirement gap (normally within about 80 ms). This avoids injecting Busy
 into an unterminated cue. Queued Squelch for a recipient currently hearing Busy
 is omitted. The existing Busy-only path retains its behaviour when Squelch is off.
 
-Close requires an accepted transmission start and a confirmed end marker. With
-Open enabled it also requires Open dispatch; in Close-only mode that start is
-acknowledged silently, without sending an Open packet. Timeout, disconnect,
+Close requires an accepted transmission start. By default only a confirmed end
+marker ends the signal lifecycle; the optional timeout policy below is an explicit
+experimental exception. With Open enabled it also requires Open dispatch; in Close-only mode that start is
+acknowledged silently, without sending an Open packet. Timeout with the fallback off, disconnect,
 channel changes, deaf/mute/permission changes invalidate optional work. A new
 transmission cancels the previous generation's unsent cues. Audio already buffered
 on a client cannot be recalled. Late/congested cues are omitted, never speech.
@@ -91,6 +92,7 @@ busytonevolume=50
 squelch=false
 squelchopen=true
 squelchclose=true
+squelchclosetimeoutfallback=false
 squelchopenfile=/usr/local/share/mumble-funk/audio/squelch-open.wav
 squelchclosefile=/usr/local/share/mumble-funk/audio/squelch-close.wav
 squelchopenvolume=50
@@ -103,6 +105,59 @@ false. Squelch still requires Simplex and master audio feedback. Root INI keys
 belong before any section header, without duplicates. Missing/invalid **enabled**
 files disable Squelch with a startup log; disabled signals need no valid file.
 There is no synthetic Squelch fallback. Busy's existing fallback is unchanged.
+
+## Optional timeout Close (Mumla 3.7.3)
+
+The operator's first real hearing test reported working Open/Close from
+Windows-Mumble, but only Open from Android Mumla 3.7.3. Diagnostics showed
+`released / marker_confirmed` for Windows and `released / timeout_suspected` for
+that Mumla transmission. This is a report about that device/configuration; it
+is not proof that every Mumla version always omits a terminator.
+
+New setting **`squelchclosetimeoutfallback=false`**, deliberately off by default.
+With Simplex, master audio, Squelch and Close already enabled, opt in using:
+
+```sh
+sudo mumble-funk-audio enable-timeout-close
+sudo mumble-funk-audio status
+# Return to confirmed-marker-only Close:
+sudo mumble-funk-audio disable-timeout-close
+```
+
+Docker uses `bash scripts/docker/audio.sh enable-timeout-close` and
+`disable-timeout-close` in the existing Compose project. Modifications restart only
+that installation as documented below. Existing INI files are not migrated;
+a missing setting is false. This switch does not automatically enable any effect.
+
+The actual Simplex release callback now preserves the already accepted, valid Opus
+stream on a timeout **only** for this opt-in. It snapshots Close for that stream's
+existing recipients and transmission generation; it does not create a new start,
+recipient list, session or speech end marker. The last observed frame must match
+the controller's released stream. Missing/unvalidated observations omit the effect.
+Generation invalidation, recipient eligibility, Close-once reservation and queue
+expiry still apply on dispatch and during playback. If Open was enabled but never
+dispatched, no Close is played. Close-only mode acknowledges the valid start silently.
+A new accepted transmission supersedes unsent old Close; disconnect, channel
+out-and-back, mute/deaf/permission changes and connection/session replacement still
+cancel pending work. Already transmitted client-buffered sound cannot be recalled.
+
+Confirmed markers keep their existing immediate post-forwarding path, without
+waiting for timeout. Already ended streams and repeated expiry do not produce a
+second Close. With this setting off the previous timeout invalidation remains.
+The callback does not acquire the voice lock or call back into Simplex: only the
+existing short planner metadata lock and bounded try-lock enqueue are used. No
+encoding, file IO or network delivery occurs in that callback. Normal audio dispatch
+revalidates identities under the existing voice lock; Busy retains its priority.
+
+**A timeout proves packet silence, not release of a physical PTT button.** Close
+will be delayed by the existing `simplextimeout` (normally 500 ms), the timer and
+optional audio scheduling. A long gap while PTT is still held, packet loss or
+network interruption can trigger it too. The Simplex diagnostic reason stays
+`timeout_suspected`; nothing is relabeled `marker_confirmed`. The existing retry
+rules may still block further speech until the client rearms. No Simplex timer,
+retry rule, speech payload, sequence, marker or forwarding delay is changed.
+Optional Close may be omitted under congestion or Busy; this is not a guaranteed
+PTT-release notification. The changed fallback still needs a new device hearing test.
 
 ## Normal native audio management
 
@@ -119,6 +174,7 @@ retains its permissions and must not be shared publicly.
 | `enable-squelch` / `disable-squelch` | Squelch on/off; enabling also enables master audio feedback and requires Simplex already enabled |
 | `enable-open` / `disable-open` | Open independently on/off |
 | `enable-close` / `disable-close` | Close independently on/off |
+| `enable-timeout-close` / `disable-timeout-close` | Experimental timeout Close opt-in; leaves master/Squelch/Busy switches unchanged |
 | `open-volume 30` / `close-volume 40` | Independent gain, integer 0–100; 0 is silent |
 | `set-open /absolute/file.wav` / `set-close /absolute/file.wav` | Validate and import a custom cue |
 | `reset-open` / `reset-close` | Select the shipped standard again |
@@ -187,8 +243,9 @@ and reconnects. Compare `squelch=false` with `squelch=true`, and test normal UDP
 and the client's TCP-only option if available.
 
 Automated tests cannot establish what a physical device actually sounds like.
-No Windows/Android device hearing test, long-term load test or arbitrary loss/jitter
-qualification has been performed for this preview. Do not call it production-ready.
+The operator reported the initial Windows/Mumla result above. The timeout fallback
+has not yet been hearing-tested on those devices; no long-term load test or arbitrary
+loss/jitter qualification has been performed for this preview. Do not call it production-ready.
 
 ## Later continuous noise / mixing
 

@@ -316,6 +316,7 @@ void MetaParams::read(QString fname) {
 	squelch = typeCheckedFromSettings("squelch", squelch);
 	squelchOpen = typeCheckedFromSettings("squelchopen", squelchOpen);
 	squelchClose = typeCheckedFromSettings("squelchclose", squelchClose);
+	squelchCloseTimeoutFallback = typeCheckedFromSettings("squelchclosetimeoutfallback", squelchCloseTimeoutFallback);
 	squelchOpenFile = typeCheckedFromSettings("squelchopenfile", squelchOpenFile);
 	squelchCloseFile = typeCheckedFromSettings("squelchclosefile", squelchCloseFile);
 	squelchOpenVolume = typeCheckedFromSettings("squelchopenvolume", squelchOpenVolume);
@@ -471,6 +472,7 @@ void MetaParams::read(QString fname) {
 	qmConfig.insert(QStringLiteral("squelch"), squelch ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("squelchopen"), squelchOpen ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("squelchclose"), squelchClose ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("squelchclosetimeoutfallback"), squelchCloseTimeoutFallback ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("squelchopenfile"), squelchOpenFile);
 	qmConfig.insert(QStringLiteral("squelchclosefile"), squelchCloseFile);
 	qmConfig.insert(QStringLiteral("squelchopenvolume"), QString::number(squelchOpenVolume));

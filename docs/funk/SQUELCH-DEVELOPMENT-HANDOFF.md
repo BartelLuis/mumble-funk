@@ -57,13 +57,15 @@ path, preserving the accepted-start and recipient-generation prerequisites witho
 queueing audio. Enabled Open still must actually start before Close can start. Duplicate
 or stale input remains subject to the existing Simplex decision.
 
-Timeout, disconnect, channel changes and relevant mute/deaf/permission changes
-invalidate optional work. Channel out-and-back must invalidate even if the final
+Timeout with the new fallback off, disconnect, channel changes and relevant
+mute/deaf/permission changes invalidate optional work. Channel out-and-back must invalidate even if the final
 channel ID is unchanged. New transmissions replace the channel generation, making
 unsent old Close invalid. Sender disconnect or recipient session reuse cannot
-redirect pending signals. Timeout is suspected, so it does not synthesize Close.
+redirect pending signals. Timeout is suspected; only the explicit experimental fallback described below
+may plan its private Close cue. It never synthesizes a speech end marker.
 
-The Simplex event callback only invalidates on non-confirmed releases. Confirmed
+The Simplex event callback invalidates on non-confirmed releases, except for the
+explicit timeout opt-in described below. Confirmed
 release is reported *before* final forwarding by Simplex; Close must be scheduled
 from the post-forwarding path, not directly from that callback. SimplexController
 itself and its lock/ownership/retry rules are unchanged.
@@ -135,6 +137,82 @@ to the same speech decoder, and independent clocks across Speex buffers. Those
 measurements do not prove audible speech damage. The chosen separate private
 feedback stream avoids that speech-state splice; it deliberately accepts overlap.
 No further mixing/architecture experiment is required before real-client trials.
+
+## Optional Mumla timeout Close follow-up
+
+Starting commit for this follow-up: `c4200c38b2ccd1c042fdadfad940d0fdde5dfa6e`.
+The operator reported a first real device test: Windows-Mumble Open/Close works
+with `released/marker_confirmed`; Android Mumla 3.7.3 Open works but Close is absent,
+with `released/timeout_suspected`. This is an operator report, not a Codex hearing
+test or evidence about every Mumla version/configuration. Device acceptance of
+the changed fallback is still outstanding.
+
+Policy: **`squelchclosetimeoutfallback=false`** in C++ Meta, new-install native and
+Docker defaults and the common admin status whitelist. A missing key is false.
+`mumble-funk-audio enable-timeout-close` / `disable-timeout-close` changes only
+that policy and performs the existing controlled restart. Docker uses the same
+commands through `scripts/docker/audio.sh`. No automatic enabling of Squelch,
+master audio, Simplex or Close. Existing INI/custom sounds/ports/volumes retained.
+
+The critical change is the existing `SimplexController::Event` sink in Server.cpp:
+
+- Confirmed `released/marker_confirmed` remains untouched in the callback; the
+  existing post-forwarding path still plans Close immediately.
+- Only `released/timeout_suspected` with explicit fallback, enabled Close and an
+  initialized Squelch/feedback system invokes `SquelchPlan::timeout` synchronously.
+- Every other non-confirmed release, and timeout with opt-in off, still invalidates
+  as before. Explicit disconnect/channel/mute/deaf lifecycle invalidation remains.
+- timeout() reads only the existing bounded stream/recipient metadata; no start,
+  new audience, user pointer, speech marker or controller decision is manufactured.
+  Identity and last accepted frame must match a valid previously observed stream.
+  A mismatched final frame retires the stream without a signal. Already ended
+  streams produce nothing. The existing stream generation is captured in the cue.
+- The controller's lock serializes the synchronous timeout snapshot against a new
+  accepted start. Do not defer only a bare session/frame event for later lookup:
+  a reset sequence and reused session could otherwise hit a newer transmission.
+  The planner takes the same short metadata lock formerly used by invalidate;
+  it releases it before the bounded try-lock feedback enqueue. No voice lock,
+  controller reentry, IO, encoding or network dispatch occurs in this callback.
+- Existing dispatch validation under the voice lock checks connection/session/
+  channel/transmission and eligibility again on start and each packet. Close is
+  consumed once, and requires prior Open dispatch (or explicit Close-only silent
+  acknowledgment). New observed streams supersede unsent old generations.
+  Queue expiry and Busy priority remain; optional Close can be omitted.
+
+SimplexController.cpp/.h, its timers/retry logic, protocol decoders, voice payloads,
+forwarding and the shared feedback scheduler are unchanged. Timeout does not prove
+PTT release: packet loss, long silence or network interruption can trigger it
+while a physical button is still held. Close follows the existing timeout plus
+optional timer/queue delay; diagnostics remain timeout_suspected. Already sent
+client-buffered audio cannot be recalled. Read the new Ubuntu test case before
+operator-controlled installation; Codex has not changed any existing server.
+
+Regression additions: four deterministic planner/controller/arbitration tests and
+52 real-server integration data rows covering both legacy/protobuf and TCP/encrypted
+UDP, confirmed/no/late markers, one-packet starts, repeated expiry, on/off switches,
+Close-only, invalid/no/denied starts, channel out/back, disconnect/deaf, actual sender
+and recipient numeric-session reuse and stale-Close suppression at a new grant.
+The unchanged protobuf decoder rejects empty opus_data even with a terminator:
+modern valid confirmed tests use a payload+marker; the empty-modern case expects
+an unconfirmed timeout. Do not relax or change the protocol for this work.
+Busy cutoff checks require the full original Busy clip and decodable monotonic
+private output. Speech assertions preserve first/last payload/frame/end bits.
+The extra admin test checks opt-in/off and update retention without enabling effects.
+
+Local build succeeded. **23/23 CTest programs passed** (198.37 seconds), including
+the expanded integration (52 new rows) and four new deterministic foundation
+methods. **90 Python checks passed**: source17, setup17, native install5, assets8,
+legacy preview5, audio security13, common audio admin10, Docker helpers/wrapper15.
+The six timing-sensitive handoff and actual session-reuse rows also passed in
+three consecutive targeted runs. Python compilation, Bash syntax and whitespace
+checks passed. No tests removed or skipped. Local evidence: `/workspace/work/squelch-backup/timeout-close-*.log`.
+The first targeted run found two incorrect test expectations for an empty modern
+marker. Inspection of unchanged MumbleProtocol.cpp confirmed intentional rejection
+of empty opus_data. The corrected complete suite passes, requiring the appropriate
+release reason for each format instead of changing/weakening the decoder.
+After publication, check all current-head Actions including the real Docker suite;
+old successful runs do not substitute for the changed commit. The prior cloud
+storage limitation still prevents another full local Docker build.
 
 ## Phase 2C installation and management
 
@@ -279,8 +357,10 @@ ctest --test-dir /workspace/build/squelch -R '^TestSquelchIntegration$' --repeat
 python3 tests/funk-install/test_audio_assets.py /workspace/build/squelch/mumble-server
 ```
 
-Windows-Mumble/Android-Mumla hearing tests, arbitrary network loss/jitter, long-term
-load, sanitizers and the Proxmox snapshot installation have NOT been performed.
+At the historical Phase 2B test point, Windows-Mumble/Android-Mumla hearing tests
+and the Proxmox snapshot installation had NOT been performed. The operator has
+since reported the initial device test above. Hearing tests of the new timeout
+fallback, arbitrary network loss/jitter, long-term load and sanitizers remain open.
 Synthetic voiced harmonics with a syllabic envelope were used as decodable input;
 these are not recordings or proof of human perception. No claim of production readiness.
 
@@ -291,9 +371,9 @@ these are not recordings or proof of human perception. No claim of production re
    unproven code. Native Ubuntu24 and full production Docker build/integration are
    checked by CI; the local disk limitation above must remain visible.
 3. Let the owner install the documented feature opt-in on their clean Ubuntu VM,
-   after managing their own snapshot. Real systemd start/autoboot, service-account
-   filesystem permissions and actual package/setup behaviour remain VM acceptance
-   checks. Codex must not execute remote installation or snapshot operations.
+   after managing their own snapshot. The operator has since installed a test instance and reported initial hearing
+   results; complete systemd/autoboot, file permissions and setup acceptance on
+   that VM are still owner-controlled checks. Codex must not execute remote installation or snapshot operations.
 4. Owner hearing tests with unchanged Windows Mumble and Android Mumla: first/last
    syllables, Open/Close-only modes and gains, own WAVs/reset, Busy priority, rapid
    PTT, channels and reconnect. Compare effects off/on and TCP/UDP. No claim that

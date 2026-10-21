@@ -43,6 +43,7 @@ class SquelchAdminTests(unittest.TestCase):
         self.assertEqual(state['audiofeedback'], 'false')
         self.assertEqual(state['squelchopen'], 'true')
         self.assertEqual(state['squelchclose'], 'true')
+        self.assertEqual(state['squelchclosetimeoutfallback'], 'false')
         for name in ('squelch-open.wav', 'squelch-close.wav', 'LICENSE.md'):
             path = self.sound/name
             self.assertEqual(path.read_bytes(), (REPO/'assets/audio'/name).read_bytes())
@@ -85,6 +86,19 @@ class SquelchAdminTests(unittest.TestCase):
             for value in ('101', '-1', '1.5', 'loud', '1000'):
                 self.command(cmd, value, ok=False)
                 self.assertEqual(self.config.read_bytes(), before)
+
+    def test_timeout_close_opt_in_preserves_other_settings_and_updates(self):
+        before = self.status()
+        self.command('enable-timeout-close')
+        enabled = self.status()
+        self.assertEqual(enabled.pop('squelchclosetimeoutfallback'), 'true')
+        before.pop('squelchclosetimeoutfallback')
+        self.assertEqual(enabled, before)  # Does not enable Squelch, master feedback or alter Busy.
+        original = self.config.read_bytes()
+        subprocess.run(self.install, check=True, capture_output=True)
+        self.assertEqual(self.config.read_bytes(), original)
+        self.command('disable-timeout-close')
+        self.assertEqual(self.status()['squelchclosetimeoutfallback'], 'false')
 
     def test_custom_wavs_and_update_preservation_without_recompilation(self):
         for signal in ('open', 'close'):

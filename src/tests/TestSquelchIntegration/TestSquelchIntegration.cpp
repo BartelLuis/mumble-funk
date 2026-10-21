@@ -2,6 +2,7 @@
 // BSD-style license: see LICENSE. Real local server; no external installations.
 #include "../TestSimplexIntegration/Harness.h"
 #include "AudioSignal.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
@@ -64,6 +65,10 @@ private slots:
 	void reusedSession();
 	void switches_data(); void switches();
 	void rapidHandoff_data(); void rapidHandoff();
+	void timeoutEnd_data(); void timeoutEnd();
+	void timeoutBoundaries_data(); void timeoutBoundaries();
+	void timeoutSessionReuse_data(); void timeoutSessionReuse();
+	void timeoutHandoff_data(); void timeoutHandoff();
 };
 void TestSquelchIntegration::transport_data() {
 	QTest::addColumn<bool>("modern"); QTest::addColumn<bool>("udpIn"); QTest::addColumn<bool>("udpOut");
@@ -258,6 +263,147 @@ void TestSquelchIntegration::switches() {
 	if(close) { const auto packets=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50); expected.insert(expected.end(),packets.begin(),packets.end()); }
 	for(int i=0;i<cues.size();++i) { QCOMPARE(cues[i].payload,expected[std::size_t(i)]); if(i) QVERIFY(cues[i].frame>cues[i-1].frame); }
 	QVERIFY(a.audio().isEmpty());
+}
+
+void TestSquelchIntegration::timeoutEnd_data() {
+	QTest::addColumn<int>("ending"); QTest::addColumn<bool>("udp"); QTest::addColumn<bool>("modern");
+	const char *names[]={"payload-marker","empty-marker","single-packet-no-marker","speech-no-marker",
+		"late-marker","close-disabled","open-disabled","fallback-disabled"};
+	for(int ending=0;ending<8;++ending) for(bool udp:{false,true}) for(bool modern:{false,true})
+		QTest::newRow(qPrintable(QString("%1-%2-%3").arg(names[ending]).arg(udp?"UDP":"TCP").arg(modern?"protobuf":"legacy")))
+			<< ending << udp << modern;
+}
+void TestSquelchIntegration::timeoutEnd() {
+	QFETCH(int,ending); QFETCH(bool,udp); QFETCH(bool,modern);
+	QByteArray config=settings()+"busytone=false\nsquelchclosetimeoutfallback="+(ending==7?"false":"true")+"\n";
+	if(ending==5) config+="squelchclose=false\n";
+	if(ending==6) config+="squelchopen=false\n";
+	Fixture f; QVERIFY(f.start("true",500,1500,true,config));
+	Client admin,a,b,outsider; QVERIFY(admin.login(f.port,"SuperUser",modern));
+	QVERIFY(a.login(f.port,"A",modern)); QVERIFY(b.login(f.port,"B",modern)); QVERIFY(outsider.login(f.port,"Other",modern));
+	const auto other=channel(admin,"Other"); QVERIFY(other); QVERIFY(outsider.move(other));
+	if(udp) { QVERIFY(a.udp.bind(QHostAddress(QHostAddress::LocalHost),0)); QVERIFY(a.udpBarrier()); }
+	const auto voice=speech(); const int count=ending==3?3:1; QTest::qWait(30);
+	for(int i=0;i<count;++i) { QVERIFY(sendOpus(a,voice[std::size_t(i)],std::uint64_t(i*2),ending==0,udp)); if(i+1<count) QTest::qWait(20); }
+	if(ending==1) QVERIFY(sendOpus(a,{},std::uint64_t(count*2),true,udp));
+	if(udp) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier());
+	// The unchanged protobuf decoder rejects empty opus_data, even with an end
+	// flag. Such input is a missing valid marker, not a confirmed modern end.
+	const bool forwardedEmpty=ending==1 && !modern;
+	const bool confirmed=ending==0 || forwardedEmpty;
+	// Confirmed Close must arrive before the 500-ms timeout, not via fallback.
+	const auto all=b.audio(confirmed?350:850); const auto heard=from(all,a.session), cues=from(all,b.session);
+	QCOMPARE(heard.size(),count+(forwardedEmpty?1:0));
+	for(int i=0;i<count;++i) { QCOMPARE(heard[i].payload,voice[std::size_t(i)]); QCOMPARE(heard[i].frame,std::uint64_t(i*2));
+		QCOMPARE(heard[i].last,ending==0); } // Never invent a speech end marker.
+	if(forwardedEmpty) { QVERIFY(heard.back().payload.isEmpty()); QCOMPARE(heard.back().frame,std::uint64_t(count*2)); QVERIFY(heard.back().last); }
+	const auto opening=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50);
+	const auto closing=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50);
+	std::vector<QByteArray> expected;
+	if(ending!=6) expected.insert(expected.end(),opening.begin(),opening.end());
+	if(ending!=5 && ending!=7) expected.insert(expected.end(),closing.begin(),closing.end());
+	QCOMPARE(cues.size(),int(expected.size()));
+	int error=0; std::unique_ptr<OpusDecoder,decltype(&opus_decoder_destroy)> decoder(opus_decoder_create(48000,1,&error),opus_decoder_destroy); QVERIFY(decoder);
+	for(int i=0;i<cues.size();++i) {
+		QCOMPARE(cues[i].payload,expected[std::size_t(i)]); if(i) QVERIFY(cues[i].frame>cues[i-1].frame);
+		QCOMPARE(cues[i].last,i+1==cues.size() || (ending!=6 && i+1==int(opening.size())));
+		std::array<float,960> pcm{};
+		QCOMPARE(opus_decode_float(decoder.get(),reinterpret_cast<const unsigned char*>(cues[i].payload.data()),cues[i].payload.size(),pcm.data(),960,0),960);
+		for(float sample:pcm) QVERIFY(std::isfinite(sample));
+	}
+	if(ending==4) { QVERIFY(sendOpus(a,modern?voice[1]:QByteArray{},2,true,udp)); if(udp) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier()); }
+	QVERIFY(b.audio(350).isEmpty()); // Repeated expiry and a late marker cannot duplicate Close.
+	QVERIFY(a.audio(20).isEmpty()); QVERIFY(outsider.audio(20).isEmpty());
+	f.server.stop(); QCOMPARE(f.count("released","marker_confirmed"),confirmed?1:0);
+	QCOMPARE(f.count("released","timeout_suspected"),confirmed?0:1);
+}
+
+void TestSquelchIntegration::timeoutBoundaries_data() {
+	QTest::addColumn<int>("boundary"); QTest::addColumn<bool>("udp");
+	const char *names[]={"source-channel-out-back","receiver-channel-out-back","source-disconnect",
+		"receiver-deaf-return","end-only-no-start","invalid-opus-no-start","denied-sender"};
+	for(int boundary=0;boundary<7;++boundary) for(bool udp:{false,true})
+		QTest::newRow(qPrintable(QString("%1-%2").arg(names[boundary]).arg(udp?"UDP":"TCP"))) << boundary << udp;
+}
+void TestSquelchIntegration::timeoutBoundaries() {
+	QFETCH(int,boundary); QFETCH(bool,udp);
+	Fixture f; QVERIFY(f.start("true",500,1500,true,settings()+"squelchclosetimeoutfallback=true\n"));
+	Client admin,a,b; QVERIFY(admin.login(f.port,"SuperUser")); QVERIFY(a.login(f.port,"A")); QVERIFY(b.login(f.port,"B"));
+	const auto other=channel(admin,"Other"); QVERIFY(other);
+	if(udp) for(Client *c:{&a,&b}) { QVERIFY(c->udp.bind(QHostAddress(QHostAddress::LocalHost),0)); QVERIFY(c->udpBarrier()); }
+	const auto voice=speech(); const QByteArray invalid(1,char(0xff));
+	QVERIFY(opus_packet_get_nb_samples(reinterpret_cast<const unsigned char*>(invalid.data()),invalid.size(),48000)<0);
+	QTest::qWait(30); QVERIFY(sendOpus(a,boundary==4?QByteArray{}:(boundary==5?invalid:voice[0]),0,boundary==4,udp));
+	if(udp) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier());
+	auto all=b.audio(150); QCOMPARE(from(all,b.session).size(),boundary>=4 && boundary!=6?0:2);
+	if(boundary==0) { QVERIFY(a.move(other)); QVERIFY(a.move(0)); }
+	if(boundary==1) { QVERIFY(b.move(other)); QVERIFY(b.move(0)); }
+	if(boundary==2) a.socket.abort();
+	if(boundary==3) {
+		MumbleProto::UserState state; state.set_session(b.session); state.set_self_deaf(true); state.set_self_mute(true);
+		QVERIFY(b.send(Type::UserState,state)); QVERIFY(b.barrier()); state.set_self_deaf(false); state.set_self_mute(false);
+		QVERIFY(b.send(Type::UserState,state)); QVERIFY(b.barrier());
+	}
+	if(boundary==6) {
+		QVERIFY(sendOpus(b,voice[0],0,false,udp)); if(udp) QVERIFY(b.udpBarrier()); else QVERIFY(b.barrier());
+		a.socket.abort(); // Remove the legitimate owner; denied B must never produce Close.
+	}
+	all=b.audio(850);
+	const auto cues=from(all,b.session);
+	if(boundary==6) {
+		const auto busy=AudioSignal::encode(AudioSignal::syntheticBusy(),50);
+		QCOMPARE(cues.size(),int(busy.size()));
+		for(int i=0;i<cues.size();++i) QCOMPARE(cues[i].payload,busy[std::size_t(i)]);
+	} else QVERIFY(cues.isEmpty());
+}
+
+void TestSquelchIntegration::timeoutSessionReuse_data() {
+	QTest::addColumn<bool>("replaceSource"); QTest::addColumn<bool>("udp");
+	for(bool source:{false,true}) for(bool udp:{false,true})
+		QTest::newRow(qPrintable(QString("%1-%2").arg(source?"source":"receiver").arg(udp?"UDP":"TCP"))) << source << udp;
+}
+void TestSquelchIntegration::timeoutSessionReuse() {
+	QFETCH(bool,replaceSource); QFETCH(bool,udp);
+	Fixture f; QVERIFY(f.start("true",500,1500,true,settings()+"busytone=false\nsquelchclosetimeoutfallback=true\nusers=2\n"));
+	Client a,b; QVERIFY(a.login(f.port,"A")); QVERIFY(b.login(f.port,"B"));
+	if(udp) { QVERIFY(a.udp.bind(QHostAddress(QHostAddress::LocalHost),0)); QVERIFY(a.udpBarrier()); }
+	const auto voice=speech(); QTest::qWait(30); QVERIFY(sendOpus(a,voice[0],0,false,udp));
+	if(udp) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier());
+	QCOMPARE(from(b.audio(100),b.session).size(),2);
+	Client &removedClient=replaceSource?a:b, &watcher=replaceSource?b:a;
+	const auto session=removedClient.session; removedClient.socket.abort();
+	auto removed=[&](unsigned id) { QByteArray data; return watcher.receive(Type::UserRemove,data,[id](const QByteArray &bytes) {
+		MumbleProto::UserRemove message; return message.ParseFromArray(bytes.data(),bytes.size()) && message.session()==id; }); };
+	QVERIFY(removed(session)); bool reused=false;
+	for(int i=0;i<6;++i) {
+		Client replacement; QVERIFY(replacement.login(f.port,"Replacement"));
+		if(replacement.session==session) {
+			reused=true; QVERIFY(replacement.audio(750).isEmpty()); QVERIFY(watcher.audio(50).isEmpty()); break;
+		}
+		const auto id=replacement.session; replacement.socket.abort(); QVERIFY(removed(id));
+	}
+	QVERIFY(reused);
+}
+
+void TestSquelchIntegration::timeoutHandoff_data() {
+	QTest::addColumn<bool>("udp"); QTest::newRow("TCP") << false; QTest::newRow("encrypted-UDP") << true;
+}
+void TestSquelchIntegration::timeoutHandoff() {
+	QFETCH(bool,udp); Fixture f; QVERIFY(f.start("true",500,500,true,settings()+"busytone=false\nsquelchclosetimeoutfallback=true\n"));
+	Client a,b,listener; QVERIFY(a.login(f.port,"A")); QVERIFY(b.login(f.port,"B")); QVERIFY(listener.login(f.port,"Listener"));
+	if(udp) for(Client *c:{&a,&b}) { QVERIFY(c->udp.bind(QHostAddress(QHostAddress::LocalHost),0)); QVERIFY(c->udpBarrier()); }
+	const auto voice=speech(); QTest::qWait(30); QVERIFY(sendOpus(a,voice[0],0,false,udp));
+	if(udp) QVERIFY(a.udpBarrier()); else QVERIFY(a.barrier());
+	QCOMPARE(from(listener.audio(100),listener.session).size(),2); QTest::qWait(410);
+	QVERIFY(sendOpus(b,voice[0],0,false,udp)); if(udp) QVERIFY(b.udpBarrier()); else QVERIFY(b.barrier());
+	const auto all=listener.audio(200); bool newVoice=false;
+	const auto opening=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50);
+	for(const auto &packet:all) {
+		if(packet.session==b.session) { newVoice=true; QCOMPARE(packet.payload,voice[0]); QCOMPARE(packet.frame,std::uint64_t(0)); QVERIFY(!packet.last); }
+		if(newVoice && packet.session==listener.session)
+			QVERIFY(std::find(opening.begin(),opening.end(),packet.payload)!=opening.end()); // No stale old Close after B's start.
+	}
+	QVERIFY(newVoice); f.server.stop(); QCOMPARE(f.count("granted"),2);
 }
 
 QTEST_MAIN(TestSquelchIntegration)

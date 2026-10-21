@@ -43,13 +43,17 @@ public:
 	// a stream. Caller-accepted payloads stay untouched even when planning fails.
 	std::vector<Cue> observe(Identity sender, bool allowed, std::uint64_t frame,
 		bool payload, bool last, bool validOpus, const std::vector<Identity> &eligibleRecipients);
+	// Called only for an actual Simplex timeout release, never to grant speech or
+	// manufacture an end marker. Capture the existing generation before a new
+	// owner can start. Repeated/confirmed ends and unobserved payloads yield no cue.
+	std::vector<Cue> timeout(Identity sender, std::uint64_t lastAcceptedFrame);
 	// One-shot reservation immediately before a FUTURE dispatcher sends a cue.
 	// If Open was omitted, Close cannot be consumed. False = omit optional effect.
 	bool consume(const Cue &cue, Identity currentSender, Identity currentRecipient, bool stillEligible);
 	// Active playback validation; no cue-age limit once dispatch has started.
 	bool current(const Cue &cue) const;
-	// Call on channel leave (including out-and-back), permission loss, timeout or
-	// disconnect. These uncertain boundaries cancel; they do not synthesize Close.
+	// Call on channel leave (including out-and-back), permission loss, disconnect,
+	// or timeout with the experimental fallback off. These cancel optional cues.
 	void invalidate(std::uint64_t connection);
 	void clear();
 	std::size_t size() const;

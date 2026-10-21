@@ -52,6 +52,11 @@ class AudioWrapperTests(unittest.TestCase):
         calls = self.run_command('disable-squelch')
         self.assertIn(['compose', 'stop', '--timeout', '30', 'mumble-funk'], calls)
         self.assertEqual(calls[-1], ['compose', 'start', 'mumble-funk'])
+        for command in ('enable-timeout-close', 'disable-timeout-close'):
+            self.calls_file.unlink()
+            calls = self.run_command(command)
+            self.assertIn(['compose', 'run', '--rm', '--no-deps', '-T', 'mumble-funk', 'audio', command], calls)
+            self.assertEqual(calls[-1], ['compose', 'start', 'mumble-funk'])
         self.calls_file.unlink(); self.env['RUNNING'] = 'no'
         calls = self.run_command('open-volume', '80')
         self.assertFalse(any('start' in call for call in calls))

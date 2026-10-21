@@ -126,6 +126,54 @@ TCP-Verbindung allein schließen, dass UDP funktioniert. Pro Test Geräte-/Clien
 Version, Kanal, Transport, Pegel und beobachtete erste/letzte Silben notieren.
 Bis diese Hörtests bestanden sind, bleibt PR #4 Draft und die Version experimentell.
 
+## 4a. Mumla 3.7.3: optionalen Close bei Timeout testen
+
+Beim ersten Hörtest des Betreibers funktionierten Open/Close bei Windows-Mumble.
+Bei Android-Mumla 3.7.3 fehlte Close; die Diagnose meldete dort
+`released / timeout_suspected`, beim PC `released / marker_confirmed`.
+Dafür gibt es jetzt einen **eigenen, standardmäßig ausgeschalteten** Fallback.
+Die neue Version muss zunächst auf deiner Test-VM aktualisiert/installiert sein
+(siehe Schritt 6); der alte Server kennt den Schalter noch nicht.
+
+Squelch und Close müssen bereits eingeschaltet sein (Schritt 4). Dann:
+
+```bash
+sudo mumble-funk-audio enable-timeout-close
+sudo mumble-funk-audio status
+```
+
+Das setzt `squelchclosetimeoutfallback=true` und startet nur `mumble-funk` kurz neu.
+Der Befehl verändert weder Simplex noch die Audio-/Squelch-Hauptschalter oder Busy.
+
+1. Windows sendet normal und lässt PTT los: Close soll weiterhin nach dem bestätigten
+   Marker kommen, ohne zusätzliche Timeout-Wartezeit und ohne zweiten Close.
+2. Mumla sendet einen kurzen Satz und lässt PTT los: Falls wieder kein Endmarker
+   ankommt, soll Close nach dem bisherigen Simplex-Timeout hörbar sein. Bei 500 ms
+   Timeout entsteht ungefähr eine halbe Sekunde plus Timer-/Audio-Verzögerung.
+3. Auch einen einzelnen kurzen PTT-Druck testen. Nach dem Close mehrere Sekunden
+   warten: Ohne neue angenommene Übertragung darf kein weiterer Close kommen.
+4. Falls bereits Simplex-Diagnose aktiv ist, die Gründe vergleichen:
+   Windows weiterhin `marker_confirmed`, Mumla gegebenenfalls `timeout_suspected`.
+   Der Fallback erzeugt keinen künstlichen Sprach-Endmarker und ändert diese
+   Diagnosegründe nicht. Ohne Diagnose keine Audiodateien/Sprachaufzeichnungen nötig.
+5. Rollen schnell wechseln, Kanal wechseln und einen Client trennen/neu verbinden:
+   keine alten Close-Töne an neue/fremde Teilnehmer. Auch den bisherigen Busy-Test
+   durchführen. Zum Vergleich wieder ausschalten:
+
+```bash
+sudo mumble-funk-audio disable-timeout-close
+```
+
+**Grenze:** Ein Timeout bedeutet nur, dass der Server längere Zeit keine passenden
+Sprachpakete erhalten hat. Er beweist **nicht**, dass die PTT-Taste losgelassen wurde.
+Bei einer Sprechpause mit unterbrochenen Paketen, Paketverlust oder Netzabbruch kann
+Close auch bei noch gedrückter Taste entstehen. Auf der reinen Test-VM zusätzlich
+PTT halten und lange schweigen: Beobachtung, Client-Version und Zeitabstand notieren.
+Die normale Simplex-Retry-Regel gilt weiterhin; der Fallback gibt kein Senderecht.
+Bereits auf dem Client gepufferte Töne können nicht zurückgerufen werden. Bei
+Busy/Überlast kann der optionale Close entfallen. Die geänderte Funktion bleibt
+bis zu diesem erneuten Hörtest experimentell.
+
 ## 5. Lautstärke und eigene WAV-Dateien
 
 ```bash

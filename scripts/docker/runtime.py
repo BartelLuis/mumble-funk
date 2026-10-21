@@ -112,6 +112,7 @@ busytonevolume=50
 squelch=false
 squelchopen=true
 squelchclose=true
+squelchclosetimeoutfallback=false
 squelchopenfile=/usr/local/share/mumble-funk/audio/squelch-open.wav
 squelchclosefile=/usr/local/share/mumble-funk/audio/squelch-close.wav
 squelchopenvolume=50

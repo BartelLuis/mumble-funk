@@ -203,6 +203,7 @@ def main():
                 assert compose('exec','-T','mumble-funk','funk-container','audio','enable-squelch',check=False).returncode!=0
                 # Exercise the operator wrapper on this test's unique project.
                 command(['bash','scripts/docker/audio.sh','enable-squelch']);healthy()
+                command(['bash','scripts/docker/audio.sh','enable-timeout-close']);healthy()
                 command(['bash','scripts/docker/audio.sh','disable-open']);healthy()
                 command(['bash','scripts/docker/audio.sh','close-volume','29']);healthy()
                 command(['bash','scripts/docker/audio.sh','set-close',str(REPO/'assets/audio/squelch-close.wav')]);healthy()
@@ -210,6 +211,7 @@ def main():
                 custom_close=state['squelchclosefile']
                 assert custom_close.startswith('/var/lib/mumble-funk/audio/close-')
                 assert state['squelchopen']=='false' and state['squelchclose']=='true' and state['squelchclosevolume']=='29'
+                assert state['squelchclosetimeoutfallback']=='true'
                 assert compose('exec','-T','mumble-funk','stat','-c','%a',custom_close).stdout.strip()==b'640'
                 compose('up','-d','--no-build','--force-recreate');healthy()
                 assert json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)==state
@@ -217,6 +219,7 @@ def main():
                 probe()
                 command(['bash','scripts/docker/audio.sh','reset-close']);healthy()
                 command(['bash','scripts/docker/audio.sh','enable-open']);healthy()
+                command(['bash','scripts/docker/audio.sh','disable-timeout-close']);healthy()
                 command(['bash','scripts/docker/audio.sh','disable-squelch']);healthy()
                 compose('stop')
                 # Keep deterministic ownership while the probe listens to the tone;

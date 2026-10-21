@@ -63,6 +63,28 @@ std::vector<SquelchPlan::Cue> SquelchPlan::observe(Identity sender, bool allowed
 	return cues;
 }
 
+std::vector<SquelchPlan::Cue> SquelchPlan::timeout(Identity sender, std::uint64_t lastAcceptedFrame) {
+	std::vector<Cue> cues;
+	if (!m_enabled) return cues;
+	// Same short metadata lock as the previous timeout invalidation. No user
+	// pointers, controller calls, file IO, audio encoding or delivery under it.
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto stream = m_channels.find(sender.channel);
+	if (stream == m_channels.end() || !(stream->second.sender == sender) || stream->second.ended)
+		return cues;
+	if (stream->second.highestFrame != lastAcceptedFrame) {
+		// An accepted packet was not observed as valid Opus: omit the effect and
+		// retire this generation rather than attaching it to a later stream.
+		m_channels.erase(stream);
+		return cues;
+	}
+	stream->second.ended = true;
+	const auto now = m_clock();
+	for (const auto &recipient : stream->second.recipients)
+		cues.push_back({Kind::Close, sender, recipient.identity, stream->second.generation, now});
+	return cues;
+}
+
 bool SquelchPlan::consume(const Cue &cue, Identity currentSender, Identity currentRecipient, bool stillEligible) {
 	if (!m_enabled || !stillEligible || !(cue.sender == currentSender) || !(cue.recipient == currentRecipient))
 		return false;

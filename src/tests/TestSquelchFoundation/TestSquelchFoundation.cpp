@@ -50,6 +50,10 @@ private slots:
 	void simplexDecisions();
 	void invalidationAndIdentity();
 	void rapidHandoff();
+	void timeoutLifecycle();
+	void timeoutInvalidation();
+	void timeoutController();
+	void timeoutBusyPriority();
 	void boundedAndConcurrent();
 	void protocolSequence_data();
 	void protocolSequence();
@@ -224,6 +228,107 @@ void TestSquelchFoundation::rapidHandoff() {
 	QVERIFY(plan.consume(independent[0],parallel,parallelListener,true));
 	QVERIFY(plan.consume(independent[1],parallel,parallelListener,true));
 	QCOMPARE(plan.size(), std::size_t(2));
+}
+
+void TestSquelchFoundation::timeoutLifecycle() {
+	std::int64_t now=0; Plan plan(true,[&]{return now;});
+	QVERIFY(plan.timeout(sourceIdentity,0).empty());
+	QVERIFY(plan.observe(sourceIdentity,false,0,true,false,true,{listener}).empty());
+	QVERIFY(plan.observe(sourceIdentity,true,0,false,true,false,{listener}).empty());
+	QVERIFY(plan.observe(sourceIdentity,true,0,true,false,false,{listener}).empty());
+	QVERIFY(plan.timeout(sourceIdentity,0).empty());
+	auto open=plan.observe(sourceIdentity,true,0,true,false,true,{listener})[0];
+	const auto close=plan.timeout(sourceIdentity,0); QCOMPARE(close.size(),std::size_t(1));
+	QVERIFY(!plan.consume(close[0],sourceIdentity,listener,true)); // No Close without accepted Open.
+	QVERIFY(plan.consume(open,sourceIdentity,listener,true));
+	QVERIFY(plan.consume(close[0],sourceIdentity,listener,true));
+	QVERIFY(!plan.consume(close[0],sourceIdentity,listener,true));
+	for(int i=0;i<20;++i) QVERIFY(plan.timeout(sourceIdentity,0).empty());
+	QVERIFY(plan.observe(sourceIdentity,true,0,false,true,false,{listener}).empty());
+	// Same sender and reset sequence: the old queued/playing Close is obsolete.
+	auto fresh=plan.observe(sourceIdentity,true,0,true,false,true,{listener})[0];
+	QVERIFY(fresh.transmission!=close[0].transmission); QVERIFY(!plan.current(close[0]));
+	QVERIFY(!plan.consume(close[0],sourceIdentity,listener,true));
+	QVERIFY(plan.consume(fresh,sourceIdentity,listener,true));
+	auto confirmed=plan.observe(sourceIdentity,true,2,false,true,false,{listener});
+	QCOMPARE(confirmed.size(),std::size_t(1)); QVERIFY(plan.timeout(sourceIdentity,2).empty());
+	QVERIFY(plan.consume(confirmed[0],sourceIdentity,listener,true));
+}
+
+void TestSquelchFoundation::timeoutInvalidation() {
+	for(int boundary=0;boundary<7;++boundary) {
+		std::int64_t now=0; Plan plan(true,[&]{return now;});
+		auto open=plan.observe(sourceIdentity,true,0,true,false,true,{listener})[0];
+		QVERIFY(plan.consume(open,sourceIdentity,listener,true)); now=500000;
+		auto close=plan.timeout(sourceIdentity,0); QCOMPARE(close.size(),std::size_t(1));
+		Identity source=sourceIdentity, receiver=listener;
+		if(boundary==0) plan.invalidate(source.connection); // Disconnect or channel out/back.
+		if(boundary==1) plan.invalidate(receiver.connection);
+		if(boundary==2) source.connection=100; // Same numeric session, different connection.
+		if(boundary==3) receiver.connection=100;
+		if(boundary==4) receiver.channel=9;
+		if(boundary==5) now+=Plan::MaxCloseCueAgeUs+1;
+		QVERIFY(!plan.consume(close[0],source,receiver,boundary!=6));
+	}
+	Plan mismatched(true);
+	auto open=mismatched.observe(sourceIdentity,true,0,true,false,true,{listener})[0];
+	Identity foreign=sourceIdentity; foreign.connection=99;
+	QVERIFY(mismatched.timeout(foreign,0).empty());
+	QVERIFY(mismatched.consume(open,sourceIdentity,listener,true));
+	QVERIFY(mismatched.timeout(sourceIdentity,2).empty()); // Unobserved/invalid last packet.
+	QVERIFY(!mismatched.current(open));
+}
+
+void TestSquelchFoundation::timeoutController() {
+	std::int64_t now=0; Plan plan(true,[&]{return now;}); std::vector<Plan::Cue> pending;
+	int timeouts=0,markers=0;
+	SimplexController simplex(500,500,[&](const SimplexController::Event &event) {
+		if(event.event!="released") return;
+		if(event.reason=="marker_confirmed") { ++markers; return; }
+		if(event.reason=="timeout_suspected") {
+			++timeouts; auto cues=plan.timeout({event.context.connection,event.context.session,event.context.channel},event.frame);
+			pending.insert(pending.end(),cues.begin(),cues.end());
+		} else plan.invalidate(event.context.connection);
+	},[&]{return now;});
+	auto packet=[&](Identity who,std::uint64_t frame,bool last=false,bool payload=true) {
+		SimplexController::Packet p; p.context.connection=who.connection; p.context.session=who.session;
+		p.context.channel=who.channel; p.frame=frame; p.last=last; p.payload=payload;
+		auto decision=simplex.begin(p);
+		return plan.observe(who,decision.allowed,frame,payload,last,payload,{listener});
+	};
+	auto open=packet(sourceIdentity,0)[0]; QVERIFY(plan.consume(open,sourceIdentity,listener,true));
+	Identity loser{3,12,0}; QVERIFY(packet(loser,0).empty());
+	now=499999; simplex.expire(); QCOMPARE(timeouts,0);
+	now=500000; simplex.expire(); QCOMPARE(timeouts,1); QCOMPARE(pending.size(),std::size_t(1));
+	for(int i=0;i<4;++i) { now+=50000; simplex.expire(); }
+	QCOMPARE(timeouts,1); QCOMPARE(pending.size(),std::size_t(1));
+	QVERIFY(packet(sourceIdentity,2,true,false).empty()); QCOMPARE(markers,0); // Late marker after timeout: no second Close.
+	auto next=packet(loser,0)[0]; QVERIFY(!plan.current(open));
+	QVERIFY(!plan.consume(pending[0],sourceIdentity,listener,true)); // Queued old Close canceled by new grant.
+	QVERIFY(plan.consume(next,loser,listener,true));
+	QCOMPARE(packet(loser,2,true).size(),std::size_t(1)); QCOMPARE(markers,1);
+	now+=1000000; simplex.expire(); QCOMPARE(timeouts,1); // Confirmed stream never falls back.
+}
+
+void TestSquelchFoundation::timeoutBusyPriority() {
+	std::int64_t now=0; Plan plan(true,[&]{return now;}); AudioFeedback feedback(50);
+	feedback.configureSquelch(asset("squelch-open.wav"),asset("squelch-close.wav"),50,50);
+	auto gate=[&](const Plan::Cue &cue,bool starting){return starting ? plan.consume(cue,cue.sender,cue.recipient,true):plan.current(cue);};
+	std::vector<QByteArray> packets; std::vector<std::uint64_t> frames; std::vector<bool> endings;
+	auto deliver=[&](const AudioFeedback::Recipient &,const QByteArray &bytes,std::uint64_t frame,bool last){
+		packets.push_back(bytes); frames.push_back(frame); endings.push_back(last); return true;
+	};
+	QVERIFY(feedback.requestSquelch(plan.observe(sourceIdentity,true,0,true,false,true,{listener})[0]));
+	feedback.tick(now,deliver,gate); now=20000; feedback.tick(now,deliver,gate);
+	packets.clear(); frames.clear(); endings.clear(); now=500000;
+	QVERIFY(feedback.requestSquelch(plan.timeout(sourceIdentity,0)[0])); feedback.tick(now,deliver,gate);
+	now+=10000; QVERIFY(feedback.request(AudioFeedback::Signal::Busy,{listener.connection,listener.session,listener.channel},now));
+	for(now=520000;now<=1000000;now+=20000) feedback.tick(now,deliver,gate);
+	const auto busy=feedback.clip(AudioFeedback::Signal::Busy);
+	QCOMPARE(packets.size(),busy.size()+2); QVERIFY(endings[1]); QVERIFY(endings.back());
+	for(std::size_t i=0;i<busy.size();++i) QCOMPARE(packets[i+2],busy[i]);
+	for(std::size_t i=1;i<frames.size();++i) QVERIFY(frames[i]>frames[i-1]);
+	QVERIFY(!decode(packets).empty());
 }
 
 void TestSquelchFoundation::boundedAndConcurrent() {

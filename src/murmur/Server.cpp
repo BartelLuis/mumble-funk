@@ -128,8 +128,19 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 												  [this](const SimplexController::Event &event) {
 													  if (m_simplexLogger)
 														  m_simplexLogger->submit(event);
-													  if (m_squelchPlan && event.event == "released" && event.reason != "marker_confirmed")
-														  m_squelchPlan->invalidate(event.context.connection);
+													  if (m_squelchPlan && event.event == "released" && event.reason != "marker_confirmed") {
+														  if (event.reason == "timeout_suspected" && m_squelchTimeoutCloseEnabled
+															  && m_squelchCloseEnabled && m_audioFeedback) {
+															  // The controller lock serializes this release against the next
+															  // accepted start. Snapshot only existing validated recipients;
+															  // queueing is bounded/try-lock, with no voice lock or IO here.
+															  const auto cues = m_squelchPlan->timeout({event.context.connection,
+																  event.context.session, event.context.channel}, event.frame);
+															  for (const auto &cue : cues) m_audioFeedback->requestSquelch(cue);
+														  } else {
+															  m_squelchPlan->invalidate(event.context.connection);
+														  }
+													  }
 												  });
 		m_simplexTimer = new QTimer(this);
 		m_simplexTimer->setTimerType(Qt::PreciseTimer);
@@ -158,6 +169,7 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 			if (squelchRequested) {
 				m_squelchOpenEnabled = getConf("squelchopen", Meta::mp.squelchOpen).toBool();
 				m_squelchCloseEnabled = getConf("squelchclose", Meta::mp.squelchClose).toBool();
+				m_squelchTimeoutCloseEnabled = getConf("squelchclosetimeoutfallback", Meta::mp.squelchCloseTimeoutFallback).toBool();
 				try {
 					m_audioFeedback->configureSquelch(getConf("squelchopenfile", Meta::mp.squelchOpenFile).toString(),
 						getConf("squelchclosefile", Meta::mp.squelchCloseFile).toString(),
@@ -1344,7 +1356,7 @@ void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, Au
 		transmission = m_simplex->begin(packet);
 		if (!transmission.allowed) {
 			const bool feedback = transmission.feedback;
-			transmission.lock.unlock(); // No queueing, encoding or delivery under the Simplex mutex.
+			transmission.lock.unlock(); // Queue Busy only after releasing the Simplex mutex.
 			if (feedback && m_audioFeedback && m_busyEnabled)
 				m_audioFeedback->request(AudioFeedback::Signal::Busy,
 										 { packet.context.connection, packet.context.session, packet.context.channel },

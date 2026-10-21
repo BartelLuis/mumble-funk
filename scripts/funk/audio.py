@@ -18,6 +18,7 @@ STANDARD_DIR = '/usr/local/share/mumble-funk/audio'
 DEFAULTS = {
     'audiofeedback': 'false', 'busytone': 'true', 'busytonefile': '', 'busytonevolume': '50',
     'squelch': 'false', 'squelchopen': 'true', 'squelchclose': 'true',
+    'squelchclosetimeoutfallback': 'false',
     'squelchopenfile': STANDARD_DIR+'/squelch-open.wav',
     'squelchclosefile': STANDARD_DIR+'/squelch-close.wav',
     'squelchopenvolume': '50', 'squelchclosevolume': '50',
@@ -68,6 +69,7 @@ def main(argv=None, container=False):
     commands = ['status', 'enable', 'disable', 'volume', 'set-busy-tone', 'reset-busy-tone',
                 'enable-squelch', 'disable-squelch', 'enable-open', 'disable-open',
                 'enable-close', 'disable-close', 'open-volume', 'close-volume',
+                'enable-timeout-close', 'disable-timeout-close',
                 'set-open', 'set-close', 'reset-open', 'reset-close']
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=commands, nargs='?', default='status')
@@ -145,6 +147,7 @@ def main(argv=None, container=False):
             else:
                 key = {'enable': 'audiofeedback', 'disable': 'audiofeedback',
                        'disable-squelch': 'squelch', 'enable-open': 'squelchopen', 'disable-open': 'squelchopen',
+                       'enable-timeout-close': 'squelchclosetimeoutfallback', 'disable-timeout-close': 'squelchclosetimeoutfallback',
                        'enable-close': 'squelchclose', 'disable-close': 'squelchclose'}[args.command]
                 updates = {key: 'true' if args.command.startswith('enable') else 'false'}
                 if args.command in ('enable-open', 'enable-close'):
