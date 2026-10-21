@@ -62,13 +62,16 @@ Wenn dort Änderungen erscheinen, **anhalten und diese zuerst sichern**. Danach:
 
 ```bash
 git fetch origin refs/heads/feature/audio-volume:refs/remotes/origin/feature/audio-volume
-git switch --track origin/feature/audio-volume
+git switch -c feature/audio-volume --no-track origin/feature/audio-volume
 git rev-parse HEAD
 bash scripts/funk/setup.sh --experimental-audio-volume
 sudo mumble-funk-audio status
 ```
 
-`git switch --track` wird nur beim erstmaligen Anlegen des lokalen Branches benutzt.
+`git switch -c … --no-track` wird nur beim erstmaligen Anlegen des lokalen Branches
+benutzt. Das funktioniert auch bei älteren `--single-branch`-Klonen. Eine neue
+Tracking-Konfiguration ist nicht nötig; spätere Updates nennen den Remote-Zweig
+ausdrücklich.
 Für spätere Updates auf diesem Branch stattdessen:
 
 ```bash
