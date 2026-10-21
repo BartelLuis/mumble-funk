@@ -5,3 +5,5 @@ add_test(NAME TestAudioFeedbackIntegration COMMAND $<TARGET_FILE:TestAudioFeedba
 set_tests_properties(TestAudioFeedbackIntegration PROPERTIES TIMEOUT 120)
 target_compile_definitions(TestAudioFeedbackIntegration PRIVATE MUMBLE_SERVER_PATH="$<TARGET_FILE:mumble-server>")
 add_dependencies(TestAudioFeedbackIntegration mumble-server)
+
+target_compile_definitions(TestAudioFeedbackIntegration PRIVATE BUSY_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/audio")

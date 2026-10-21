@@ -40,11 +40,23 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(values['squelchopen'],'true');self.assertEqual(values['squelchclose'],'true')
         self.assertEqual(values['squelchclosetimeoutfallback'],'false')
         self.assertEqual(values['feedbackboostdb'],'0')
+        self.assertEqual(values['busytonefile'],'/usr/local/share/mumble-funk/audio/busy-tone.wav')
         self.assertEqual(values['squelchopenfile'],'/usr/local/share/mumble-funk/audio/squelch-open.wav')
         self.assertEqual(len(values['serverpassword']),48);self.assertNotIn('serverpassword=',str(self.calls))
         self.assertEqual(self.runtime.CONFIG.stat().st_mode & 0o777,0o600)
         self.assertIn('-disablesu',self.calls[0])
         self.runtime.initialize();self.assertEqual(self.runtime.CONFIG.read_bytes(),original);self.assertEqual(len(self.calls),1)
+
+    def test_existing_synthetic_missing_or_custom_busy_selection_never_migrates(self):
+        self.runtime.initialize()
+        original=self.runtime.CONFIG.read_text()
+        for selection in ('', '/var/lib/mumble-funk/audio/own.wav', None):
+            text=original.replace('busytonefile=/usr/local/share/mumble-funk/audio/busy-tone.wav\n',
+                                  '' if selection is None else 'busytonefile='+selection+'\n')
+            self.runtime.CONFIG.write_text(text)
+            before=self.runtime.CONFIG.read_bytes()
+            self.runtime.initialize()
+            self.assertEqual(self.runtime.CONFIG.read_bytes(),before)
 
     def test_missing_config_never_resets_existing_database(self):
         self.runtime.DATABASE.write_bytes(b'protected')

@@ -70,6 +70,8 @@ void TestAudioVolume::zeroCompatibility() {
         QVERIFY(AudioSignal::encode(custom,volume,0)==legacy(custom,volume,false));
         AudioFeedback bank(volume,asset("squelch-close.wav"),0);
         QVERIFY(bank.clip(AudioFeedback::Signal::Busy)==legacy(custom,volume,false));
+        const auto originalBusy = AudioSignal::loadWav(asset("busy-tone.wav"));
+        QVERIFY(AudioSignal::encode(originalBusy,volume,0)==legacy(originalBusy,volume,false));
         for(const char *name:{"squelch-open.wav","squelch-close.wav"}) {
             const auto wav=AudioSignal::loadWav(asset(name),AudioSignal::LengthPolicy::ShortSignal);
             QVERIFY(AudioSignal::encodeWavSignal(asset(name),volume,0)==legacy(wav,volume,true));

@@ -15,7 +15,7 @@ std::vector< float > AudioSignal::loadWav(const QString &path, LengthPolicy poli
 	const auto fail = [policy] {
 		throw std::runtime_error(
 			policy == LengthPolicy::Busy
-				? "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 20-1000 ms, at most 128 KiB"
+				? "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 20-1250 ms, at most 128 KiB"
 				: "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 1-1000 ms, at most 128 KiB");
 	};
 	QFile file(path);
@@ -57,8 +57,10 @@ std::vector< float > AudioSignal::loadWav(const QString &path, LengthPolicy poli
 		|| size % 2)
 		fail();
 	const auto rate = u32(fmt + 4);
-	if ((rate != 8000 && rate != 16000 && rate != 24000 && rate != 48000) || u32(fmt + 8) != rate * 2
-		|| size < rate / (policy == LengthPolicy::Busy ? 50 : 1000) * 2 || size > rate * 2)
+	if ((rate != 8000 && rate != 16000 && rate != 24000 && rate != 48000) || u32(fmt + 8) != rate * 2)
+		fail();
+	const auto maxFrames = policy == LengthPolicy::Busy ? rate * 5 / 4 : rate;
+	if (size < rate / (policy == LengthPolicy::Busy ? 50 : 1000) * 2 || size > maxFrames * 2)
 		fail();
 	const auto frames = size / 2;
 	const auto output = static_cast< std::size_t >(frames) * 48000 / rate;
@@ -98,7 +100,10 @@ std::vector< float > AudioSignal::syntheticBusy() {
 static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail, int boostDb) {
 	if (boostDb < 0 || boostDb > 12)
 		throw std::runtime_error("Feedback boost must be an integer from 0 to 12 dB");
-	if (pcm.empty() || pcm.size() > 48960)
+	// Busy: at most 60000 source samples (1250 ms at 48 kHz) + 960 tail.
+	// Short cues retain 48000 + 960 (1000 ms); final Opus frame pads with zeros.
+	const std::size_t maxSamples = signalTail ? 48960 : 60960;
+	if (pcm.empty() || pcm.size() > maxSamples)
 		throw std::runtime_error("Feedback PCM length outside limits");
 	int error = OPUS_OK;
 	std::unique_ptr< OpusEncoder, decltype(&opus_encoder_destroy) > encoder(

@@ -197,12 +197,13 @@ def main():
                 original_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
                 state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
                 assert state['squelch']=='false' and state['audiofeedback']=='false' and state['feedbackboostdb']=='0'
+                assert state['busytonefile']=='/usr/local/share/mumble-funk/audio/busy-tone.wav'
                 command(['bash','scripts/docker/audio.sh','boost','6']);healthy()
                 state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
                 assert state['feedbackboostdb']=='6' and state['squelch']=='false' and state['audiofeedback']=='false'
                 assert command(['bash','scripts/docker/audio.sh','boost','13'],check=False).returncode!=0
                 assert values['serverpassword'] not in json.dumps(state)
-                asset_check="import hashlib,os;from pathlib import Path;p=Path('/usr/local/share/mumble-funk/audio');assert os.getuid()==10001;assert hashlib.sha256((p/'squelch-open.wav').read_bytes()).hexdigest()=='81573e3a11db089de7cf2bbb2918e0747a2edde12923c399ac5042513d038770';assert hashlib.sha256((p/'squelch-close.wav').read_bytes()).hexdigest()=='8d9091e0e4ee36433eb8aa707a7fa4a19ccec8ce5dee85ef1d91fa478afd0e31'"
+                asset_check="import hashlib,os;from pathlib import Path;p=Path('/usr/local/share/mumble-funk/audio');assert os.getuid()==10001;assert hashlib.sha256((p/'busy-tone.wav').read_bytes()).hexdigest()=='c24e7af67bc9aac5b040fad1118f006d79540a34b427d064e9a5596d0f11d107';assert hashlib.sha256((p/'squelch-open.wav').read_bytes()).hexdigest()=='81573e3a11db089de7cf2bbb2918e0747a2edde12923c399ac5042513d038770';assert hashlib.sha256((p/'squelch-close.wav').read_bytes()).hexdigest()=='8d9091e0e4ee36433eb8aa707a7fa4a19ccec8ce5dee85ef1d91fa478afd0e31'"
                 compose('exec','-T','mumble-funk','python3','-c',asset_check)
                 assert compose('exec','-T','mumble-funk','funk-container','audio','enable-squelch',check=False).returncode!=0
                 # Exercise the operator wrapper on this test's unique project.
@@ -232,8 +233,22 @@ def main():
                 enable="from pathlib import Path;p=Path('/etc/mumble-funk/server.ini');t=p.read_text().replace('simplextimeout=500\\n','simplextimeout=5000\\n').replace('simplexretrytimeout=500\\n','simplexretrytimeout=5000\\n').replace('audiofeedback=false\\n','audiofeedback=true\\n');p.write_text(t)"
                 compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',enable)
                 compose('up','-d','--no-build');healthy()
-                result=command([str(args.probe),str(port),'--audio-feedback'],input=(values['serverpassword']+'\n').encode())
-                assert b'Private busy tone verified' in result.stdout
+                # Explicit expected counts are derived from the fixed fixture's
+                # 57468 samples + unchanged 960-sample Busy tail: ceil(/960)=61.
+                # Never infer expectations from received packet counts.
+                for selection,packets,gain in [('use-standard-busy-tone',61,'0'),('reset-busy-tone',13,'0'),('set-busy-tone',61,'12')]:
+                    action=['bash','scripts/docker/audio.sh',selection]
+                    if selection=='set-busy-tone': action.append(str(REPO/'assets/audio/busy-tone.wav'))
+                    command(action);healthy()
+                    command(['bash','scripts/docker/audio.sh','boost',gain]);healthy()
+                    state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+                    if selection=='set-busy-tone':
+                        custom_busy=state['busytonefile']
+                        assert custom_busy.startswith('/var/lib/mumble-funk/audio/busy-')
+                    elif selection=='reset-busy-tone': assert state['busytonefile']==''
+                    else: assert state['busytonefile']=='/usr/local/share/mumble-funk/audio/busy-tone.wav'
+                    result=command([str(args.probe),str(port),'--audio-feedback',str(packets)],input=(values['serverpassword']+'\n').encode())
+                    assert b'Private busy tone verified' in result.stdout
                 compose('stop')
                 restore="import sys;from pathlib import Path;Path('/etc/mumble-funk/server.ini').write_bytes(sys.stdin.buffer.read())"
                 compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',restore,input=original_config)
@@ -274,6 +289,7 @@ def main():
                 names=archive.getnames();assert 'config/server.ini' in names and 'state/server.sqlite' in names and 'state/audio/future.txt' in names
                 if args.audio_feedback:
                     assert b'feedbackboostdb=9\n' in archive.extractfile('config/server.ini').read()
+                    assert archive.extractfile('state/audio/'+Path(custom_busy).name).read()==(REPO/'assets/audio/busy-tone.wav').read_bytes()
                     saved=archive.extractfile('state/audio/'+Path(custom_close).name).read()
                     assert saved==(REPO/'assets/audio/squelch-close.wav').read_bytes()
             # Restoring to populated volumes refuses and restarts the original instance.
@@ -288,6 +304,7 @@ def main():
             assert restored_hash==before_restore
             if args.audio_feedback:
                 assert json.loads(compose('run','--rm','--no-deps','-T','mumble-funk','audio','status',project_name=restored).stdout)['feedbackboostdb']=='9'
+                assert compose('run','--rm','--no-deps','-T','--entrypoint','cat','mumble-funk',custom_busy,project_name=restored).stdout==(REPO/'assets/audio/busy-tone.wav').read_bytes()
                 saved=compose('run','--rm','--no-deps','-T','--entrypoint','cat','mumble-funk',custom_close,project_name=restored).stdout
                 assert saved==(REPO/'assets/audio/squelch-close.wav').read_bytes()
             compose('up','-d','--no-build',project_name=restored)

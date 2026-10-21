@@ -1,5 +1,10 @@
 > Gemeinsamer Stable-Kandidat: Ubuntu und Docker verwenden denselben Commit.
 
+**Neuer experimenteller Standard-Busy-Tone:** Installation und Update aus
+`feature/busy-tone-asset` mit `--experimental-busy-tone` sowie Tonwahl, Fallback
+und Hörtest stehen in [busy-tone.md](busy-tone.md). Die folgenden Stable- und
+historischen Feature-Anleitungen ersetzen diese ausdrückliche Auswahl nicht.
+
 Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
 siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
 Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.

@@ -100,6 +100,22 @@ class SourceTests(unittest.TestCase):
         (self.repo/"README.md").write_text("uncommitted source")
         self.guard(False, experimental="--experimental-audio-volume")
 
+    def test_busy_asset_requires_own_flag_clean_and_published_head(self):
+        self.git('checkout','-B','feature/busy-tone-asset',self.head)
+        self.git('update-ref','refs/remotes/origin/feature/busy-tone-asset',self.head)
+        self.git('push',str(self.remote),'HEAD:refs/heads/feature/busy-tone-asset')
+        self.guard(False)
+        self.guard(False, experimental='--experimental-audio-volume')
+        self.guard(True, experimental='--experimental-busy-tone')
+        self.git('update-ref','refs/remotes/origin/feature/busy-tone-asset','dfbac8d3d9c967003e74b4ffc5610f7d45e8f666')
+        self.guard(False, experimental='--experimental-busy-tone')
+        self.git('update-ref','refs/remotes/origin/feature/busy-tone-asset',self.head)
+        self.run_git('--git-dir',str(self.remote),'update-ref','refs/heads/feature/busy-tone-asset','dfbac8d3d9c967003e74b4ffc5610f7d45e8f666')
+        self.guard(False, experimental='--experimental-busy-tone')
+        self.git('push',str(self.remote),'HEAD:refs/heads/feature/busy-tone-asset')
+        (self.repo/'README.md').write_text('uncommitted source')
+        self.guard(False, experimental='--experimental-busy-tone')
+
     def test_local_branch_divergence_rejected(self):
         self.git("commit", "--allow-empty", "-m", "Unpublished local change")
         self.guard(False)

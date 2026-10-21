@@ -302,6 +302,28 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
         self.assertEqual(config.read_bytes(), original)
 
+    def test_busy_asset_experimental_install_and_legacy_selection_preservation(self):
+        self.env['MOCK_BRANCH']='feature/busy-tone-asset'
+        (self.repo/'test-os-release').write_text('ID=ubuntu\nVERSION_ID="24.04"\n')
+        for args in ((), ('--experimental-squelch',), ('--experimental-audio-volume',)):
+            result=self.execute(args=args)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('--experimental-busy-tone',result.stderr)
+            self.assertFalse((self.repo/'stage/etc/mumble-funk/server.ini').exists())
+        result=self.execute(args=('--experimental-busy-tone',))
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        config=self.repo/'stage/etc/mumble-funk/server.ini'
+        self.assertIn('busytonefile=/usr/local/share/mumble-funk/audio/busy-tone.wav\n',config.read_text())
+        info=(self.repo/'stage/opt/mumble-funk/current/BUILD-INFO').read_text()
+        self.assertIn('branch=feature/busy-tone-asset',info);self.assertIn('experimental=true',info)
+        installers=[c for c in self.calls() if c[0]=='sudo' and any(a.endswith('install.sh') for a in c)]
+        self.assertIn('--experimental-busy-tone',installers[-1])
+        config.write_text(config.read_text().replace('busytonefile=/usr/local/share/mumble-funk/audio/busy-tone.wav','busytonefile='))
+        original=config.read_bytes()
+        result=self.execute(args=('--experimental-busy-tone',))
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(config.read_bytes(),original)
+
     def test_failure_before_deployment(self):
         for failure in ("apt-update", "apt-install", "build", "tests", "network"):
             with self.subTest(failure=failure):

@@ -15,6 +15,7 @@ import sys
 
 INSTANCE = 'mumble-funk'
 STANDARD_DIR = '/usr/local/share/mumble-funk/audio'
+BUSY_STANDARD = STANDARD_DIR+'/busy-tone.wav'
 DEFAULTS = {
     'feedbackboostdb': '0', 'audiofeedback': 'false', 'busytone': 'true', 'busytonefile': '', 'busytonevolume': '50',
     'squelch': 'false', 'squelchopen': 'true', 'squelchclose': 'true',
@@ -66,7 +67,7 @@ def installation_lock(root):
 
 
 def main(argv=None, container=False):
-    commands = ['boost', 'status', 'enable', 'disable', 'volume', 'set-busy-tone', 'reset-busy-tone',
+    commands = ['use-standard-busy-tone', 'boost', 'status', 'enable', 'disable', 'volume', 'set-busy-tone', 'reset-busy-tone',
                 'enable-squelch', 'disable-squelch', 'enable-open', 'disable-open',
                 'enable-close', 'disable-close', 'open-volume', 'close-volume',
                 'enable-timeout-close', 'disable-timeout-close',
@@ -122,6 +123,9 @@ def main(argv=None, container=False):
                                            instance=INSTANCE, prefix=signal,
                                            validator='--validate-feedback-wav' if signal == 'busy' else '--validate-squelch-wav')
                 updates = {key: ('/var/lib/mumble-funk/audio/' if container else '/etc/mumble-funk/sounds/')+name}
+            elif args.command == 'use-standard-busy-tone':
+                COMMON.checked([str(binary), '--validate-feedback-wav', str(root/BUSY_STANDARD.lstrip('/'))])
+                updates = {'busytonefile': BUSY_STANDARD}
             elif args.command in ('reset-open', 'reset-close', 'reset-busy-tone'):
                 signal = {'reset-open': 'open', 'reset-close': 'close', 'reset-busy-tone': 'busy'}[args.command]
                 key = 'busytonefile' if signal == 'busy' else 'squelch'+signal+'file'

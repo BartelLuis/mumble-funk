@@ -2,13 +2,15 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
-**Dieser Branch: experimentelles Squelch Phase 2C (`feature/squelch-audio`, Draft-PR #4).**
-Open/Close und privater Busy Tone nutzen den bestehenden Audio-Feedback-Weg;
-die Sprache wird weiterhin unverändert weitergeleitet. Effekte sind standardmäßig
-**aus**. Keine Release- oder Hörtestfreigabe. Die normale Ubuntu-Installation
-verlangt eine ausdrückliche experimentelle Auswahl; keine parallele Preview nötig.
-[Ubuntu-Snapshot-VM installieren](docs/funk/squelch-ubuntu.md) ·
-[Verhalten, WAV-Verwaltung und Docker](docs/funk/squelch-preview.md) ·
+**Dieser Branch: experimenteller Standard-Busy-Tone (`feature/busy-tone-asset`).**
+Enthält die integrierten Squelch- und Audio-Boost-Funktionen. Neue Ubuntu-/Docker-
+Konfigurationen wählen die eigene CC0-Aufnahme des Projektinhabers; Updates
+behalten bisherige Auswahl, eigene WAVs und Einstellungen bei. Busy akzeptiert
+20–1250 ms; Squelch-Grenzen und Sprachweiterleitung bleiben erhalten. Effekte sind
+standardmäßig **aus**. Keine Release- oder Geräte-Hörtestfreigabe. Die native
+Installation erfordert `--experimental-busy-tone`.
+[Installation, Update, Tonwahl und Hörtest](docs/funk/busy-tone.md) ·
+[Squelch-Verhalten und WAV-Verwaltung](docs/funk/squelch-preview.md) ·
 [Technische Übergabe](docs/funk/SQUELCH-DEVELOPMENT-HANDOFF.md).
 
 Neue Docker-Installationen dieses Entwicklungsstands verwenden **Host 64740
@@ -23,7 +25,7 @@ dessen historischer Docker-Fallback bleibt 64739.
 verwenden auf `stable` denselben Quellstand. Die Simplex-Engine bleibt v0.2 und
 experimentell. Die abschließende Docker-Abnahme auf dem Rechner des Kollegen und
 die Freigabe stehen noch aus; es gibt keinen neuen Release oder Versionstag.
-`dev` ist für Weiterentwicklung vorgesehen, `master` bleibt vorerst Standardbranch.
+`dev` ist für Weiterentwicklung vorgesehen, `master` bleibt historische Upstream-Referenz.
 
 [Prüfbericht der Integration](docs/funk/STABLE-INTEGRATION-STATUS.md) ·
 [Entwicklungsstruktur](docs/funk/development.md) · [Releaseplan](docs/funk/release-plan.md)
@@ -51,7 +53,7 @@ Beide Wege bauen denselben Git-Commit; `git rev-parse HEAD` zeigt seine eindeuti
 Kennung. Neue Installationen aktivieren Simplex mit 500 ms Timeout und 500 ms
 Retry-Timeout. Unveränderte Mumla-/Windows-Mumble-Clients verbinden sich damit.
 Stable enthält kein Audio-Feedback. Auf diesem Entwicklungsbranch ist der
-private Busy Tone optional enthalten; dafür die [getrennte Preview-Anleitung](docs/funk/audio-engine.md) verwenden.
+private Busy Tone optional enthalten; dafür die [aktuelle Feature-Anleitung](docs/funk/busy-tone.md) verwenden.
 
 - [Ubuntu-Setup](docs/funk/setup.md): Ubuntu Server 24.04 oder 26.04 LTS, Dienst
   `mumble-funk`, üblicherweise 64739 TCP/UDP.

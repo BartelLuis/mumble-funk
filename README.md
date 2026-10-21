@@ -2,13 +2,14 @@
 
 **Server-side simplex radio communication for Mumble**
 
-**This branch: experimental Squelch Phase 2C (`feature/squelch-audio`, Draft PR #4).**
-Open/Close signals and private Busy use the existing feedback transport; speech
-forwarding stays intact. Effects default **off**. No release or device hearing-test
-approval. Native installation uses the normal service with an explicit experimental
-opt-in; no parallel preview instance is required.
-[Ubuntu snapshot-VM guide (German)](docs/funk/squelch-ubuntu.md) ·
-[Behaviour, WAV management and Docker](docs/funk/squelch-preview.md) ·
+**This branch: experimental standard Busy tone (`feature/busy-tone-asset`).**
+Includes the merged Squelch and Audio Boost work. New Ubuntu/Docker configurations
+select the maintainer-provided CC0 Busy WAV; updates preserve existing selections,
+custom files and settings. Busy accepts 20–1250 ms; Squelch limits and speech
+forwarding stay unchanged. Effects default **off**. No release or device hearing-test
+approval. Native installation requires `--experimental-busy-tone`.
+[Install/update, tone selection and hearing test (German)](docs/funk/busy-tone.md) ·
+[Squelch behaviour and WAV management](docs/funk/squelch-preview.md) ·
 [Technical handoff](docs/funk/SQUELCH-DEVELOPMENT-HANDOFF.md).
 
 New Docker installations from this development candidate default to **host 64740
@@ -23,8 +24,7 @@ its historical Docker fallback is still 64739.
 one source revision on [`stable`](https://github.com/Shawna7han/mumble-funk/tree/stable).
 Simplex Engine v0.2 remains an experimental alpha; final Docker acceptance on the
 operator's host is still required. No new version tag or release is published.
-`dev` is the development branch; `master` remains the historical upstream/default
-branch until separately approved.
+`dev` is the development branch; `master` remains the historical upstream reference.
 
 [Deutsch](README.de.md) · [Integration evidence](docs/funk/STABLE-INTEGRATION-STATUS.md) ·
 [Development](docs/funk/development.md) · [Release plan](docs/funk/release-plan.md)
@@ -60,7 +60,7 @@ Do not change the Compose project name during an update.
 Both builds use Mumble 1.5.939 plus the same Funk sources. Record `git rev-parse HEAD`
 for an exact version; the Mumble version alone does not identify a Funk release.
 Audio Feedback is **not included in Stable**. It is integrated experimentally in
-`dev` and this development candidate; use its separate [preview guide](docs/funk/audio-engine.md).
+`dev` and this development candidate; use the [current feature guide](docs/funk/busy-tone.md).
 
 ## Quick installation — Ubuntu 24.04 / 26.04 LTS
 

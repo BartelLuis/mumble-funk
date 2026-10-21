@@ -5,10 +5,14 @@
 #include <cmath>
 #include <cstring>
 #include <opus.h>
+#include "AudioSignal.h"
+#include <memory>
 using namespace SimplexTest;
 class TestAudioFeedbackIntegration : public QObject {
 	Q_OBJECT
 private slots:
+	void standardAsset_data();
+	void standardAsset();
 	void privateTone_data();
 	void privateTone();
 	void disabled_data();
@@ -20,6 +24,45 @@ private slots:
 	void legacyNonceIsNotProtocolVersion();
 	void reusedSession();
 };
+void TestAudioFeedbackIntegration::standardAsset_data() {
+    QTest::addColumn<bool>("udp"); QTest::addColumn<bool>("modern"); QTest::addColumn<int>("mode");
+    for(bool udp:{false,true}) for(bool modern:{false,true}) for(int mode:{0,1,2})
+        QTest::newRow(qPrintable(QString("asset-%1-%2-mode%3").arg(udp?"UDP":"TCP").arg(modern?"protobuf":"legacy").arg(mode))) << udp << modern << mode;
+}
+void TestAudioFeedbackIntegration::standardAsset() {
+    QFETCH(bool,udp);QFETCH(bool,modern);QFETCH(int,mode);
+    const int boost=mode?12:0, volume=mode==2?0:100;
+    const auto path=QStringLiteral(BUSY_ASSET_DIR)+"/busy-tone.wav";
+    Fixture f; QVERIFY(f.start("true",5000,5000,false,"audiofeedback=true\nbusytonefile="+path.toUtf8()+"\nbusytonevolume="+QByteArray::number(volume)+"\nfeedbackboostdb="+QByteArray::number(boost)+"\n"));
+    Client admin,a,b,observer,outsider;
+    QVERIFY(admin.login(f.port,"SuperUser",modern));QVERIFY(a.login(f.port,"Owner",modern));
+    QVERIFY(b.login(f.port,"Rejected",modern));QVERIFY(observer.login(f.port,"Listener",modern));QVERIFY(outsider.login(f.port,"Other",modern));
+    const auto other=channel(admin,"Other");QVERIFY(other);QVERIFY(outsider.move(other));
+    QVERIFY(a.speak());QVERIFY(observer.expect(a));b.audio();admin.audio();
+    QVERIFY(b.speak(udp));if(udp) QVERIFY(b.udpBarrier());else QVERIFY(b.barrier());
+    const auto packets=b.audio(1600,mode==2?-1:61);
+    if(mode==2) QVERIFY(packets.isEmpty());
+    else {
+        const auto expected=AudioSignal::encode(AudioSignal::loadWav(path),100,boost);
+        QCOMPARE(expected.size(),std::size_t(61));QCOMPARE(packets.size(),61);
+        int error=0;
+        std::unique_ptr<OpusDecoder,decltype(&opus_decoder_destroy)> decoder(opus_decoder_create(48000,1,&error),opus_decoder_destroy);QVERIFY(decoder);
+        for(int i=0;i<packets.size();++i) {
+            QCOMPARE(packets[i].session,b.session);QCOMPARE(packets[i].frame,std::uint64_t(i*2));QCOMPARE(packets[i].last,i==60);
+            QCOMPARE(packets[i].payload,expected[std::size_t(i)]);
+            std::array<float,960> pcm{};
+            QCOMPARE(opus_decode_float(decoder.get(),reinterpret_cast<const unsigned char*>(packets[i].payload.data()),packets[i].payload.size(),pcm.data(),960,0),960);
+            for(float sample:pcm) QVERIFY(std::isfinite(sample) && std::abs(sample)<1);
+        }
+    }
+    QVERIFY(a.audio().isEmpty());QVERIFY(observer.audio().isEmpty());QVERIFY(outsider.audio().isEmpty());
+    QVERIFY(a.speak(false,true));QVERIFY(observer.expect(a,true,true));b.audio();
+    QVERIFY(b.speak(udp));if(udp) QVERIFY(b.udpBarrier());else QVERIFY(b.barrier());
+    QVERIFY(observer.expect(b,false)); // No automatic channel takeover, even after a long Busy.
+    QVERIFY(b.speak(udp,true));if(udp) QVERIFY(b.udpBarrier());else QVERIFY(b.barrier());
+    b.audio();QVERIFY(b.speak(udp));if(udp) QVERIFY(b.udpBarrier());else QVERIFY(b.barrier());
+    QVERIFY(observer.expect(b)); // Explicit release/rearm still permits speech.
+}
 void TestAudioFeedbackIntegration::privateTone_data() {
 	QTest::addColumn< bool >("udp");
 	QTest::addColumn< bool >("modern");

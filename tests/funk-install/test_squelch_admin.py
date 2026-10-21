@@ -39,12 +39,13 @@ class SquelchAdminTests(unittest.TestCase):
 
     def test_defaults_assets_permissions_and_safe_status(self):
         state = self.status()
+        self.assertEqual(state['busytonefile'], AUDIO.BUSY_STANDARD)
         self.assertEqual(state['squelch'], 'false')
         self.assertEqual(state['audiofeedback'], 'false')
         self.assertEqual(state['squelchopen'], 'true')
         self.assertEqual(state['squelchclose'], 'true')
         self.assertEqual(state['squelchclosetimeoutfallback'], 'false')
-        for name in ('squelch-open.wav', 'squelch-close.wav', 'LICENSE.md'):
+        for name in ('busy-tone.wav', 'squelch-open.wav', 'squelch-close.wav', 'LICENSE.md'):
             path = self.sound/name
             self.assertEqual(path.read_bytes(), (REPO/'assets/audio'/name).read_bytes())
             self.assertEqual(path.stat().st_mode & 0o777, 0o644)
@@ -57,7 +58,7 @@ class SquelchAdminTests(unittest.TestCase):
         # Staging must report its actual source, not pretend to be the feature head.
         branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
         self.assertIn('branch='+branch+'\n', info)
-        self.assertIn('experimental='+str(branch in ('feature/squelch-audio', 'feature/audio-volume')).lower()+'\n', info)
+        self.assertIn('experimental='+str(branch in ('feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset')).lower()+'\n', info)
         revision = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
         self.assertIn('revision='+revision+'\n', info)
         self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())
@@ -157,6 +158,52 @@ class SquelchAdminTests(unittest.TestCase):
         self.assertEqual(self.status()['busytonefile'], '')
         self.command('enable'); self.command('disable')
         self.assertEqual(self.status()['audiofeedback'], 'false')
+
+    def test_standard_legacy_custom_and_reset_preserve_all_other_settings(self):
+        before = self.status(); before.pop('busytonefile')
+        self.command('reset-busy-tone')
+        self.assertEqual(self.status()['busytonefile'], '')  # Historical reset remains synthetic.
+        original = self.config.read_bytes()
+        subprocess.run(self.install, check=True, capture_output=True)
+        self.assertEqual(self.config.read_bytes(), original)
+        self.config.write_bytes(original.replace(b'busytonefile=\n', b''))
+        original = self.config.read_bytes()
+        self.assertEqual(self.status()['busytonefile'], '')  # Missing is synthetic too.
+        subprocess.run(self.install, check=True, capture_output=True)
+        self.assertEqual(self.config.read_bytes(), original)
+        self.command('use-standard-busy-tone')
+        self.assertEqual(self.status()['busytonefile'], AUDIO.BUSY_STANDARD)
+        selected = self.status(); selected.pop('busytonefile')
+        self.assertEqual(selected, before)  # Never auto-enables or changes volumes/boost/Squelch.
+        self.command('set-busy-tone', str(REPO/'assets/audio/busy-tone.wav'))
+        custom = self.status()['busytonefile']
+        saved = self.root/custom.lstrip('/')
+        self.assertEqual(saved.read_bytes(), (REPO/'assets/audio/busy-tone.wav').read_bytes())
+        self.command('boost','12'); self.command('volume','100')
+        original = self.config.read_bytes()
+        subprocess.run(self.install, check=True, capture_output=True)
+        self.assertEqual(self.config.read_bytes(), original)
+        self.assertEqual(saved.read_bytes(), (REPO/'assets/audio/busy-tone.wav').read_bytes())
+        self.command('reset-busy-tone'); self.assertEqual(self.status()['busytonefile'],'')
+        self.command('use-standard-busy-tone'); self.assertEqual(self.status()['busytonefile'],AUDIO.BUSY_STANDARD)
+        original = self.config.read_bytes()
+        (self.sound/'busy-tone.wav').write_bytes(b'invalid')
+        self.command('use-standard-busy-tone', ok=False)
+        self.assertEqual(self.config.read_bytes(), original)
+        self.assertEqual(saved.read_bytes(), (REPO/'assets/audio/busy-tone.wav').read_bytes())
+
+    def test_existing_file_or_symlink_at_new_standard_path_is_not_overwritten(self):
+        target=self.sound/'busy-tone.wav'
+        target.write_bytes(b'operator-owned recording')
+        before={p:p.read_bytes() for p in self.root.rglob('*') if p.is_file() and not p.is_symlink()}
+        result=subprocess.run(self.install,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        for p,content in before.items(): self.assertEqual(p.read_bytes(),content)
+        own=self.root/'own.wav';own.write_bytes(b'own file')
+        target.unlink();target.symlink_to(own)
+        result=subprocess.run(self.install,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertTrue(target.is_symlink());self.assertEqual(own.read_bytes(),b'own file')
 
     def test_bad_or_unsafe_files_do_not_change_configuration(self):
         original = self.config.read_bytes()

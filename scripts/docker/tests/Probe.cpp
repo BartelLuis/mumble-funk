@@ -3,6 +3,11 @@
 #include "../../../src/tests/TestSimplexIntegration/Harness.h"
 #include <iostream>
 #include <cstdlib>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <memory>
+#include <opus.h>
 using namespace SimplexTest;
 
 bool login(Client &client, quint16 port, const std::string &name, const std::string &password) {
@@ -27,6 +32,9 @@ int main(int argc,char **argv) {
  const auto port=static_cast<quint16>(QString::fromLocal8Bit(argv[1]).toUInt());
  auto check=[](bool ok,const char *message) {if(!ok) {std::cerr<<message<<std::endl;std::exit(1);}};
  const bool feedback = argc > 2 && QString::fromLocal8Bit(argv[2]) == "--audio-feedback";
+ bool validCount=true;
+ const int expectedPackets=argc>3?QString::fromLocal8Bit(argv[3]).toInt(&validCount):13;
+ check(validCount && expectedPackets>=1 && expectedPackets<=64,"Invalid expected Busy packet count");
  Client a,b,observer;
  check(login(a,port,"DockerAlice",password),"TCP/TLS login A failed");
  check(login(b,port,"DockerBob",password),"TCP/TLS login B failed");
@@ -35,13 +43,19 @@ int main(int argc,char **argv) {
  check(b.speak(true) && b.udpBarrier(),"Encrypted UDP voice/ping failed");
  check(observer.expect(b,false),"Blocked UDP speech leaked");
  if(feedback) {
-  const auto tone=b.audio(400,13);
-  check(tone.size()==13,"Private busy tone missing or wrong duration");
+  const auto tone=b.audio(std::max(400,expectedPackets*20+400),expectedPackets);
+  check(tone.size()==expectedPackets,"Private busy tone missing or wrong duration");
+  int error=0;
+  std::unique_ptr<OpusDecoder,decltype(&opus_decoder_destroy)> decoder(opus_decoder_create(48000,1,&error),opus_decoder_destroy);
+  check(bool(decoder) && error==OPUS_OK,"Cannot initialize feedback decoder");
   for(int i=0;i<tone.size();++i) {
    check(tone[i].session==b.session,"Busy tone has wrong recipient identity");
    check(tone[i].frame==static_cast<std::uint64_t>(i*2),"Busy tone frame sequence changed");
-   check(tone[i].last==(i==12),"Busy tone end marker missing");
+   check(tone[i].last==(i+1==expectedPackets),"Busy tone end marker missing");
    check(!tone[i].payload.isEmpty() && tone[i].payload!=audioContent,"Busy tone payload invalid");
+   std::array<float,960> samples{};
+   check(opus_decode_float(decoder.get(),reinterpret_cast<const unsigned char*>(tone[i].payload.data()),tone[i].payload.size(),samples.data(),960,0)==960,"Busy tone not decodable");
+   for(float value:samples) check(std::isfinite(value) && std::abs(value)<1,"Busy tone decoded level unsafe");
   }
   check(a.audio().isEmpty() && observer.audio().isEmpty(),"Private busy tone leaked to channel");
  }

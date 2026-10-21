@@ -10,7 +10,7 @@
 class AudioSignal {
 public:
 	enum class LengthPolicy { Busy, ShortSignal };
-	// Busy keeps its existing 20-ms minimum. Optional short cues accept >=1 ms;
+	// Busy accepts 20..1250 ms, with the existing 128-KiB file bound. Optional short cues accept >=1 ms;
 	// both paths retain all other bounds, the lookahead tail and attenuation.
 	static std::vector< float > loadWav(const QString &path, LengthPolicy policy = LengthPolicy::Busy);
 	static std::vector< float > syntheticBusy();

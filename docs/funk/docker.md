@@ -1,11 +1,11 @@
 # Mumble-Funk mit Docker — experimentell
 
-Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
-siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
-Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.
+Der neue [Standard-Busy-Tone](busy-tone.md) enthält Squelch und **Audio Boost
+(0–12 dB)** aus den vorherigen Entwicklungsphasen. Bestehende Einstellungen und
+eigene WAVs werden bei Updates nicht automatisch geändert.
 
 
-Dieser Feature-Stand **`feature/squelch-audio`** enthält die gemeinsame Audio-Engine
+Dieser Feature-Stand **`feature/busy-tone-asset`** enthält die gemeinsame Audio-Engine
 und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
 Stable-Freigabe. Squelch und Audio-Feedback bleiben bei Neuinstallation deaktiviert.
 Die Anleitung für Aktivierung, eigene WAVs und getrennte Open-/Close-Einstellungen
@@ -63,7 +63,7 @@ installiert oder verändert Docker selbst nicht.
 
 | Eigenschaft | Ubuntu-Schnellinstallation | Docker-Installation |
 | --- | --- | --- |
-| Start | `scripts/funk/setup.sh --experimental-squelch` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
+| Start | `scripts/funk/setup.sh --experimental-busy-tone` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
 | Betrieb | Eigener systemd-Dienst | Eigener Container mit Neustartrichtlinie |
 | Dateien | Eigene Verzeichnisse direkt auf Ubuntu | Eigene benannte Docker-Volumes |
 | Port (TCP/UDP) | Standardmäßig 64739 | Hier Host-Standard 64740, frei wählbar; intern immer 64739 |
@@ -80,7 +80,7 @@ Benutze ein neues Quellverzeichnis, damit vorhandene v0.2-/v0.3-Quellen erhalten
 bleiben:
 
 ```bash
-git clone --branch feature/squelch-audio \
+git clone --branch feature/busy-tone-asset \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-docker
 cd mumble-funk-docker
 ```
@@ -512,15 +512,17 @@ Hörtest über deinen konkreten Docker-Host, Router und die Proxmox-Firewall.
 ## 15. Automatisierte Prüfung und bekannte Grenzen
 
 Die ausgeführten Prüfungen und Commits stehen im [Docker-Prüfbericht](DOCKER-STATUS.md).
-Die Multi-Stage-Builds führen alle **26** CTest-Prüfungen (24 Testprogramme) einschließlich Audio und Squelch aus.
+Die Multi-Stage-Builds führen alle **27** CTest-Prüfungen (25 Testprogramme) einschließlich Audio und Squelch aus.
 Zusätzlich gibt es Docker-spezifische Tests für Initialisierung, sichere Rechte,
 Sperren, Konfiguration und Archivprüfung sowie echte Compose-Integrationstests.
 
 Die Protokollprobe benutzt authentifizierte Testclients und verschlüsselte UDP-
 Pakete mit überprüften Testnutzdaten durch den veröffentlichten Host-Port. Sie
-prüft die Weiterleitungs-/Simplex-Entscheidungen, keine hörbare Opus-Wiedergabe.
-Die Routingprobe benötigt keine hörbare Opus-Wiedergabe; die zusätzlichen
-Audio-/Squelch-Servertests prüfen echte Opus-Decodierung. Der echte Gerätetest des neuen Integrationscommits bleibt offen.
+prüft die Weiterleitungs-/Simplex-Entscheidungen. Im Audio-Modus prüft sie zusätzlich
+die exakte Busy-Paketanzahl, Sequenzen, Ende-Markierung und tatsächliche
+Opus-Dekodierbarkeit ohne digitale Übersteuerung. Die Audio-/Squelch-Servertests
+prüfen weitere Decoder- und Routingfälle. Ein Hörtest auf echten Geräten des
+neuen Feature-Commits bleibt offen.
 
 Die Simplex-Regeln bleiben unverändert. Der gemeinsame Integrationsstand behebt
 gezielt den UDP-Nonce-/Versionsfehler, nachdem ein deterministischer Test ihn am
@@ -550,8 +552,11 @@ Die BSD-Projektlizenz und Copyright-Hinweise bleiben erhalten. Das Laufzeit-Imag
 enthält die Projektlizenz, Drittanbieter-Hinweise und Ubuntu-Paket-Lizenzdateien.
 Die bereits integrierte Audio-Engine benötigt Opus auch zur Laufzeit. Für Phase 2C
 werden keine neuen Drittanbieter-Abhängigkeiten oder fremden Audioressourcen
-hinzugefügt. Die beiden unveränderten Squelch-WAVs stammen vom Projektinhaber;
-ihre CC0-Erklärung liegt zusammen mit ihnen im Image.
+hinzugefügt. Die beiden unveränderten Squelch-WAVs und der neue Busy Tone stammen
+vom Projektinhaber; ihre CC0-Erklärung liegt zusammen mit ihnen im Image. Die
+öffentliche Busy-WAV ist eine von optionalen Metadaten bereinigte Kopie mit
+bitgenau denselben PCM-Audiosamples; Format, Prüfsummen und Nachweis stehen in
+[busy-tone.md](busy-tone.md). Das private Original wird nicht veröffentlicht.
 
 Standards: `/usr/local/share/mumble-funk/audio/`. Eigene WAVs: bestehendes
 State-Volume unter `/var/lib/mumble-funk/audio/`. Die sichere Verwaltung nutzt
