@@ -119,9 +119,16 @@ Falls der lokale Branch bereits existiert, stattdessen:
 cd ~/mumble-funk
 git status --short
 git switch feature/busy-tone-asset
-git pull --ff-only origin feature/busy-tone-asset
+git fetch origin refs/heads/feature/busy-tone-asset:refs/remotes/origin/feature/busy-tone-asset
+git merge --ff-only origin/feature/busy-tone-asset
 bash scripts/funk/setup.sh --experimental-busy-tone
 ```
+
+Die explizite Fetch-Zuordnung aktualisiert auch die lokal gespeicherte
+`origin/feature/busy-tone-asset`-Referenz in älteren Single-Branch-Klonen. Das ist
+für die bestehende Herkunftsprüfung erforderlich; ein einfaches Pull auf einen
+anderen Remote-Branch reicht dort nicht zuverlässig aus. Der anschließende
+Fast-Forward-Merge erzeugt keinen eigenen Merge-Commit.
 
 Bei einer frischen VM ohne Quellkopie:
 
