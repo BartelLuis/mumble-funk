@@ -95,7 +95,9 @@ std::vector< float > AudioSignal::syntheticBusy() {
 	return pcm;
 }
 
-static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail) {
+static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail, int boostDb) {
+	if (boostDb < 0 || boostDb > 12)
+		throw std::runtime_error("Feedback boost must be an integer from 0 to 12 dB");
 	if (pcm.empty() || pcm.size() > 48960)
 		throw std::runtime_error("Feedback PCM length outside limits");
 	int error = OPUS_OK;
@@ -118,26 +120,55 @@ static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int 
 		peak = std::max(peak, std::abs(sample));
 	}
 	// Only attenuate: cap the PCM peak at 0.2 (-14 dBFS), then apply 0..100% volume.
-	const float gain =
+	const float legacyGain =
 		(peak > 0.2f ? 0.2f / peak : 1.0f) * static_cast< float >(std::max(0, std::min(100, volume))) / 100;
-	std::vector< QByteArray > result;
-	for (std::size_t offset = 0; offset < length; offset += 960) {
-		std::array< float, 960 > frame{};
-		for (std::size_t i = 0; i < 960 && offset + i < pcm.size(); ++i)
-			frame[i] = pcm[offset + i] * gain;
-		std::array< unsigned char, 512 > bytes{};
-		const int size =
-			opus_encode_float(encoder.get(), frame.data(), 960, bytes.data(), static_cast< opus_int32 >(bytes.size()));
-		if (size < 0)
-			throw std::runtime_error("Cannot encode feedback Opus audio");
-		result.emplace_back(reinterpret_cast< const char * >(bytes.data()), size);
+	// Preserve the exact legacy arithmetic at 0 dB. Additional amplitude factor is
+	// 10^(dB/20), bounded by 10^(12/20). Thus peak <= 0.796215 before Opus.
+	// No normalization upward, clipping, duration changes or speech processing.
+	float gain = boostDb == 0 ? legacyGain : legacyGain * static_cast<float>(std::pow(10.0, boostDb / 20.0));
+	// Opus can overshoot its input peak (verified with a full-scale square WAV).
+	// Bounded offline verification, never a real-time limiter: uniformly lower
+	// the whole clip only if its decoded peak exceeds 0.98. Re-encode from reset
+	// state, aiming for 0.95 to leave margin for codec quantization. Never clip
+	// samples or change packet counts. Legacy 0 dB bypasses this new path exactly.
+	for (int attempt = 0; attempt < 8; ++attempt) {
+		if (attempt && opus_encoder_ctl(encoder.get(), OPUS_RESET_STATE) != OPUS_OK)
+			throw std::runtime_error("Cannot reset feedback Opus encoder");
+		std::vector<QByteArray> result;
+		for (std::size_t offset = 0; offset < length; offset += 960) {
+			std::array<float, 960> frame{};
+			for (std::size_t i = 0; i < 960 && offset + i < pcm.size(); ++i)
+				frame[i] = pcm[offset + i] * gain;
+			std::array<unsigned char, 512> bytes{};
+			const int size = opus_encode_float(encoder.get(), frame.data(), 960, bytes.data(),
+				static_cast<opus_int32>(bytes.size()));
+			if (size < 0) throw std::runtime_error("Cannot encode feedback Opus audio");
+			result.emplace_back(reinterpret_cast<const char *>(bytes.data()), size);
+		}
+		if (boostDb == 0) return result;
+		std::unique_ptr<OpusDecoder, decltype(&opus_decoder_destroy)> decoder(
+			opus_decoder_create(48000, 1, &error), opus_decoder_destroy);
+		if (!decoder || error != OPUS_OK) throw std::runtime_error("Cannot verify feedback Opus audio");
+		float decodedPeak = 0;
+		for (const auto &packet : result) {
+			std::array<float, 960> decoded{};
+			if (opus_decode_float(decoder.get(), reinterpret_cast<const unsigned char *>(packet.constData()),
+				packet.size(), decoded.data(), 960, 0) != 960)
+				throw std::runtime_error("Cannot decode feedback Opus audio");
+			for (float sample : decoded) {
+				if (!std::isfinite(sample)) throw std::runtime_error("Non-finite decoded feedback audio");
+				decodedPeak = std::max(decodedPeak, std::abs(sample));
+			}
+		}
+		if (decodedPeak <= 0.98f) return result;
+		gain *= 0.95f / decodedPeak;
 	}
-	return result;
+	throw std::runtime_error("Cannot encode feedback within safe decoded level");
 }
 
-std::vector<QByteArray> AudioSignal::encode(const std::vector<float> &pcm, int volume) {
-	return encodePCM(pcm, volume, false); // Busy waveform and tail are unchanged.
+std::vector<QByteArray> AudioSignal::encode(const std::vector<float> &pcm, int volume, int boostDb) {
+	return encodePCM(pcm, volume, false, boostDb); // Busy waveform and tail are unchanged.
 }
-std::vector<QByteArray> AudioSignal::encodeWavSignal(const QString &path, int volume) {
-	return encodePCM(loadWav(path, LengthPolicy::ShortSignal), volume, true);
+std::vector<QByteArray> AudioSignal::encodeWavSignal(const QString &path, int volume, int boostDb) {
+	return encodePCM(loadWav(path, LengthPolicy::ShortSignal), volume, true, boostDb);
 }

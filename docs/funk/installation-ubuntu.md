@@ -1,5 +1,10 @@
 > Gemeinsamer Stable-Kandidat: Ubuntu und Docker verwenden denselben Commit.
 
+Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
+siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
+Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.
+
+
 **Experimentelle Squelch-Version auf einer frischen Snapshot-Test-VM:**
 Bitte die [Phase-2C-Anleitung](squelch-ubuntu.md) verwenden. Sie nutzt ausdrücklich
 `feature/squelch-audio` mit `--experimental-squelch`, den normalen Dienst und Port

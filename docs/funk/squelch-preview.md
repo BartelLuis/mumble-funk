@@ -1,5 +1,10 @@
 # Squelch Phase 2C — experimental preview
 
+Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
+siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
+Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.
+
+
 This experimental preview is developed on `feature/squelch-audio`, based on dev
 `f82f5aeda5111711b8e0c351e3f8b2400fc4a90a`. It is not a published release.
 No existing server installation is updated by this work.
@@ -180,6 +185,7 @@ retains its permissions and must not be shared publicly.
 | `reset-open` / `reset-close` | Select the shipped standard again |
 | `set-busy-tone /absolute/file.wav` / `reset-busy-tone` | Existing custom Busy / synthetic Busy fallback |
 | `volume 50` | Busy volume |
+| `boost 6` / `boost 0` | Shared effect boost, integer 0–12 dB; 0 preserves previous gain |
 | `enable` / `disable` | Master feedback switch, including Busy and Squelch |
 
 Enabling an individual cue does not turn on master Squelch. Disabling Squelch
@@ -191,7 +197,7 @@ Import accepts regular files only, no symlinks/FIFOs/directories, maximum 128 Ki
 The actual C++ WAV parser and Opus encoder validate before selecting the file:
 PCM WAV, mono, signed 16-bit little-endian, 8/16/24/48 kHz, **1–1000 ms** for Squelch.
 Busy retains its existing **20–1000 ms** minimum/maximum. Peak attenuation caps
-signals at 0.2 PCM before the selected volume. Imports have content-addressed names;
+signals at 0.2 PCM before the selected volume and optional `feedbackboostdb` (default 0). Imports have content-addressed names;
 updates refresh only packaged standards/helpers and retain custom files, selection,
 gain and other configuration. Reset does not delete imports. An invalid import
 leaves the selected configuration unchanged. No recompilation or hot reload is

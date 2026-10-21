@@ -21,17 +21,19 @@ funk_require_supported_source() {
                 echo 'Der lokale Branch weicht von origin ab. Bitte den Quellstand vor dem Setup prüfen.' >&2; return 1;
             }
             ;;
-        feature/squelch-audio)
-            [[ $experimental == --experimental-squelch ]] || {
-                echo 'EXPERIMENTELL: feature/squelch-audio benötigt --experimental-squelch.' >&2; return 1;
+        feature/squelch-audio|feature/audio-volume)
+            local required=--experimental-squelch
+            if [[ $branch == feature/audio-volume ]]; then required=--experimental-audio-volume; fi
+            [[ $experimental == "$required" ]] || {
+                echo "EXPERIMENTELL: $branch benötigt $required." >&2; return 1;
             }
             upstream=$(git -C "$repo" rev-parse --verify "refs/remotes/origin/$branch^{commit}") || return 1
             [[ $head == "$upstream" ]] || { echo 'Experimenteller Branch weicht von origin ab.' >&2; return 1; }
             published=$(git -C "$repo" ls-remote --heads origin "refs/heads/$branch") || return 1
-            [[ $(awk '$2=="refs/heads/feature/squelch-audio" {print $1}' <<< "$published") == "$head" ]] || {
+            [[ $(awk -v ref="refs/heads/$branch" '$2==ref {print $1}' <<< "$published") == "$head" ]] || {
                 echo 'Experimenteller Commit ist nicht der veröffentlichte Feature-Stand. Bitte git fetch und prüfen.' >&2; return 1;
             }
-            echo 'EXPERIMENTELL: Squelch-Vorschau, keine Stable-Freigabe und noch keine Geräte-Hörtests.' >&2
+            echo 'EXPERIMENTELL: Audio-Vorschau, keine Stable-Freigabe; Geräte-Hörtest des gewählten Stands erforderlich.' >&2
             ;;
         '')
             # Detached checkouts must be an annotated, remotely published project

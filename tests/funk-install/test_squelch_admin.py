@@ -57,7 +57,7 @@ class SquelchAdminTests(unittest.TestCase):
         # Staging must report its actual source, not pretend to be the feature head.
         branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
         self.assertIn('branch='+branch+'\n', info)
-        self.assertIn('experimental='+str(branch == 'feature/squelch-audio').lower()+'\n', info)
+        self.assertIn('experimental='+str(branch in ('feature/squelch-audio', 'feature/audio-volume')).lower()+'\n', info)
         revision = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
         self.assertIn('revision='+revision+'\n', info)
         self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())
@@ -86,6 +86,33 @@ class SquelchAdminTests(unittest.TestCase):
             for value in ('101', '-1', '1.5', 'loud', '1000'):
                 self.command(cmd, value, ok=False)
                 self.assertEqual(self.config.read_bytes(), before)
+
+    def test_boost_all_values_preserves_settings_assets_and_updates(self):
+        self.assertEqual(self.status()['feedbackboostdb'], '0')
+        # Missing key is the legacy default; status must not migrate the INI.
+        self.config.write_text(self.config.read_text().replace('feedbackboostdb=0\n', ''))
+        original = self.config.read_bytes()
+        self.assertEqual(self.status()['feedbackboostdb'], '0')
+        self.assertEqual(self.config.read_bytes(), original)
+        before = self.status(); before.pop('feedbackboostdb')
+        for value in range(13):
+            self.command('boost', str(value))
+            state = self.status()
+            self.assertEqual(state.pop('feedbackboostdb'), str(value))
+            self.assertEqual(state, before)  # Does not enable disabled effects.
+        for cmd, name in [('set-open','squelch-open.wav'),('set-close','squelch-close.wav'),('set-busy-tone','squelch-close.wav')]:
+            self.command(cmd, str(REPO/'assets/audio'/name))
+        self.command('enable-timeout-close')
+        original = self.config.read_bytes()
+        files = {p: p.read_bytes() for p in self.sounds.glob('*.wav')}
+        subprocess.run(self.install, check=True, capture_output=True)
+        self.assertEqual(self.config.read_bytes(), original)
+        for p, content in files.items(): self.assertEqual(p.read_bytes(), content)
+        for value in ('13','100','-1','1.5','NaN','inf','loud','01','+6','6e0'):
+            self.command('boost', value, ok=False)
+            self.assertEqual(self.config.read_bytes(), original)
+        self.command('boost','0')
+        self.assertEqual(self.status()['feedbackboostdb'],'0')
 
     def test_timeout_close_opt_in_preserves_other_settings_and_updates(self):
         before = self.status()
@@ -170,6 +197,10 @@ class SquelchAdminTests(unittest.TestCase):
         result = subprocess.run(command, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         value = self.status()['squelchopenfile']
+        boost = [sys.executable, '-c', code, str(REPO/'scripts/funk/audio.py'), 'boost', '9', '--root', str(self.root), '--binary', str(BINARY)]
+        result = subprocess.run(boost, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.status()['feedbackboostdb'], '9')
         self.assertTrue(value.startswith('/var/lib/mumble-funk/audio/open-'))
         self.assertEqual((self.root/value.lstrip('/')).stat().st_mode & 0o777, 0o640)
 

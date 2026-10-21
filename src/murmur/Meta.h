@@ -46,6 +46,7 @@ public:
 	int squelchOpenVolume = 50, squelchCloseVolume = 50;
 	QString busyToneFile;
 	int busyToneVolume      = 50;
+	int feedbackBoostDb = 0;
 	bool simplex            = false;
 	int simplexTimeout      = 500;
 	int simplexRetryTimeout = 1000;

@@ -61,6 +61,19 @@ class AudioWrapperTests(unittest.TestCase):
         calls = self.run_command('open-volume', '80')
         self.assertFalse(any('start' in call for call in calls))
 
+    def test_boost_validates_before_stopping_and_preserves_env(self):
+        for value in ('0','3','6','9','12'):
+            if self.calls_file.exists(): self.calls_file.unlink()
+            calls = self.run_command('boost', value)
+            self.assertIn(['compose','run','--rm','--no-deps','-T','mumble-funk','audio','boost',value], calls)
+            self.assertEqual(calls[-1], ['compose','start','mumble-funk'])
+        self.calls_file.unlink()
+        for value in ('13','100','-1','1.5','NaN','inf','01','+6'):
+            self.assertEqual(self.run_command('boost',value,ok=False), [])
+        self.env['RUNNING']='no'
+        calls=self.run_command('boost','6')
+        self.assertFalse(any('start' in call for call in calls))
+
     def test_failed_import_resumes_and_removes_temporary_copy(self):
         asset = self.root/'my tone.wav'; asset.write_bytes(b'private-local-fixture')
         self.env['FAIL'] = 'yes'

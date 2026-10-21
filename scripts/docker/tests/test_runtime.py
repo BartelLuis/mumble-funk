@@ -37,6 +37,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(values['squelch'],'false');self.assertEqual(values['audiofeedback'],'false')
         self.assertEqual(values['squelchopen'],'true');self.assertEqual(values['squelchclose'],'true')
         self.assertEqual(values['squelchclosetimeoutfallback'],'false')
+        self.assertEqual(values['feedbackboostdb'],'0')
         self.assertEqual(values['squelchopenfile'],'/usr/local/share/mumble-funk/audio/squelch-open.wav')
         self.assertEqual(len(values['serverpassword']),48);self.assertNotIn('serverpassword=',str(self.calls))
         self.assertEqual(self.runtime.CONFIG.stat().st_mode & 0o777,0o600)
@@ -61,8 +62,10 @@ class RuntimeTests(unittest.TestCase):
 
     def test_configuration_changes_preserved(self):
         self.runtime.initialize();password=self.runtime.settings()['serverpassword']
+        self.runtime.CONFIG.write_text(self.runtime.CONFIG.read_text().replace('feedbackboostdb=0', 'feedbackboostdb=9'))
         self.runtime.configure('simplexdiagnostics','false');self.runtime.configure('simplextimeout','700')
         self.runtime.initialize();values=self.runtime.settings()
+        self.assertEqual(values['feedbackboostdb'],'9')
         self.assertEqual(values['simplexdiagnostics'],'false');self.assertEqual(values['simplextimeout'],'700')
         self.assertEqual(values['serverpassword'],password)
         with self.assertRaises(RuntimeError):self.runtime.configure('database','/etc/foreign.sqlite')

@@ -71,13 +71,13 @@ private slots:
 	void timeoutHandoff_data(); void timeoutHandoff();
 };
 void TestSquelchIntegration::transport_data() {
-	QTest::addColumn<bool>("modern"); QTest::addColumn<bool>("udpIn"); QTest::addColumn<bool>("udpOut");
-	for (bool modern:{false,true}) for(bool in:{false,true}) for(bool out:{false,true})
-		QTest::newRow(qPrintable(QString("%1-in-%2-out-%3").arg(modern ? "protobuf":"legacy").arg(in?"UDP":"TCP").arg(out?"UDP":"TCP"))) << modern << in << out;
+	QTest::addColumn<int>("boost"); QTest::addColumn<bool>("modern"); QTest::addColumn<bool>("udpIn"); QTest::addColumn<bool>("udpOut");
+	for(int boost:{0,12}) for (bool modern:{false,true}) for(bool in:{false,true}) for(bool out:{false,true})
+		QTest::newRow(qPrintable(QString("boost-%4-%1-in-%2-out-%3").arg(modern ? "protobuf":"legacy").arg(in?"UDP":"TCP").arg(out?"UDP":"TCP").arg(boost))) << boost << modern << in << out;
 }
 void TestSquelchIntegration::transport() {
-	QFETCH(bool,modern); QFETCH(bool,udpIn); QFETCH(bool,udpOut);
-	Fixture f; QVERIFY(f.start("true",5000,5000,true,settings()));
+	QFETCH(int,boost); QFETCH(bool,modern); QFETCH(bool,udpIn); QFETCH(bool,udpOut);
+	Fixture f; QVERIFY(f.start("true",5000,5000,true,settings()+"feedbackboostdb="+QByteArray::number(boost)+"\n"));
 	Client admin,a,b,observer,outsider;
 	QVERIFY(admin.login(f.port,"SuperUser",modern)); QVERIFY(a.login(f.port,"Speaker",modern));
 	QVERIFY(b.login(f.port,"Rejected",modern)); QVERIFY(observer.login(f.port,"Listener",modern));
@@ -91,13 +91,13 @@ void TestSquelchIntegration::transport() {
 	auto received=observer.audio(120); QList<Received> heard=udpOut ? receiveUDP(observer,4) : from(received,a.session);
 	auto cues=from(received,observer.session);
 	QCOMPARE(heard.size(),4); QCOMPARE(cues.size(),2);
-	const auto open=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50);
-	const auto close=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50);
+	const auto open=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50,boost);
+	const auto close=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50,boost);
 	QCOMPARE(open.size(),std::size_t(2)); QCOMPARE(close.size(),std::size_t(4));
 	for (int i=0;i<2;++i) { QCOMPARE(cues[i].payload,open[std::size_t(i)]); QCOMPARE(cues[i].last,i==1); QCOMPARE(cues[i].frame,std::uint64_t(i*2)); }
 	b.audio(100); QVERIFY(b.speak()); QVERIFY(b.barrier());
 	const auto busy=b.audio(400); QCOMPARE(busy.size(),13);
-	const auto standard=AudioSignal::encode(AudioSignal::syntheticBusy(),50);
+	const auto standard=AudioSignal::encode(AudioSignal::syntheticBusy(),50,boost);
 	for (int i=0;i<13;++i) { QCOMPARE(busy[i].session,b.session); QCOMPARE(busy[i].payload,standard[std::size_t(i)]); QCOMPARE(busy[i].last,i==12);
 		if(i) QCOMPARE(busy[i].frame,busy[i-1].frame+2); }
 	for (int i=4;i<8;++i) { QTest::qWait(20); QVERIFY(sendOpus(a,voice[std::size_t(i)],std::uint64_t(i*2),i==7,udpIn)); }
@@ -266,16 +266,19 @@ void TestSquelchIntegration::switches() {
 }
 
 void TestSquelchIntegration::timeoutEnd_data() {
-	QTest::addColumn<int>("ending"); QTest::addColumn<bool>("udp"); QTest::addColumn<bool>("modern");
+	QTest::addColumn<int>("boost"); QTest::addColumn<int>("ending"); QTest::addColumn<bool>("udp"); QTest::addColumn<bool>("modern");
 	const char *names[]={"payload-marker","empty-marker","single-packet-no-marker","speech-no-marker",
 		"late-marker","close-disabled","open-disabled","fallback-disabled"};
 	for(int ending=0;ending<8;++ending) for(bool udp:{false,true}) for(bool modern:{false,true})
 		QTest::newRow(qPrintable(QString("%1-%2-%3").arg(names[ending]).arg(udp?"UDP":"TCP").arg(modern?"protobuf":"legacy")))
-			<< ending << udp << modern;
+			<< 0 << ending << udp << modern;
+    for(bool udp:{false,true}) for(bool modern:{false,true})
+        QTest::newRow(qPrintable(QString("boost12-timeout-%1-%2").arg(udp?"UDP":"TCP").arg(modern?"protobuf":"legacy")))
+            << 12 << 3 << udp << modern;
 }
 void TestSquelchIntegration::timeoutEnd() {
-	QFETCH(int,ending); QFETCH(bool,udp); QFETCH(bool,modern);
-	QByteArray config=settings()+"busytone=false\nsquelchclosetimeoutfallback="+(ending==7?"false":"true")+"\n";
+	QFETCH(int,boost); QFETCH(int,ending); QFETCH(bool,udp); QFETCH(bool,modern);
+	QByteArray config=settings()+"feedbackboostdb="+QByteArray::number(boost)+"\nbusytone=false\nsquelchclosetimeoutfallback="+(ending==7?"false":"true")+"\n";
 	if(ending==5) config+="squelchclose=false\n";
 	if(ending==6) config+="squelchopen=false\n";
 	Fixture f; QVERIFY(f.start("true",500,1500,true,config));
@@ -297,8 +300,8 @@ void TestSquelchIntegration::timeoutEnd() {
 	for(int i=0;i<count;++i) { QCOMPARE(heard[i].payload,voice[std::size_t(i)]); QCOMPARE(heard[i].frame,std::uint64_t(i*2));
 		QCOMPARE(heard[i].last,ending==0); } // Never invent a speech end marker.
 	if(forwardedEmpty) { QVERIFY(heard.back().payload.isEmpty()); QCOMPARE(heard.back().frame,std::uint64_t(count*2)); QVERIFY(heard.back().last); }
-	const auto opening=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50);
-	const auto closing=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50);
+	const auto opening=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50,boost);
+	const auto closing=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50,boost);
 	std::vector<QByteArray> expected;
 	if(ending!=6) expected.insert(expected.end(),opening.begin(),opening.end());
 	if(ending!=5 && ending!=7) expected.insert(expected.end(),closing.begin(),closing.end());

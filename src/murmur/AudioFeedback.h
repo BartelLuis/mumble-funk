@@ -27,7 +27,7 @@ public:
 	using Delivery = std::function< bool(const Recipient &, const QByteArray &, std::uint64_t, bool) >;
 	static constexpr std::size_t MaxPending    = 128;
 	static constexpr std::size_t MaxRecipients = 64;
-	explicit AudioFeedback(int volume, const QString &busyFile = {});
+	explicit AudioFeedback(int volume, const QString &busyFile = {}, int boostDb = 0);
 	QString warning() const { return m_warning; }
 	bool customBusy() const { return m_customBusy; }
 	bool request(Signal signal, Recipient recipient, std::int64_t nowUs);
@@ -59,6 +59,7 @@ private:
 	};
 	std::vector< QByteArray > m_busy, m_open, m_close;
 	QString m_warning;
+	int m_boostDb = 0; // Startup-only effect gain; shared by all pre-encoded clips.
 	bool m_customBusy = false;
 	bool m_squelchConfigured = false;
 	std::mutex m_mutex;

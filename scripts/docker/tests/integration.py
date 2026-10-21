@@ -196,7 +196,11 @@ def main():
             if args.audio_feedback:
                 original_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
                 state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
-                assert state['squelch']=='false' and state['audiofeedback']=='false'
+                assert state['squelch']=='false' and state['audiofeedback']=='false' and state['feedbackboostdb']=='0'
+                command(['bash','scripts/docker/audio.sh','boost','6']);healthy()
+                state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+                assert state['feedbackboostdb']=='6' and state['squelch']=='false' and state['audiofeedback']=='false'
+                assert command(['bash','scripts/docker/audio.sh','boost','13'],check=False).returncode!=0
                 assert values['serverpassword'] not in json.dumps(state)
                 asset_check="import hashlib,os;from pathlib import Path;p=Path('/usr/local/share/mumble-funk/audio');assert os.getuid()==10001;assert hashlib.sha256((p/'squelch-open.wav').read_bytes()).hexdigest()=='81573e3a11db089de7cf2bbb2918e0747a2edde12923c399ac5042513d038770';assert hashlib.sha256((p/'squelch-close.wav').read_bytes()).hexdigest()=='8d9091e0e4ee36433eb8aa707a7fa4a19ccec8ce5dee85ef1d91fa478afd0e31'"
                 compose('exec','-T','mumble-funk','python3','-c',asset_check)
@@ -211,12 +215,13 @@ def main():
                 custom_close=state['squelchclosefile']
                 assert custom_close.startswith('/var/lib/mumble-funk/audio/close-')
                 assert state['squelchopen']=='false' and state['squelchclose']=='true' and state['squelchclosevolume']=='29'
-                assert state['squelchclosetimeoutfallback']=='true'
+                assert state['squelchclosetimeoutfallback']=='true' and state['feedbackboostdb']=='6'
                 assert compose('exec','-T','mumble-funk','stat','-c','%a',custom_close).stdout.strip()==b'640'
                 compose('up','-d','--no-build','--force-recreate');healthy()
                 assert json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)==state
                 assert b'Experimental Squelch' in compose('logs').stdout
                 probe()
+                command(['bash','scripts/docker/audio.sh','boost','0']);healthy()
                 command(['bash','scripts/docker/audio.sh','reset-close']);healthy()
                 command(['bash','scripts/docker/audio.sh','enable-open']);healthy()
                 command(['bash','scripts/docker/audio.sh','disable-timeout-close']);healthy()
@@ -242,6 +247,9 @@ def main():
             compose('stop')
             code="import sqlite3;from pathlib import Path;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');db.execute('CREATE TABLE docker_preserved(value TEXT)');db.execute(\"INSERT INTO docker_preserved VALUES ('accounts-channels-acls-preserved')\");db.execute(\"INSERT INTO users(server_id,user_id,name) VALUES(1,42,'PersistedUser')\");db.execute(\"INSERT INTO channels(server_id,channel_id,parent_id,name,inheritacl) VALUES(1,42,0,'PersistedChannel',1)\");db.execute(\"INSERT INTO acl(server_id,channel_id,priority,user_id,apply_here,apply_sub,grantpriv,revokepriv) VALUES(1,42,0,42,1,1,14,0)\");db.commit();db.close();Path('/var/lib/mumble-funk/audio/future.txt').write_text('future persistent audio directory')"
             compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',code)
+            if args.audio_feedback:
+                compose('run','--rm','--no-deps','-T','mumble-funk','audio','boost','9')
+                assert json.loads(compose('run','--rm','--no-deps','-T','mumble-funk','audio','status').stdout)['feedbackboostdb']=='9'
             admin_password='test-only-'+os.urandom(24).hex()
             result=compose('run','--rm','--no-deps','-T','mumble-funk','admin-password',input=((admin_password+'\n')*2).encode())
             assert admin_password.encode() not in result.stdout+result.stderr
@@ -262,6 +270,7 @@ def main():
             with tarfile.open(backup_path) as archive:
                 names=archive.getnames();assert 'config/server.ini' in names and 'state/server.sqlite' in names and 'state/audio/future.txt' in names
                 if args.audio_feedback:
+                    assert b'feedbackboostdb=9\n' in archive.extractfile('config/server.ini').read()
                     saved=archive.extractfile('state/audio/'+Path(custom_close).name).read()
                     assert saved==(REPO/'assets/audio/squelch-close.wav').read_bytes()
             # Restoring to populated volumes refuses and restarts the original instance.
@@ -275,6 +284,7 @@ def main():
             restored_hash=compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',restored_code,project_name=restored).stdout.strip()
             assert restored_hash==before_restore
             if args.audio_feedback:
+                assert json.loads(compose('run','--rm','--no-deps','-T','mumble-funk','audio','status',project_name=restored).stdout)['feedbackboostdb']=='9'
                 saved=compose('run','--rm','--no-deps','-T','--entrypoint','cat','mumble-funk',custom_close,project_name=restored).stdout
                 assert saved==(REPO/'assets/audio/squelch-close.wav').read_bytes()
             compose('up','-d','--no-build',project_name=restored)
