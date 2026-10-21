@@ -1,5 +1,10 @@
 # Squelch Phase 2C — experimental preview
 
+**Neuer Nachfolgestand:** [Standard-Audioeinstellungen](audio-defaults.md) auf
+`feature/audio-defaults` aktiviert Funk-Audio bei Neuinstallationen mit +8 dB.
+Die branchspezifischen Defaults und Installationsoptionen unten dokumentieren den
+vorherigen Entwicklungsstand; bestehende Installationen werden nicht migriert.
+
 Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
 siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
 Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.

@@ -2,15 +2,15 @@
 
 **Server-side simplex radio communication for Mumble**
 
-**This branch: experimental standard Busy tone (`feature/busy-tone-asset`).**
-Includes the merged Squelch and Audio Boost work. New Ubuntu/Docker configurations
-select the maintainer-provided CC0 Busy WAV; updates preserve existing selections,
-custom files and settings. Busy accepts 20–1250 ms; Squelch limits and speech
-forwarding stay unchanged. Effects default **off**. No release or device hearing-test
-approval. Native installation requires `--experimental-busy-tone`.
-[Install/update, tone selection and hearing test (German)](docs/funk/busy-tone.md) ·
-[Squelch behaviour and WAV management](docs/funk/squelch-preview.md) ·
-[Technical handoff](docs/funk/SQUELCH-DEVELOPMENT-HANDOFF.md).
+**This branch: experimental audio defaults (`feature/audio-defaults`).**
+Fresh Ubuntu and Docker installations enable Simplex, the packaged CC0 Busy tone
+and Squelch Open/Close at **50% volume and +8 dB boost**. Timeout Close remains off.
+Updates preserve existing settings and custom WAVs, including missing INI keys
+and disabled effects. Speech, Simplex rules and the audio architecture stay intact.
+Native feature installation requires `--experimental-audio-defaults`.
+[Install, update and test (German)](docs/funk/audio-defaults.md) ·
+[Busy asset and fallback](docs/funk/busy-tone.md) ·
+[Squelch behaviour](docs/funk/squelch-preview.md).
 
 New Docker installations from this development candidate default to **host 64740
 TCP/UDP → container 64739 TCP/UDP**. Native Ubuntu remains **64739 TCP/UDP**.
@@ -218,7 +218,7 @@ through `setup.sh` automatically enable Simplex.
 | --- | --- |
 | **Implemented** | Simplex Engine v0.2, optional diagnostics, Ubuntu setup and Docker Compose from a common commit. |
 | **Current development goals** | Broader real-device tests; improve rapid PTT changes within protocol limits; examine packet loss, delayed packets and network outages; strengthen stability and reliability through longer runs. |
-| **Experimental audio branch** | Existing private busy tone integrated; disabled by default. |
+| **Experimental audio branch** | Fresh installs enable packaged Busy and Squelch at volume 50 / boost +8 dB; existing settings stay intact. |
 | **Possible future work — not committed** | Roger beep, analog radio audio effects, squelch, digital radio profiles and extended configuration. |
 
 Future ideas are exploratory. They have no promised delivery date or guaranteed

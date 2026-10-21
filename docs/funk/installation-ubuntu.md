@@ -1,3 +1,9 @@
+> **Experimenteller Audio-Default-Branch:** Für `feature/audio-defaults` gelten
+> [diese neuen Defaults und Installationsbefehle](audio-defaults.md) mit
+> `--experimental-audio-defaults`. Neue Ubuntu-/Docker-Konfigurationen aktivieren
+> Simplex, Busy und Squelch bei 50 % und +8 dB; vorhandene INIs bleiben unverändert.
+> Die nachfolgenden Stable-/älteren Feature-Anleitungen sind davon getrennt.
+
 > Gemeinsamer Stable-Kandidat: Ubuntu und Docker verwenden denselben Commit.
 
 **Neuer experimenteller Standard-Busy-Tone:** Installation und Update aus

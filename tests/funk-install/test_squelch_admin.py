@@ -40,8 +40,8 @@ class SquelchAdminTests(unittest.TestCase):
     def test_defaults_assets_permissions_and_safe_status(self):
         state = self.status()
         self.assertEqual(state['busytonefile'], AUDIO.BUSY_STANDARD)
-        self.assertEqual(state['squelch'], 'false')
-        self.assertEqual(state['audiofeedback'], 'false')
+        self.assertEqual(state['squelch'], 'true')
+        self.assertEqual(state['audiofeedback'], 'true')
         self.assertEqual(state['squelchopen'], 'true')
         self.assertEqual(state['squelchclose'], 'true')
         self.assertEqual(state['squelchclosetimeoutfallback'], 'false')
@@ -58,7 +58,7 @@ class SquelchAdminTests(unittest.TestCase):
         # Staging must report its actual source, not pretend to be the feature head.
         branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
         self.assertIn('branch='+branch+'\n', info)
-        self.assertIn('experimental='+str(branch in ('feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset')).lower()+'\n', info)
+        self.assertIn('experimental='+str(branch in ('feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset', 'feature/audio-defaults')).lower()+'\n', info)
         revision = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
         self.assertIn('revision='+revision+'\n', info)
         self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())
@@ -89,9 +89,9 @@ class SquelchAdminTests(unittest.TestCase):
                 self.assertEqual(self.config.read_bytes(), before)
 
     def test_boost_all_values_preserves_settings_assets_and_updates(self):
-        self.assertEqual(self.status()['feedbackboostdb'], '0')
+        self.assertEqual(self.status()['feedbackboostdb'], '8')
         # Missing key is the legacy default; status must not migrate the INI.
-        self.config.write_text(self.config.read_text().replace('feedbackboostdb=0\n', ''))
+        self.config.write_text(self.config.read_text().replace('feedbackboostdb=8\n', ''))
         original = self.config.read_bytes()
         self.assertEqual(self.status()['feedbackboostdb'], '0')
         self.assertEqual(self.config.read_bytes(), original)

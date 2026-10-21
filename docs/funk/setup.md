@@ -1,3 +1,9 @@
+> **Experimenteller Audio-Default-Branch:** Für `feature/audio-defaults` gelten
+> [diese neuen Defaults und Installationsbefehle](audio-defaults.md) mit
+> `--experimental-audio-defaults`. Neue Ubuntu-/Docker-Konfigurationen aktivieren
+> Simplex, Busy und Squelch bei 50 % und +8 dB; vorhandene INIs bleiben unverändert.
+> Die nachfolgenden Stable-/älteren Feature-Anleitungen sind davon getrennt.
+
 # Mumble-Funk mit wenigen Befehlen einrichten
 
 Diese Anleitung richtet den **experimentellen Simplex-v0.2-Funkserver** unter

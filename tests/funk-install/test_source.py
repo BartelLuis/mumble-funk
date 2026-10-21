@@ -116,6 +116,22 @@ class SourceTests(unittest.TestCase):
         (self.repo/'README.md').write_text('uncommitted source')
         self.guard(False, experimental='--experimental-busy-tone')
 
+    def test_audio_defaults_requires_own_flag_clean_and_published_head(self):
+        self.git('checkout','-B','feature/audio-defaults',self.head)
+        self.git('update-ref','refs/remotes/origin/feature/audio-defaults',self.head)
+        self.git('push',str(self.remote),'HEAD:refs/heads/feature/audio-defaults')
+        self.guard(False)
+        self.guard(False, experimental='--experimental-busy-tone')
+        self.guard(True, experimental='--experimental-audio-defaults')
+        self.git('update-ref','refs/remotes/origin/feature/audio-defaults','dfbac8d3d9c967003e74b4ffc5610f7d45e8f666')
+        self.guard(False, experimental='--experimental-audio-defaults')
+        self.git('update-ref','refs/remotes/origin/feature/audio-defaults',self.head)
+        self.run_git('--git-dir',str(self.remote),'update-ref','refs/heads/feature/audio-defaults','dfbac8d3d9c967003e74b4ffc5610f7d45e8f666')
+        self.guard(False, experimental='--experimental-audio-defaults')
+        self.git('push',str(self.remote),'HEAD:refs/heads/feature/audio-defaults')
+        (self.repo/'README.md').write_text('uncommitted source')
+        self.guard(False, experimental='--experimental-audio-defaults')
+
     def test_local_branch_divergence_rejected(self):
         self.git("commit", "--allow-empty", "-m", "Unpublished local change")
         self.guard(False)

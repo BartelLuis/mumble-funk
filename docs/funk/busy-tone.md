@@ -1,5 +1,10 @@
 # Neuer Standard-Busy-Tone — experimentelle Phase A
 
+**Neuer Nachfolgestand:** [Standard-Audioeinstellungen](audio-defaults.md) auf
+`feature/audio-defaults` aktiviert Funk-Audio bei Neuinstallationen mit +8 dB.
+Die branchspezifischen Defaults und Installationsoptionen unten dokumentieren den
+vorherigen Entwicklungsstand; bestehende Installationen werden nicht migriert.
+
 Branch: **`feature/busy-tone-asset`**, Ausgangspunkt `dev` bei
 `6b5322ef0fb404fc726b97eff44b7d213129fd85` (Squelch und Audio Boost bereits integriert).
 Keine Stable-Freigabe. Windows-Mumble und Android-Mumla bleiben unverändert.

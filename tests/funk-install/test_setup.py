@@ -295,8 +295,8 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn('branch=feature/audio-volume', info)
         self.assertIn('experimental=true', info)
         config = self.repo/'stage/etc/mumble-funk/server.ini'
-        self.assertIn('feedbackboostdb=0\n', config.read_text())
-        config.write_text(config.read_text().replace('feedbackboostdb=0', 'feedbackboostdb=9'))
+        self.assertIn('feedbackboostdb=8\n', config.read_text())
+        config.write_text(config.read_text().replace('feedbackboostdb=8', 'feedbackboostdb=9'))
         original = config.read_bytes()
         result = self.execute(args=('--experimental-audio-volume',))
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
@@ -323,6 +323,27 @@ class OrchestrationTests(unittest.TestCase):
         result=self.execute(args=('--experimental-busy-tone',))
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertEqual(config.read_bytes(),original)
+
+    def test_audio_defaults_ubuntu24_requires_own_flag_and_preserves_disabled_update(self):
+        self.env['MOCK_BRANCH']='feature/audio-defaults'
+        (self.repo/'test-os-release').write_text('ID=ubuntu\nVERSION_ID="24.04"\n')
+        for args in ((), ('--experimental-busy-tone',)):
+            result=self.execute(args=args)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('--experimental-audio-defaults',result.stderr)
+        result=self.execute(args=('--experimental-audio-defaults',))
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        config=self.repo/'stage/etc/mumble-funk/server.ini'
+        for line in ('simplex=true', 'audiofeedback=true', 'squelch=true', 'feedbackboostdb=8'):
+            self.assertIn(line+'\n',config.read_text())
+        info=(self.repo/'stage/opt/mumble-funk/current/BUILD-INFO').read_text()
+        self.assertIn('branch=feature/audio-defaults',info);self.assertIn('experimental=true',info)
+        config.write_text(config.read_text().replace('audiofeedback=true','audiofeedback=false')
+                          .replace('squelch=true','squelch=false').replace('feedbackboostdb=8\n',''))
+        before=config.read_bytes()
+        result=self.execute(args=('--experimental-audio-defaults',))
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(config.read_bytes(),before)
 
     def test_failure_before_deployment(self):
         for failure in ("apt-update", "apt-install", "build", "tests", "network"):
