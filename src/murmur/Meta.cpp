@@ -323,6 +323,10 @@ void MetaParams::read(QString fname) {
 	squelchCloseVolume = typeCheckedFromSettings("squelchclosevolume", squelchCloseVolume);
 	busyToneFile               = typeCheckedFromSettings("busytonefile", busyToneFile);
 	busyToneVolume             = typeCheckedFromSettings("busytonevolume", busyToneVolume);
+	const QString boostText = qsSettings->value("feedbackboostdb", QStringLiteral("0")).toString();
+	if (!QRegExp(QStringLiteral("^(0|[1-9]|1[0-2])$")).exactMatch(boostText))
+		qFatal("feedbackboostdb must be an integer from 0 to 12 dB");
+	feedbackBoostDb = boostText.toInt();
 	simplex                    = typeCheckedFromSettings("simplex", simplex);
 	simplexTimeout             = typeCheckedFromSettings("simplextimeout", simplexTimeout);
 	simplexRetryTimeout        = typeCheckedFromSettings("simplexretrytimeout", simplexRetryTimeout);
@@ -477,6 +481,7 @@ void MetaParams::read(QString fname) {
 	qmConfig.insert(QStringLiteral("squelchclosefile"), squelchCloseFile);
 	qmConfig.insert(QStringLiteral("squelchopenvolume"), QString::number(squelchOpenVolume));
 	qmConfig.insert(QStringLiteral("squelchclosevolume"), QString::number(squelchCloseVolume));
+	qmConfig.insert(QStringLiteral("feedbackboostdb"), QString::number(feedbackBoostDb));
 	qmConfig.insert(QStringLiteral("busytonevolume"), QString::number(busyToneVolume));
 	qmConfig.insert(QStringLiteral("simplex"), simplex ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("simplextimeout"), QString::number(simplexTimeout));

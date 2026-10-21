@@ -16,7 +16,7 @@ import sys
 INSTANCE = 'mumble-funk'
 STANDARD_DIR = '/usr/local/share/mumble-funk/audio'
 DEFAULTS = {
-    'audiofeedback': 'false', 'busytone': 'true', 'busytonefile': '', 'busytonevolume': '50',
+    'feedbackboostdb': '0', 'audiofeedback': 'false', 'busytone': 'true', 'busytonefile': '', 'busytonevolume': '50',
     'squelch': 'false', 'squelchopen': 'true', 'squelchclose': 'true',
     'squelchclosetimeoutfallback': 'false',
     'squelchopenfile': STANDARD_DIR+'/squelch-open.wav',
@@ -66,7 +66,7 @@ def installation_lock(root):
 
 
 def main(argv=None, container=False):
-    commands = ['status', 'enable', 'disable', 'volume', 'set-busy-tone', 'reset-busy-tone',
+    commands = ['boost', 'status', 'enable', 'disable', 'volume', 'set-busy-tone', 'reset-busy-tone',
                 'enable-squelch', 'disable-squelch', 'enable-open', 'disable-open',
                 'enable-close', 'disable-close', 'open-volume', 'close-volume',
                 'enable-timeout-close', 'disable-timeout-close',
@@ -82,7 +82,7 @@ def main(argv=None, container=False):
         parser.error('Bitte sudo mumble-funk-audio verwenden.')
     if production and args.binary:
         parser.error('Eigener Binary-Pfad nur für isolierte Tests erlaubt.')
-    valued = {'volume', 'open-volume', 'close-volume', 'set-busy-tone', 'set-open', 'set-close'}
+    valued = {'boost', 'volume', 'open-volume', 'close-volume', 'set-busy-tone', 'set-open', 'set-close'}
     if (args.command in valued) != (args.value is not None):
         parser.error('Dieser Befehl benötigt genau einen Wert.' if args.command in valued else 'Kein weiterer Wert erlaubt.')
     root = args.root
@@ -128,6 +128,10 @@ def main(argv=None, container=False):
                 if signal != 'busy':
                     COMMON.checked([str(binary), '--validate-squelch-wav', str(root/DEFAULTS[key].lstrip('/'))])
                 updates = {key: '' if signal == 'busy' else DEFAULTS[key]}
+            elif args.command == 'boost':
+                if not re.fullmatch(r'(0|[1-9]|1[0-2])', args.value):
+                    raise RuntimeError('Audio Boost muss eine ganze Zahl zwischen 0 und 12 dB sein.')
+                updates = {'feedbackboostdb': args.value}
             elif args.command in ('volume', 'open-volume', 'close-volume'):
                 if not re.fullmatch(r'\d{1,3}', args.value) or int(args.value) > 100:
                     raise RuntimeError('Lautstärke muss zwischen 0 und 100 liegen.')

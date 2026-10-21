@@ -157,9 +157,13 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 	if (m_simplex && getConf("audiofeedback", Meta::mp.audioFeedback).toBool()
 		&& (m_busyEnabled || squelchRequested)) {
 		try {
+			const QString boostText = getConf("feedbackboostdb", Meta::mp.feedbackBoostDb).toString();
+			if (!QRegExp(QStringLiteral("^(0|[1-9]|1[0-2])$")).exactMatch(boostText))
+				throw std::runtime_error("feedbackboostdb must be an integer from 0 to 12 dB");
 			m_audioFeedback =
 				std::make_unique< AudioFeedback >(getConf("busytonevolume", Meta::mp.busyToneVolume).toInt(),
-												  getConf("busytonefile", Meta::mp.busyToneFile).toString());
+												  getConf("busytonefile", Meta::mp.busyToneFile).toString(),
+												  boostText.toInt());
 			if (!m_audioFeedback->warning().isEmpty())
 				log(QStringLiteral("Invalid busy tone WAV; using synthetic default: %1")
 						.arg(m_audioFeedback->warning()));

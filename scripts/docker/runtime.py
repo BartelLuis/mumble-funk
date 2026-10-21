@@ -109,6 +109,7 @@ audiofeedback=false
 busytone=true
 busytonefile=
 busytonevolume=50
+feedbackboostdb=0
 squelch=false
 squelchopen=true
 squelchclose=true

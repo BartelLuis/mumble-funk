@@ -11,6 +11,10 @@ case "$command" in
         exit 0 ;;
     enable|disable|reset-busy-tone|enable-squelch|disable-squelch|enable-open|disable-open|enable-close|disable-close|enable-timeout-close|disable-timeout-close|reset-open|reset-close)
         [[ $# == 1 ]] || { echo 'Dieser Befehl benötigt keinen Wert.' >&2; exit 1; } ;;
+    boost)
+        if [[ $# != 2 ]] || [[ ! $2 =~ ^(0|[1-9]|1[0-2])$ ]]; then
+            echo 'Audio Boost: ganze Zahl von 0 bis 12 dB.' >&2; exit 1
+        fi ;;
     volume|open-volume|close-volume)
         if [[ $# != 2 ]] || [[ ! $2 =~ ^[0-9]{1,3}$ ]] || ((10#$2 > 100)); then
             echo 'Lautstärke: 0 bis 100.' >&2; exit 1

@@ -172,7 +172,7 @@ elif name=='git':
     elif 'config' in args: print('https://github.com/Shawna7han/mumble-funk.git')
     elif '--git-path' in args: print(repo/'.git/funk-setup.lock')
     elif 'rev-parse' in args: print('a'*40)
-    elif 'ls-remote' in args: print('a'*40+'\trefs/heads/feature/squelch-audio')
+    elif 'ls-remote' in args: print('a'*40+'\trefs/heads/'+os.environ.get('MOCK_BRANCH','feature/squelch-audio'))
     if 'submodule' in args and fail=='network': sys.exit(128)
 elif name=='systemctl': print('259')
 elif name=='dpkg-query':
@@ -278,6 +278,29 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn('--experimental-squelch', installers[-1])
         info = (self.repo / 'stage/opt/mumble-funk/current/BUILD-INFO').read_text()
         self.assertIn('experimental=true', info)
+
+    def test_audio_volume_ubuntu24_install_and_update_preserve_boost(self):
+        self.env['MOCK_BRANCH'] = 'feature/audio-volume'
+        (self.repo/'test-os-release').write_text('ID=ubuntu\nVERSION_ID="24.04"\n')
+        for args in ((), ('--experimental-squelch',)):
+            result = self.execute(args=args)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('--experimental-audio-volume', result.stderr)
+            self.assertFalse((self.repo/'stage/etc/mumble-funk/server.ini').exists())
+        result = self.execute(args=('--experimental-audio-volume',))
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        installers = [c for c in self.calls() if c[0]=='sudo' and any(a.endswith('install.sh') for a in c)]
+        self.assertIn('--experimental-audio-volume', installers[-1])
+        info = (self.repo/'stage/opt/mumble-funk/current/BUILD-INFO').read_text()
+        self.assertIn('branch=feature/audio-volume', info)
+        self.assertIn('experimental=true', info)
+        config = self.repo/'stage/etc/mumble-funk/server.ini'
+        self.assertIn('feedbackboostdb=0\n', config.read_text())
+        config.write_text(config.read_text().replace('feedbackboostdb=0', 'feedbackboostdb=9'))
+        original = config.read_bytes()
+        result = self.execute(args=('--experimental-audio-volume',))
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        self.assertEqual(config.read_bytes(), original)
 
     def test_failure_before_deployment(self):
         for failure in ("apt-update", "apt-install", "build", "tests", "network"):

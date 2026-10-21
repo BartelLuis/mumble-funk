@@ -1,5 +1,10 @@
 # Squelch auf einer frischen Ubuntu-Snapshot-VM testen (Phase 2C)
 
+Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
+siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
+Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.
+
+
 Dies ist eine **experimentelle Vorschau**, keine Stable-Freigabe. Verwende deine
 separate Ubuntu-Test-VM unter Proxmox. Deine bisherigen Server/anderen VMs bleiben
 unangetastet. Die Snapshot-Verwaltung und diese Installation führst **du selbst**

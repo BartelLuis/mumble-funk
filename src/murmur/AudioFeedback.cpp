@@ -6,7 +6,7 @@
 #include <exception>
 #include <set>
 
-AudioFeedback::AudioFeedback(int volume, const QString &busyFile) {
+AudioFeedback::AudioFeedback(int volume, const QString &busyFile, int boostDb) : m_boostDb(boostDb) {
 	std::vector< float > pcm;
 	if (!busyFile.isEmpty()) {
 		try {
@@ -18,7 +18,7 @@ AudioFeedback::AudioFeedback(int volume, const QString &busyFile) {
 	}
 	if (pcm.empty())
 		pcm = AudioSignal::syntheticBusy();
-	m_busy = AudioSignal::encode(pcm, volume);
+	m_busy = AudioSignal::encode(pcm, volume, m_boostDb);
 }
 
 const std::vector< QByteArray > &AudioFeedback::clip(Signal signal) const {
@@ -37,8 +37,8 @@ bool AudioFeedback::request(Signal signal, Recipient recipient, std::int64_t now
 
 void AudioFeedback::configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume, bool openEnabled, bool closeEnabled) {
 	// All file access and Opus encoding happen before the voice thread starts.
-	auto open = openEnabled ? AudioSignal::encodeWavSignal(openFile, openVolume) : std::vector<QByteArray>{};
-	auto close = closeEnabled ? AudioSignal::encodeWavSignal(closeFile, closeVolume) : std::vector<QByteArray>{};
+	auto open = openEnabled ? AudioSignal::encodeWavSignal(openFile, openVolume, m_boostDb) : std::vector<QByteArray>{};
+	auto close = closeEnabled ? AudioSignal::encodeWavSignal(closeFile, closeVolume, m_boostDb) : std::vector<QByteArray>{};
 	m_open = std::move(open); m_close = std::move(close); m_squelchConfigured = true;
 }
 bool AudioFeedback::requestSquelch(const SquelchPlan::Cue &cue) {

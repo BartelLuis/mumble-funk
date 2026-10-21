@@ -429,3 +429,77 @@ the original and corrected ignore files. Before: both fixtures absent. After:
 both fixtures byte-identical to the originals. Dummy private WAV, .env and key
 files remained excluded in both contexts. This verifies context selection without
 repeating the complete server compilation; the GitHub build reruns full tests.
+
+## Audio-volume follow-up after PR #4 merged
+
+PR #4 is closed/merged, not an open preview PR. Its feature branch is retained.
+`feature/audio-volume` starts directly from current origin/dev
+`e8894e5b6f42aaeee4e71262e58fadc471f4bea4`, which includes the full
+`128ec3ce1d2c45b6ddf00df33f1e54d83ff946b0` head. Do not reopen/change PR #4.
+The owner authorizes only this new feature branch and a separate Draft PR to dev;
+no merge, direct dev/stable updates, tag changes, deployment or VM access.
+
+Read [audio-volume.md](audio-volume.md) for the operator procedure and measured
+Opus output. `feedbackboostdb=0` (missing also zero), strict integer 0..12,
+multiplies the existing peak attenuation/individual volume by 10^(dB/20).
+One startup-only gain stored in AudioFeedback applies to synthetic/custom Busy
+and both enabled Squelch WAVs. Synthetic waveform, files, lengths, lookahead,
+queues, sequence ownership, recipient/lifecycle gates and speech are unchanged.
+At zero the frozen independent legacy encoder reference produces identical bytes.
+
+A real adversarial square-wave regression showed that bounding only encoder-input
+PCM to 0.796215 does NOT prevent Opus reconstruction overshoot above 1.0.
+Nonzero boost therefore has bounded startup-only decode verification: if peak
+exceeds 0.98, lower whole-clip gain toward 0.95, reset encoder and retry (max eight,
+then explicit exception). No clipping, per-sample limiter, voice decoding or
+real-time audio work. Pathological WAVs can receive less effective boost; do not
+remove that guard to obtain the requested dB gain. Zero bypasses all new decoding
+and retains exact legacy arithmetic and behavior. Decoder loss concealment/client
+amplification are outside this file-level verification; do not promise universal
+post-device peak bounds. Shipped sounds do not trigger the extra attenuation.
+
+Common native/container admin adds `boost N`, safe status includes feedbackboostdb.
+Updates preserve INI/imports; new native/Docker configs default zero. Docker host
+wrapper rejects invalid boost before stopping its existing project. No changes to
+Compose, .env, ports, volumes, services or public assets. The native source guard
+accepts exactly feature/audio-volume with --experimental-audio-volume and the
+same clean-source/official-origin/cached+live published-head checks; the old Squelch
+branch/flag and stable/legacy/release-tag checks remain. BUILD-INFO marks it
+experimental. Setup/build/install forward the opt-in without Stable relabeling.
+
+Test additions: TestAudioVolume decodes all 0/3/6/9/12 levels for all original
+signals, custom Busy, quiet/full-scale sine, square, impulse, alternating PCM and
+seeded noise; checks silence, no clipping/nonfinite, lengths, individual volumes,
+invalid numerical inputs and byte-identical legacy zero. Existing real Squelch
+transport assertions run additionally at boost12 for both protocol formats and
+TCP/encrypted UDP in/out; original voice bytes/frames/end flags and private Busy
+bytes remain checked. Timeout end tests retain original cases and add boosted
+no-marker cases. Python checks direct invalid INI rejection, all admin boost
+values, old missing-key default, retained imports/config, setup flag/metadata and
+same-project Docker orchestration. CI includes the new invalid-INI test and
+Docker wrapper gain/recreate/restore retention checks.
+
+Local validation for this follow-up: server build succeeded, all 26 CTest entries
+passed (24 executables, 210.65 s). After adding four boost12 timeout rows and the
+custom-Busy zero reference, the two changed test programs passed again (51.70 s).
+95 Python tests passed: source18, setup18, install5, assets8, legacy-preview5,
+security13, common-admin11, Docker-unit16, direct-INI1 (12 invalid inputs).
+Compose rendering passed for absent host override, 64740, and custom 65123, TCP
+and UDP ->64739. WAV SHA-256 hashes unchanged. Bash syntax, Python compilation
+and git diff whitespace checks passed. ShellCheck is not installed locally;
+the existing CI installs it. Due to the existing 32-GB/VFS cloud disk constraint,
+full Docker image build and actual container integration run in GitHub CI instead
+of duplicating that large build here. Verify current-head CI before declaring it
+passed. No local or remote user installation has been modified; real-device boost
+hearing tests and final approval remain outstanding.
+
+First current-head CI: native and Docker builds, both 26-test suites, installer
+checks and CodeQL succeeded. Actual Docker integration reached private audio and
+boost/recreate checks but then failed the full settings comparison after the new
+backup fixture intentionally selected boost9: info --json returns all INI keys,
+while the old expected snapshot still contained boost0. Correct the expected
+snapshot for precisely feedbackboostdb=9; retain equality of all other keys,
+password/certificate/database checks and restored audio status=9. A unit regression
+now compares complete info JSON after intentional settings changes. This is a test
+fixture correction, not a server behavior change or suppressed container failure.
+Rerun the full current-head GitHub pipelines after pushing the follow-up commit.

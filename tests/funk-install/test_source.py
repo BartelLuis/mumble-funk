@@ -42,7 +42,7 @@ class SourceTests(unittest.TestCase):
     def guard(self, allowed, experimental=False):
         result = subprocess.run(["bash", "-eu", "-c",
                                  'source "$1"; funk_require_supported_source "$2" "$3"', "source-test",
-                                 str(REPO / "scripts/funk/source.sh"), str(self.repo), "--experimental-squelch" if experimental else ""],
+                                 str(REPO / "scripts/funk/source.sh"), str(self.repo), ("--experimental-squelch" if experimental is True else experimental) if experimental else ""],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode == 0, allowed, result.stdout + result.stderr)
         if allowed:
@@ -83,6 +83,22 @@ class SourceTests(unittest.TestCase):
         self.feature()
         (self.repo/"README.md").write_text("uncommitted change")
         self.guard(False, experimental=True)
+
+    def test_audio_volume_requires_its_own_flag_and_published_clean_head(self):
+        self.git("checkout", "-B", "feature/audio-volume", self.head)
+        self.git("update-ref", "refs/remotes/origin/feature/audio-volume", self.head)
+        self.git("push", str(self.remote), "HEAD:refs/heads/feature/audio-volume")
+        self.guard(False)
+        self.guard(False, experimental=True)  # Old Squelch opt-in is not interchangeable.
+        self.guard(True, experimental="--experimental-audio-volume")
+        self.git("update-ref", "refs/remotes/origin/feature/audio-volume", "dfbac8d3d9c967003e74b4ffc5610f7d45e8f666")
+        self.guard(False, experimental="--experimental-audio-volume")
+        self.git("update-ref", "refs/remotes/origin/feature/audio-volume", self.head)
+        self.run_git("--git-dir", str(self.remote), "update-ref", "refs/heads/feature/audio-volume", "dfbac8d3d9c967003e74b4ffc5610f7d45e8f666")
+        self.guard(False, experimental="--experimental-audio-volume")
+        self.git("push", str(self.remote), "HEAD:refs/heads/feature/audio-volume")
+        (self.repo/"README.md").write_text("uncommitted source")
+        self.guard(False, experimental="--experimental-audio-volume")
 
     def test_local_branch_divergence_rejected(self):
         self.git("commit", "--allow-empty", "-m", "Unpublished local change")

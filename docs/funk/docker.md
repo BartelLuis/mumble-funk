@@ -1,5 +1,10 @@
 # Mumble-Funk mit Docker — experimentell
 
+Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
+siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
+Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.
+
+
 Dieser Feature-Stand **`feature/squelch-audio`** enthält die gemeinsame Audio-Engine
 und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
 Stable-Freigabe. Squelch und Audio-Feedback bleiben bei Neuinstallation deaktiviert.
@@ -507,7 +512,7 @@ Hörtest über deinen konkreten Docker-Host, Router und die Proxmox-Firewall.
 ## 15. Automatisierte Prüfung und bekannte Grenzen
 
 Die ausgeführten Prüfungen und Commits stehen im [Docker-Prüfbericht](DOCKER-STATUS.md).
-Die Multi-Stage-Builds führen alle **23** CTest-Serverprogramme einschließlich Audio und Squelch aus.
+Die Multi-Stage-Builds führen alle **26** CTest-Prüfungen (24 Testprogramme) einschließlich Audio und Squelch aus.
 Zusätzlich gibt es Docker-spezifische Tests für Initialisierung, sichere Rechte,
 Sperren, Konfiguration und Archivprüfung sowie echte Compose-Integrationstests.
 

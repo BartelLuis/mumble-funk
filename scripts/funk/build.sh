@@ -5,10 +5,10 @@ repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=scripts/funk/source.sh
 source "$repo/scripts/funk/source.sh"
 source_args=()
-if [[ $# == 1 && $1 == --experimental-squelch ]]; then
-    source_args=(--experimental-squelch)
+if [[ $# == 1 && ( $1 == --experimental-squelch || $1 == --experimental-audio-volume ) ]]; then
+    source_args=("$1")
 elif [[ $# != 0 ]]; then
-    echo 'Aufruf: build.sh [--experimental-squelch]' >&2; exit 1
+    echo 'Aufruf: build.sh [--experimental-squelch|--experimental-audio-volume]' >&2; exit 1
 fi
 funk_require_supported_source "$repo" "${source_args[@]}"
 cmake -S "$repo" -B "$repo/build/funk" -G Ninja \
