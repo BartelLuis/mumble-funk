@@ -1,5 +1,11 @@
 # Audio Boost: experimenteller Lautstärketest
 
+**Aktueller Nachfolgestand:** [Standard-Busy-Tone Phase A](busy-tone.md) auf
+`feature/busy-tone-asset` enthält diesen Boost bereits. Für dessen Installation
+die dortige Option `--experimental-busy-tone` verwenden. Die unten dokumentierten
+Messungen und Befehle für `feature/audio-volume` beschreiben den vorherigen Stand;
+die Busy-Pegel der neuen Aufnahme stehen im neuen Dokument.
+
 Arbeitsbranch: **feature/audio-volume**, aus `dev` nach dem Merge von PR #4.
 Ausgangscommit: `e8894e5b6f42aaeee4e71262e58fadc471f4bea4` (Mumble 1.5.939).
 Keine Stable-Freigabe. Keine Änderungen an Sprache, Simplex, Signalzustellung,

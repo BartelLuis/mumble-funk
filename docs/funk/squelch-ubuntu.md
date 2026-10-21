@@ -215,7 +215,10 @@ sudo mumble-funk-audio reset-close
 ```
 
 Busy bleibt austauschbar (`set-busy-tone DATEI`, `reset-busy-tone`); für Busy gelten
-weiterhin 20–1000 ms. Busy-Fallback ist der programmatisch erzeugte Doppelton.
+jetzt 20–1250 ms; siehe [neuer Standard-Busy-Tone](busy-tone.md) für den aktuellen
+Feature-Branch und seine ausdrückliche Installationsoption. `reset-busy-tone`
+wählt weiterhin den programmatisch erzeugten Doppelton; `use-standard-busy-tone`
+die neue mitgelieferte Aufnahme.
 Squelch hat keinen synthetischen Fallback. Eigene Dateien werden beim Zurücksetzen
 nicht gelöscht und bei Updates nicht überschrieben.
 

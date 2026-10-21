@@ -9,7 +9,7 @@ case "$command" in
         [[ $# -le 1 ]] || { echo 'Aufruf: audio.sh status' >&2; exit 1; }
         docker compose run --rm --no-deps -T mumble-funk audio status
         exit 0 ;;
-    enable|disable|reset-busy-tone|enable-squelch|disable-squelch|enable-open|disable-open|enable-close|disable-close|enable-timeout-close|disable-timeout-close|reset-open|reset-close)
+    enable|disable|reset-busy-tone|use-standard-busy-tone|enable-squelch|disable-squelch|enable-open|disable-open|enable-close|disable-close|enable-timeout-close|disable-timeout-close|reset-open|reset-close)
         [[ $# == 1 ]] || { echo 'Dieser Befehl benötigt keinen Wert.' >&2; exit 1; } ;;
     boost)
         if [[ $# != 2 ]] || [[ ! $2 =~ ^(0|[1-9]|1[0-2])$ ]]; then

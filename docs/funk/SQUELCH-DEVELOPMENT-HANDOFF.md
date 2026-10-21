@@ -253,7 +253,8 @@ The following changes are additional to the Phase 2B implementation:
   signals. Disabled files are not loaded. A separate configured-state flag preserves
   private sequence state in Close-only mode across cancellation. No Simplex changes.
 - `--validate-squelch-wav` uses existing AudioSignal::encodeWavSignal (1–1000 ms).
-  Busy retains its existing validator and 20–1000 ms bounds. Both allow PCM mono
+  Busy retained its existing validator and 20–1000 ms bounds at Phase 2C;
+  Phase A below extends only Busy to 1250 ms. Both allow PCM mono
   signed 16-bit LE 8/16/24/48 kHz, maximum 128 KiB, attenuation to 0.2 before gain.
 - Docker copies standards/license and the same admin Python into the existing image.
   Fresh config has master feedback/Squelch false; file paths point to the standards.
@@ -503,3 +504,65 @@ password/certificate/database checks and restored audio status=9. A unit regress
 now compares complete info JSON after intentional settings changes. This is a test
 fixture correction, not a server behavior change or suppressed container failure.
 Rerun the full current-head GitHub pipelines after pushing the follow-up commit.
+
+## Phase A: packaged Busy recording (feature/busy-tone-asset)
+
+Base: dev `6b5322ef0fb404fc726b97eff44b7d213129fd85`, including merged Squelch
+and Audio Volume work. See [busy-tone.md](busy-tone.md) for operator instructions,
+public file SHA-256 and PCM SHA-256. The maintainer confirmed ownership and CC0
+publication. Only the optional `bext` metadata chunk was removed after checking
+it contained no legal notice; all other chunks and all PCM samples are unchanged.
+The original remains private outside Git and must never be staged or published.
+
+Only AudioSignal Busy limits change: WAV 20–1250 ms, 128 KiB unchanged;
+60000 source samples at 48 kHz plus existing 960-sample tail, generic Busy encoder
+limit 60960 samples / at most 64 packets. ShortSignal retains 1–1000 ms and its
+existing encoding/tail policy. Synthetic waveform, volume and 0–12 dB boost,
+feedback scheduler, Server.cpp, Simplex and SquelchPlan are unchanged.
+The recording has 57468 source samples, encodes to 61 packets and fits completely
+including codec lookahead. Tests pin the actual nonempty decoded tail.
+
+New native/Docker templates select the packaged Busy path. Existing INIs are
+preserved byte-for-byte; missing or empty busytonefile still means synthetic.
+Native install copies public assets 0644; a pre-existing different file/symlink
+at the new Busy standard path causes refusal before deployment writes.
+`use-standard-busy-tone` validates and selects the shipped file.
+`reset-busy-tone` deliberately retains its old meaning: synthetic tone.
+`set-busy-tone` still makes a validated content-addressed private copy. None of
+these selections auto-enable audio, reset gain, alter Simplex or remove imports.
+Native setup/build/install require exact feature branch plus the explicit
+`--experimental-busy-tone` opt-in and all existing source checks.
+
+The existing scheduler intentionally abandons optional feedback after event-loop
+stalls of over 100 ms; the longer Busy does not change that policy. An active Busy
+does not restart or queue when its one-second cooldown expires. Optional Squelch
+still loses to Busy. Voice never waits. Private feedback still uses TCP UDPTunnel,
+even when the rejected speech arrived via authenticated encrypted UDP.
+
+New TestBusyToneAsset covers raw file/PCM hashes, all rate/length boundaries,
+decoded completeness/levels, fallback, fake-clock cooldown and priority.
+Twelve additional AudioFeedbackIntegration rows cover legacy/protobuf × TCP/UDP
+× boost0/boost12/volume0 with exact 61-packet expectations, identity/channel
+isolation, unchanged voice/terminators and rejection/rearm rules. TestAudioVolume
+compares the new asset's boost0 encoding to the frozen previous encoder.
+Native admin/source/setup and Docker initialization/wrapper cases extend their
+existing suites; no previous tests are removed.
+
+FunkDockerProbe now accepts an explicit expected count (default 13, bounds 1–64),
+checks the exact sequence/last marker and really decodes every Busy packet.
+Its assertions remain strict. Docker integration explicitly tests packaged61,
+synthetic13 and private-WAV61 with boost12, then compares original configuration
+and tests private Busy and Close files through backup and restore. The build
+context admits only the three public CC0 WAVs; private WAV exclusions stay intact.
+
+Local evidence: all 100 Python cases passed; the cleaned public asset passed
+its strengthened hash/PCM test and the complete AudioFeedbackIntegration suite.
+Four isolated native protocol-probe runs passed: packaged boost0/12, synthetic,
+and private copy boost12, each with TCP and encrypted UDP Simplex checks. A first
+full-suite run alongside installer tests lost parts of two optional Busy clips;
+the strict serial AudioFeedbackIntegration rerun passed without changing scheduler
+or weakening assertions. Full final-suite and current-head GitHub CI results
+are recorded in the feature PR; do not infer success from older commits.
+The cloud host lacks disk space for another full local Docker build; use the
+actual current-head GitHub build/Compose integration, not a mocked success.
+Windows/Mumla hearing tests and deployment remain the operator's next steps.

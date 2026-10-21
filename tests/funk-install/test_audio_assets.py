@@ -47,14 +47,14 @@ class AudioAssets(unittest.TestCase):
 
     def test_supported_rates_and_boundary_lengths(self):
         for rate in (8000, 16000, 24000, 48000):
-            for duration in (.02, .1, 1):
+            for duration in (.02, .1, 1, 1.19725, 1.25):
                 with self.subTest(rate=rate, duration=duration):
                     wav(self.asset, rate=rate, duration=duration)
                     result = self.validate()
                     self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_invalid_formats_and_lengths(self):
-        cases = [{'rate': 44100}, {'channels': 2}, {'width': 1}, {'duration': .01}, {'duration': 1.01}, {'duration': 2}]
+        cases = [{'rate': 44100}, {'channels': 2}, {'width': 1}, {'duration': .01}, {'duration': 1.251}, {'duration': 2}]
         for parameters in cases:
             with self.subTest(parameters=parameters):
                 wav(self.asset, **parameters)

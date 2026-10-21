@@ -196,7 +196,8 @@ intentionally testing without Busy. The commands never alter Simplex rules.
 Import accepts regular files only, no symlinks/FIFOs/directories, maximum 128 KiB.
 The actual C++ WAV parser and Opus encoder validate before selecting the file:
 PCM WAV, mono, signed 16-bit little-endian, 8/16/24/48 kHz, **1–1000 ms** for Squelch.
-Busy retains its existing **20–1000 ms** minimum/maximum. Peak attenuation caps
+Busy now accepts **20–1250 ms**; see the [new standard Busy tone](busy-tone.md).
+Squelch limits are unchanged. Peak attenuation caps
 signals at 0.2 PCM before the selected volume and optional `feedbackboostdb` (default 0). Imports have content-addressed names;
 updates refresh only packaged standards/helpers and retain custom files, selection,
 gain and other configuration. Reset does not delete imports. An invalid import
