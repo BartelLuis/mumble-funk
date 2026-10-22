@@ -279,6 +279,83 @@ class OrchestrationTests(unittest.TestCase):
         info = (self.repo / 'stage/opt/mumble-funk/current/BUILD-INFO').read_text()
         self.assertIn('experimental=true', info)
 
+    def test_dev_ubuntu24_opt_in_and_update_preserve_existing_state(self):
+        self.env['MOCK_BRANCH'] = 'dev'
+        (self.repo / 'test-os-release').write_text('ID=ubuntu\nVERSION_ID="24.04"\n')
+        for args in ((), ('--experimental-audio-defaults',)):
+            refused = self.execute(args=args)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn('--experimental-dev', refused.stderr)
+            self.assertFalse((self.repo / 'stage').exists())
+            self.assertFalse(any(c[0] in ('cmake', 'apt-get', 'sudo') for c in self.calls()))
+        result = self.execute(args=('--experimental-dev',))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('EXPERIMENTELL: dev-Testinstallation', result.stderr)
+        # Build runs the same guard a second time, proving setup forwarded opt-in.
+        self.assertGreaterEqual(result.stderr.count('dev-Testinstallation'), 2)
+        installers = [c for c in self.calls() if c[0] == 'sudo' and any(a.endswith('install.sh') for a in c)]
+        self.assertIn('--experimental-dev', installers[-1])
+        info = (self.repo / 'stage/opt/mumble-funk/current/BUILD-INFO').read_text()
+        self.assertIn('branch=dev\n', info)
+        self.assertIn('revision=' + 'a' * 40 + '\n', info)
+        self.assertIn('experimental=true\n', info)
+        config = self.repo / 'stage/etc/mumble-funk/server.ini'
+        config.write_text(config.read_text().replace('audiofeedback=true', 'audiofeedback=false')
+                          .replace('squelchclosetimeoutfallback=true\n', ''))
+        database = self.repo / 'stage/var/lib/mumble-funk/server.sqlite'
+        with contextlib.closing(sqlite3.connect(database)) as db:
+            db.execute('CREATE TABLE config (server_id INTEGER, key TEXT, value TEXT)')
+            db.execute("INSERT INTO config VALUES (1, 'port', '64739')")
+            db.commit()
+        custom_wav = self.repo / 'stage/etc/mumble-funk/sounds/custom.wav'
+        custom_wav.write_bytes(b'preserved custom audio')
+        before = {p: p.read_bytes() for p in (config, database, custom_wav)}
+        result = self.execute(args=('--experimental-dev',))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for path, content in before.items():
+            self.assertEqual(path.read_bytes(), content, str(path))
+
+    def test_direct_dev_build_requires_opt_in_before_cmake(self):
+        self.env['MOCK_BRANCH'] = 'dev'
+        command = ['bash', str(self.repo / 'scripts/funk/build.sh')]
+        refused = subprocess.run(command, env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('--experimental-dev', refused.stderr)
+        self.assertFalse(any(c[0] in ('cmake', 'ctest') for c in self.calls()))
+        result = subprocess.run(command + ['--experimental-dev'], env=self.env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(any(c[0] == 'cmake' and '--build' in c for c in self.calls()))
+        self.assertTrue(any(c[0] == 'ctest' for c in self.calls()))
+        self.assertIn('install.sh --experimental-dev', result.stdout)
+
+    def test_direct_dev_install_forwards_opt_in_to_source_guard(self):
+        self.env['MOCK_BRANCH'] = 'dev'
+        installer = self.repo / 'scripts/funk/install.sh'
+        # Exercise production parsing/guard in this disposable copy, as a normal
+        # user. Stop at the lock immediately after validation, before deployment.
+        installer.write_text(installer.read_text()
+                             .replace('[[ $EUID == 0 ]]', 'true')
+                             .replace('. /etc/os-release', '. "$repo/test-os-release"')
+                             .replace('/run/lock/mumble-funk-install.lock',
+                                      str(self.repo / 'install.lock')))
+        flock = self.repo / 'mock-bin/flock'
+        flock.write_text('#!/bin/sh\necho TEST_STOP_AFTER_SOURCE_GUARD >&2\nexit 73\n')
+        flock.chmod(0o755)
+        command = ['bash', str(installer)]
+        for args in ((), ('--experimental-audio-defaults',)):
+            result = subprocess.run(command + list(args), env=self.env,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('--experimental-dev', result.stderr)
+            self.assertFalse((self.repo / 'install.lock').exists())
+        result = subprocess.run(command + ['--experimental-dev'], env=self.env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('TEST_STOP_AFTER_SOURCE_GUARD', result.stderr)
+        self.assertIn('EXPERIMENTELL: dev-Testinstallation', result.stderr)
+        self.assertFalse((self.repo / 'stage').exists())
+
     def test_audio_volume_ubuntu24_install_and_update_preserve_boost(self):
         self.env['MOCK_BRANCH'] = 'feature/audio-volume'
         (self.repo/'test-os-release').write_text('ID=ubuntu\nVERSION_ID="24.04"\n')

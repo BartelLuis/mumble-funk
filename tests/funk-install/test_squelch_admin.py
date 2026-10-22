@@ -58,7 +58,7 @@ class SquelchAdminTests(unittest.TestCase):
         # Staging must report its actual source, not pretend to be the feature head.
         branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
         self.assertIn('branch='+branch+'\n', info)
-        self.assertIn('experimental='+str(branch in ('feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset', 'feature/audio-defaults')).lower()+'\n', info)
+        self.assertIn('experimental='+str(branch in ('dev', 'feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset', 'feature/audio-defaults')).lower()+'\n', info)
         revision = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
         self.assertIn('revision='+revision+'\n', info)
         self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())

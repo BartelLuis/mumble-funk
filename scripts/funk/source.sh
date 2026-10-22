@@ -21,6 +21,20 @@ funk_require_supported_source() {
                 echo 'Der lokale Branch weicht von origin ab. Bitte den Quellstand vor dem Setup prüfen.' >&2; return 1;
             }
             ;;
+        dev)
+            [[ $experimental == --experimental-dev ]] || {
+                echo 'EXPERIMENTELL: dev benötigt --experimental-dev.' >&2; return 1;
+            }
+            upstream=$(git -C "$repo" rev-parse --verify 'refs/remotes/origin/dev^{commit}') || return 1
+            [[ $head == "$upstream" ]] || {
+                echo 'Lokaler dev-Commit weicht von origin/dev ab. Bitte git fetch und prüfen.' >&2; return 1;
+            }
+            published=$(git -C "$repo" ls-remote --heads origin refs/heads/dev) || return 1
+            [[ $(awk '$2=="refs/heads/dev" {print $1}' <<< "$published") == "$head" ]] || {
+                echo 'dev-Commit ist nicht der aktuell veröffentlichte Stand. Bitte git fetch und prüfen.' >&2; return 1;
+            }
+            echo 'EXPERIMENTELL: dev-Testinstallation, keine Stable-Freigabe; Geräte-Hörtests erforderlich.' >&2
+            ;;
         feature/squelch-audio|feature/audio-volume|feature/busy-tone-asset|feature/audio-defaults)
             local required=--experimental-squelch
             if [[ $branch == feature/audio-volume ]]; then required=--experimental-audio-volume; fi
