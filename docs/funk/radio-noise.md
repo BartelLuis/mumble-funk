@@ -366,3 +366,33 @@ Diese Anleitung dokumentiert **noch keine erfolgreichen Geräte-Hörtests** oder
 vollständige systemd-/Proxmox-VM-Praxistests. Solche Ergebnisse liefert erst der
 Betreiber. Installation, Verwaltung und Veröffentlichung des offiziellen
 Rausch-Assets sowie Docker-Erweiterungen bleiben späteren Phasen vorbehalten.
+
+## Korrektur: Close nach langer Rauschübertragung
+
+Ein gezielter Scheduler-Test reproduzierte nach 62 Sekunden Rauschen einen
+serverseitigen Sequenzfehler: Direkt nach dem letzten Rauschpaket wurde der
+Wiedergabezustand wegen seines alten Startzeitpunkts gelöscht. Close wurde dadurch
+mit Sequenz 0 statt fortlaufender Nummer und bereits nach 20 statt mindestens
+60 ms zur Zustellung angeboten. Der noch laufende Client-Jitterbuffer kann solche
+zurückspringenden Zeitstempel als veraltet verwerfen; gültige Opus-Daten allein
+garantieren deshalb keine Wiedergabe.
+
+Aktives Rauschen hält nun den vorhandenen Sequenzzustand aktuell. Die Bereinigung
+inaktiver Zustände bleibt begrenzt, ebenso die Anzahl der Empfänger. Die
+60-ms-Auslaufpause, die 300-ms-Close-Frist, `finishEarly`, Ende-Markierungen,
+Simplex und Sprachpakete bleiben unverändert. Der Scheduler-Regressionsfall prüft
+die vollständigen Close-Pakete, strikt steigende Sequenzen, die Auslaufpause und
+die bestehende Close-Frist. Ein zusätzlicher echter Server-Test überträgt parallel
+über TCP und verschlüsseltes UDP in getrennten Kanälen für mehr als 60 Sekunden
+und prüft die empfangenen Close- und Sprachpakete sowie die Opus-Dekodierung.
+Der Langtest sendet wie normale Clients Kontroll-Pings; der bestehende
+30-Sekunden-Verbindungstimeout wird nicht erhöht. Scheduler-Regressionsfall,
+Netzwerk-Langtest und die betroffenen bisherigen Audio-/Simplex-Prüfungen waren
+lokal erfolgreich.
+
+Den praktischen Hörtest nach dem Update mit kurzen **und mindestens 62 Sekunden
+langen** Windows-Übertragungen wiederholen; auch Mumla mit Timeout-Close prüfen.
+Der nachgewiesene Fehler betrifft das Überschreiten der 60-Sekunden-Grenze. Sollte
+Close schon bei kürzeren Übertragungen fehlen, bleiben weitere Ursachen zu prüfen.
+Eine konkrete Wiedergabe in Windows-Mumble oder Mumla wurde durch diese
+automatisierten Prüfungen nicht als erfolgreich nachgewiesen.

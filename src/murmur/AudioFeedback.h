@@ -54,7 +54,7 @@ private:
 	struct Playback {
 		Request request;
 		std::int64_t started;
-		std::int64_t lastStart;
+		std::int64_t lastActivity;
 		std::uint64_t nextFrame = 0;
 		std::size_t index       = 0;
 		bool active             = true;

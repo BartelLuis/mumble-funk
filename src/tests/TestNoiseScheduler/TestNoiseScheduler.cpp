@@ -12,7 +12,7 @@
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 using Plan = SquelchPlan;
 static QString asset(const char *name) { return QStringLiteral(AUDIO_ASSET_DIR) + '/' + name; }
-struct Heard { AudioFeedback::Recipient recipient; QByteArray bytes; std::uint64_t frame; bool last; };
+struct Heard { AudioFeedback::Recipient recipient; QByteArray bytes; std::uint64_t frame; bool last; std::int64_t time; };
 struct Rig {
     std::int64_t now = 0;
     Plan plan{true, [this] { return now; }};
@@ -49,9 +49,11 @@ struct Rig {
             const auto before = heard.size();
             feedback.tick(now, [&](const AudioFeedback::Recipient &r, const QByteArray &p, std::uint64_t frame, bool last) {
                 for (auto it = heard.rbegin(); it != heard.rend(); ++it) if (it->recipient.connection == r.connection) {
+                    if (frame <= it->frame)
+                        std::cerr << "Effect sequence reset at " << now << " us: " << it->frame << " -> " << frame << '\n';
                     CHECK(frame > it->frame); break;
                 }
-                heard.push_back({r, p, frame, last}); return true;
+                heard.push_back({r, p, frame, last, now}); return true;
             }, [&](const Plan::Cue &cue, bool starting) {
                 return starting ? plan.consume(cue, cue.sender, cue.recipient, true) : plan.current(cue);
             });
@@ -85,6 +87,27 @@ struct Rig {
 };
 int main() {
     try {
+        {
+            // A confirmed marker after >60 s must retire Noise before sending
+            // one complete Close in the SAME recipient sequence space.
+            Rig r(true, 1); r.start(); r.tick(3100);
+            std::cout << "Long confirmed end at " << r.now << " us\n";
+            r.end(); r.tick(20);
+            const auto packets = r.forUser(2);
+            const auto close = r.feedback.clip(AudioFeedback::Signal::SquelchClose);
+            auto first = std::find_if(packets.begin(), packets.end(), [&](const Heard &h) { return h.bytes == close[0]; });
+            CHECK(first != packets.end() && first != packets.begin());
+            CHECK((first - 1)->last);
+            CHECK(first->time - (first - 1)->time >= 60000);
+            CHECK(first->time <= 62000000 + Plan::MaxCloseCueAgeUs);
+            CHECK(first->frame == (first - 1)->frame + 102);
+            CHECK(std::size_t(packets.end() - first) == close.size());
+            for (std::size_t i = 0; i < close.size(); ++i) {
+                CHECK((first + std::ptrdiff_t(i))->bytes == close[i]);
+                CHECK((first + std::ptrdiff_t(i))->last == (i + 1 == close.size()));
+            }
+            r.decode();
+        }
         {
             Rig r; CHECK(r.plan.observe(r.source, false, 0, true, false, true, r.receivers).empty());
             r.tick(5); CHECK(r.heard.empty()); r.start(); r.tick(20);

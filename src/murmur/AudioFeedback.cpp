@@ -142,7 +142,12 @@ void AudioFeedback::tick(std::int64_t now, const Delivery &deliver, const CueGat
 	if (m_noisePCM) { m_lastNoiseTick = now; updateNoise(now, gate, noiseRequests); }
 	// Keep cooldown/sequence state bounded, including disconnected/idle clients.
 	for (auto it = m_playback.begin(); it != m_playback.end();) {
-		if (!it->second.active && now - it->second.lastStart >= 60000000)
+		// Noise can run longer than the idle retention period. Retain its
+		// sequence and retirement gap after its final packet, just as for a
+		// recent short clip; never expire it merely because it started long ago.
+		if (it->second.active && it->second.request.signal == Signal::Noise)
+			it->second.lastActivity = now;
+		if (!it->second.active && now - it->second.lastActivity >= 60000000)
 			it = m_playback.erase(it);
 		else
 			++it;

@@ -27,6 +27,7 @@ class TestNoiseIntegration : public QObject {
     Q_OBJECT
 private slots:
     void transport_data(); void transport();
+    void longConfirmed();
     void lifecycle_data(); void lifecycle();
     void reuse();
     void rapid();
@@ -84,6 +85,75 @@ void TestNoiseIntegration::transport() {
     opus_decoder_destroy(decoder);
     QCOMPARE(closes,ending==2?0:1); QVERIFY(effects.back().last);
     QVERIFY(from(b.audio(150),b.session).isEmpty()); QVERIFY(from(a.audio(20),a.session).isEmpty());
+}
+void TestNoiseIntegration::longConfirmed() {
+    // Exercise both input transports concurrently in separate real channels.
+    // Short transport tests cannot catch expiry of a >60-second Noise stream.
+    Fixture f; QVERIFY(f.start("true",5000,500,true,config()));
+    Client admin,tcpSource,tcpReceiver,udpSource,udpReceiver;
+    QVERIFY(admin.login(f.port,"SuperUser"));
+    QVERIFY(tcpSource.login(f.port,"TCP-Speaker")); QVERIFY(tcpReceiver.login(f.port,"TCP-Listener"));
+    QVERIFY(udpSource.login(f.port,"UDP-Speaker")); QVERIFY(udpReceiver.login(f.port,"UDP-Listener"));
+    const auto udpChannel=channel(admin,"UDP"); QVERIFY(udpChannel);
+    QVERIFY(udpSource.move(udpChannel)); QVERIFY(udpReceiver.move(udpChannel));
+    QVERIFY(udpSource.udp.bind(QHostAddress(QHostAddress::LocalHost),0)); QVERIFY(udpSource.udpBarrier());
+    const auto voice=AudioSignal::encode(AudioSignal::syntheticBusy(),100);
+    QTest::qWait(30);
+    QElapsedTimer elapsed; elapsed.start(); std::uint64_t frames=0;
+    qint64 nextKeepalive=5000;
+    while(elapsed.elapsed()<62000) {
+        QVERIFY(sendVoice(tcpSource,voice[0],frames*2,false,false));
+        QVERIFY(sendVoice(udpSource,voice[0],frames*2,false,true));
+        ++frames; QTest::qWait(20);
+        if(elapsed.elapsed()>=nextKeepalive) {
+            // Real clients keep the control connection alive even while voice
+            // travels over UDP. Preserve the server's normal 30-second timeout.
+            for(auto *client : std::array<Client *,5>{{&admin,&tcpSource,&tcpReceiver,&udpSource,&udpReceiver}})
+                QVERIFY(client->barrier());
+            QVERIFY(udpSource.udpBarrier());
+            nextKeepalive+=5000;
+        }
+    }
+    QVERIFY(sendVoice(tcpSource,voice[1],frames*2,true,false));
+    QVERIFY(sendVoice(udpSource,voice[1],frames*2,true,true));
+    QVERIFY(tcpSource.barrier()); QVERIFY(udpSource.udpBarrier());
+    const auto open=AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50);
+    const auto close=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50);
+    const std::array<std::pair<Client *,Client *>,2> paths{{{&tcpReceiver,&tcpSource},{&udpReceiver,&udpSource}}};
+    for(const auto &pair : paths) {
+        const auto all=pair.first->audio(500);
+        const auto heard=from(all,pair.second->session);
+        QCOMPARE(std::uint64_t(heard.size()),frames+1);
+        for(int i=0;i<heard.size();++i) {
+            QCOMPARE(heard[i].payload,i==heard.size()-1?voice[1]:voice[0]);
+            QCOMPARE(heard[i].frame,std::uint64_t(i)*2);
+            QCOMPARE(heard[i].last,i==heard.size()-1);
+        }
+        const auto effects=from(all,pair.first->session);
+        QVERIFY(effects.size()>int(open.size()+close.size()));
+        int closes=0, error=0;
+        std::unique_ptr<OpusDecoder,decltype(&opus_decoder_destroy)> decoder(opus_decoder_create(48000,1,&error),opus_decoder_destroy);
+        QVERIFY(decoder && !error);
+        for(int i=0;i<effects.size();++i) {
+            if(i) QVERIFY2(effects[i].frame>effects[i-1].frame,"Private effect sequence went backwards after long Noise");
+            if(effects[i].payload==close[0]) ++closes;
+            std::array<float,960> pcm;
+            QCOMPARE(opus_decode_float(decoder.get(),reinterpret_cast<const unsigned char *>(effects[i].payload.constData()),
+                                      effects[i].payload.size(),pcm.data(),960,0),960);
+        }
+        QCOMPARE(closes,1);
+        const int first=effects.size()-int(close.size());
+        QVERIFY(effects[first-1].last);
+        QCOMPARE(effects[first].frame,effects[first-1].frame+102);
+        for(std::size_t i=0;i<close.size();++i) {
+            QCOMPARE(effects[first+int(i)].payload,close[i]);
+            QCOMPARE(effects[first+int(i)].last,i+1==close.size());
+        }
+        QVERIFY(from(pair.first->audio(150),pair.first->session).isEmpty());
+    }
+    f.server.stop();
+    QCOMPARE(f.count("released","marker_confirmed"),2);
+    QCOMPARE(f.count("released","timeout_suspected"),0);
 }
 void TestNoiseIntegration::lifecycle_data() {
     QTest::addColumn<int>("change"); for(int c=0;c<5;++c) QTest::newRow(qPrintable(QString::number(c))) << c;
