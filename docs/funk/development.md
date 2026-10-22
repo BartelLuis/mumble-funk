@@ -36,8 +36,11 @@ Nonce-Adapter werden entfernt; dieselben echten Testquellen laufen in beiden Bui
 Audio-Engine, WAV-Verwaltung, Audio-Codecs oder Audio-Feedback werden nicht übernommen.
 
 Die Installer akzeptieren `stable`, weiterhin `funk-v0.1` und künftig veröffentlichte
-annotierte Projektversionstags. `dev` und Integrationsbranches sind bewusst keine
-Installationsquellen. Entwickler bauen **ohne Installation** direkt mit CMake:
+annotierte Projektversionstags. Für `dev` gibt es zusätzlich eine ausdrücklich
+[experimentelle Ubuntu-Testinstallation](install-dev.md) mit `--experimental-dev`: nur
+bei identischem lokalem HEAD, `origin/dev` und live veröffentlichtem Dev-Commit.
+Integrations- und unbekannte Feature-Branches bleiben als Installationsquellen
+gesperrt. Entwickler bauen **ohne Installation** weiterhin direkt mit CMake:
 
 ```bash
 git submodule update --init --recursive

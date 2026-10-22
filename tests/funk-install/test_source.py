@@ -59,6 +59,65 @@ class SourceTests(unittest.TestCase):
                 self.git("checkout", "-B", branch, self.head)
                 self.guard(False)
 
+    def dev(self):
+        self.git("checkout", "-B", "dev", self.head)
+        self.git("update-ref", "refs/remotes/origin/dev", self.head)
+        self.git("push", str(self.remote), "HEAD:refs/heads/dev")
+
+    def test_dev_requires_own_flag_and_preserves_other_branch_guards(self):
+        self.dev()
+        self.guard(False)
+        self.guard(False, experimental="--experimental-audio-defaults")
+        self.guard(True, experimental="--experimental-dev")
+        for branch in ("feature/audio-defaults", "feature/experimental-dev-install", "feature/audio-feedback"):
+            self.git("checkout", "-B", branch, self.head)
+            self.guard(False, experimental="--experimental-dev")
+
+    def test_dev_requires_exact_cached_and_live_commit(self):
+        self.dev()
+        base = "dfbac8d3d9c967003e74b4ffc5610f7d45e8f666"
+        self.git("update-ref", "-d", "refs/remotes/origin/dev")
+        self.guard(False, experimental="--experimental-dev")
+        self.git("update-ref", "refs/remotes/origin/dev", base)
+        self.guard(False, experimental="--experimental-dev")
+        self.git("update-ref", "refs/remotes/origin/dev", self.head)
+        self.run_git("--git-dir", str(self.remote), "update-ref", "refs/heads/dev", base)
+        self.guard(False, experimental="--experimental-dev")
+        self.run_git("--git-dir", str(self.remote), "update-ref", "-d", "refs/heads/dev")
+        self.guard(False, experimental="--experimental-dev")
+        self.git("push", str(self.remote), "HEAD:refs/heads/dev")
+        self.git("commit", "--allow-empty", "-m", "Local dev change")
+        # Even a manually advanced cached ref cannot authorize unpublished work.
+        self.git("update-ref", "refs/remotes/origin/dev", "HEAD")
+        self.guard(False, experimental="--experimental-dev")
+        # Nor can stale local/cached refs authorize an older published revision.
+        self.git("push", str(self.remote), "HEAD:refs/heads/dev")
+        self.git("checkout", "-B", "dev", self.head)
+        self.git("update-ref", "refs/remotes/origin/dev", self.head)
+        self.guard(False, experimental="--experimental-dev")
+
+    def test_dev_rejects_dirty_source_foreign_origin_and_network_failure(self):
+        self.dev()
+        readme = self.repo / "README.md"
+        original = readme.read_bytes()
+        readme.write_bytes(original + b"\nUncommitted change\n")
+        self.guard(False, experimental="--experimental-dev")
+        readme.write_bytes(original)
+        self.git("remote", "set-url", "origin", str(self.remote))
+        self.guard(False, experimental="--experimental-dev")
+        self.git("remote", "set-url", "origin", OFFICIAL)
+        self.git("config", "--unset", f"url.{self.remote}.insteadOf")
+        self.git("config", f"url.{self.root / 'missing.git'}.insteadOf", OFFICIAL)
+        self.guard(False, experimental="--experimental-dev")
+
+    def test_dev_rejects_unrelated_mumble_base(self):
+        self.git("checkout", "--orphan", "unrelated")
+        self.git("commit", "--allow-empty", "-m", "Unrelated source")
+        self.git("branch", "-M", "dev")
+        self.git("update-ref", "refs/remotes/origin/dev", "HEAD")
+        self.git("push", str(self.remote), "HEAD:refs/heads/dev")
+        self.guard(False, experimental="--experimental-dev")
+
     def feature(self):
         self.git("checkout", "-B", "feature/squelch-audio", self.head)
         self.git("update-ref", "refs/remotes/origin/feature/squelch-audio", self.head)

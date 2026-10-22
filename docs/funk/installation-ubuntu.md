@@ -1,3 +1,6 @@
+> **Aktuellen `dev` auf einer Test-VM installieren:** [Experimentelle Dev-Anleitung](install-dev.md).
+> Die Stable-Befehle unten behalten ihr bisheriges Verhalten.
+
 > **Experimenteller Audio-Default-Branch:** Für `feature/audio-defaults` gelten
 > [diese neuen Defaults und Installationsbefehle](audio-defaults.md) mit
 > `--experimental-audio-defaults`. Neue Ubuntu-/Docker-Konfigurationen aktivieren
