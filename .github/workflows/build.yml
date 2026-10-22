@@ -32,6 +32,7 @@ jobs:
           python3 tests/funk-install/test_squelch_admin.py build/funk/mumble-server
           python3 tests/funk-install/test_audio_boost.py build/funk/mumble-server
           python3 tests/funk-install/test_audio_defaults.py build/funk/mumble-server build/funk/FunkDockerProbe
+          python3 tests/funk-install/test_radio_noise_install.py build/funk/mumble-server
       - name: Build Docker image (includes server and runtime tests)
         run: docker compose build
       - name: Verify TCP/UDP, Simplex, persistence and recovery

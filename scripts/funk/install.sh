@@ -18,11 +18,11 @@ while [[ $# -gt 0 ]]; do
             [[ $root != / ]] || { echo 'Stage darf nicht / sein.' >&2; exit 1; }
             binary=$(realpath -- "$3"); shift 3 ;;
         --setup) setup=true; shift ;;
-        --experimental-squelch|--experimental-audio-volume|--experimental-busy-tone|--experimental-audio-defaults|--experimental-dev) source_args=("$1"); shift ;;
+        --experimental-squelch|--experimental-audio-volume|--experimental-busy-tone|--experimental-audio-defaults|--experimental-dev|--experimental-radio-noise) source_args=("$1"); shift ;;
         --port)
             [[ $# -ge 2 ]] || { echo 'Port fehlt.' >&2; exit 1; }
             port_args=(--port "$2"); shift 2 ;;
-        *) echo 'Aufruf: install.sh [--setup] [--port PORT] [--experimental-squelch|--experimental-audio-volume|--experimental-busy-tone|--experimental-audio-defaults|--experimental-dev] [--stage TESTZIEL SERVERBINARY]' >&2; exit 1 ;;
+        *) echo 'Aufruf: install.sh [--setup] [--port PORT] [--experimental-squelch|--experimental-audio-volume|--experimental-busy-tone|--experimental-audio-defaults|--experimental-dev|--experimental-radio-noise] [--stage TESTZIEL SERVERBINARY]' >&2; exit 1 ;;
     esac
 done
 root_args=()
@@ -86,7 +86,7 @@ install -m 0644 "$repo/scripts/funk/audio-preview/audio_control.py" "$root/usr/l
 branch=$(git -C "$repo" branch --show-current)
 revision=$(git -C "$repo" rev-parse HEAD)
 experimental=false
-if [[ $branch == dev || $branch == feature/squelch-audio || $branch == feature/audio-volume || $branch == feature/busy-tone-asset || $branch == feature/audio-defaults ]]; then experimental=true; fi
+if [[ $branch == dev || $branch == feature/squelch-audio || $branch == feature/audio-volume || $branch == feature/busy-tone-asset || $branch == feature/audio-defaults || $branch == feature/radio-noise ]]; then experimental=true; fi
 printf 'revision=%s\nbranch=%s\nexperimental=%s\n' "$revision" "$branch" "$experimental" > "$base/releases/$release/BUILD-INFO"
 chmod 0644 "$base/releases/$release/BUILD-INFO"
 config_existed=false

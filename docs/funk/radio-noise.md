@@ -78,6 +78,291 @@ Prüfsumme. Ohne diese Datei verwenden die Tests vorhandene öffentliche Kurzsig
 beziehungsweise programmgenerierte Test-WAVs. Die private Aufnahme ist kein
 Repository-Asset und wird nicht heruntergeladen oder veröffentlicht.
 
-B2b ergänzt keine Installerfreigabe für `feature/radio-noise`, keine Ubuntu-/Docker-
-Audioverwaltung und keine neuen Ports. B2c soll nach gesonderter Freigabe die
-Verwaltung eigener Dateien, Installation und Backup/Restore ergänzen.
+B2b ergänzt keine Audioverwaltung oder neuen Ports. B2c-1 ergänzt nachfolgend
+die ausdrückliche Ubuntu-Testinstallation; vollständige Verwaltung und weitere
+Backup-/Restore-Erweiterungen bleiben späteren Phasen vorbehalten.
+
+## B2c-1: Ubuntu-Snapshot-VM für den ersten Hörtest
+
+Diese Anleitung gilt ausdrücklich für **eine separate Ubuntu-24.04-LTS-Test-VM**
+mit systemd, einem normalen Benutzer mit sudo-Rechten, Internetzugang, empfohlenen
+4 GiB RAM / 2 CPU-Kernen und mindestens 10 GiB freiem Speicher. Den sauberen
+Proxmox-Snapshot erstellt bzw. restauriert der Betreiber selbst. Andere VMs und
+Produktivinstallationen bleiben unberührt. Die folgenden Befehle führt der
+Betreiber erst beim gewünschten Test aus, jeweils der Reihe nach; bei Fehlern
+anhalten. Das Setup installiert bzw. aktualisiert den **normalen** Dienst
+`mumble-funk`, keine parallele Vorschau.
+
+| Zweck | Wert |
+| --- | --- |
+| Experimenteller Branch / Auswahl | `feature/radio-noise` / `--experimental-radio-noise` |
+| Ubuntu-Port | **64739 TCP und UDP** |
+| Programm | `/opt/mumble-funk/current/mumble-server` |
+| INI | `/etc/mumble-funk/server.ini` |
+| Datenbank / Zertifikate | `/var/lib/mumble-funk/` |
+| Private Testaufnahme | `/etc/mumble-funk/sounds/radio-noise.wav` |
+
+Docker bleibt außerhalb dieser Testinstallation: Host **64740**, Container
+**64739**, jeweils TCP/UDP, unverändert. Keine weiteren Ports und kein Port 64742.
+
+### A. Frische Ubuntu-VM
+
+Per SSH auf der eigenen Test-VM als normaler Benutzer anmelden:
+
+```bash
+sudo apt update
+sudo apt install --yes git ca-certificates openssh-client nano
+mkdir -p "$HOME/src"
+cd "$HOME/src"
+git clone --branch feature/radio-noise --single-branch --recurse-submodules \
+  https://github.com/Shawna7han/mumble-funk.git mumble-funk
+cd "$HOME/src/mumble-funk"
+bash scripts/funk/setup.sh --experimental-radio-noise
+sudo systemctl --no-pager --full status mumble-funk
+cat /opt/mumble-funk/current/BUILD-INFO
+```
+
+Nicht in einen bereits vorhandenen Ordner klonen; dann Abschnitt B verwenden.
+Das Setup installiert die übrigen Build-Abhängigkeiten, kompiliert, testet und
+installiert erst nach Erfolg. `BUILD-INFO` muss `branch=feature/radio-noise` und
+`experimental=true` nennen. Keine Stable-Freigabe. Falls Ubuntu-Pakete nicht
+gefunden werden, die `universe`-Hinweise in [installation-ubuntu.md](installation-ubuntu.md)
+beachten. **Rauschen bleibt ausgeschaltet**, auch ohne veröffentlichte Rauschdatei.
+Die übrigen aktuellen Audio-Defaults für Neuinstallationen bleiben erhalten:
+Simplex, AudioFeedback, Busy, Open, Close und Timeout-Close aktiv, Effektlautstärken
+50 %, Audio-Boost +8 dB. Der Boost gilt nicht für Rauschen.
+
+`setup.sh`, `build.sh` und `install.sh` verlangen ausdrücklich denselben neuen
+Schalter. Mumble-1.5.939-Basis, offizielle GitHub-Herkunft, unveränderte versionierte
+Dateien sowie exakte Übereinstimmung mit lokalem `origin/feature/radio-noise`
+**und dem live veröffentlichten Feature-Commit** werden geprüft. Für diesen Branch
+werden auch nicht ignorierte unversionierte Dateien abgewiesen. Ignorierte
+Build-Ausgaben bleiben erlaubt. Ein anderer Opt-in-Schalter erlaubt diesen Branch
+nicht. `--experimental-dev`, Stable und die älteren Feature-Schalter bleiben gültig
+für ihre jeweiligen Quellen. Bei GitHub-/Netzwerkfehlern wird abgebrochen.
+
+### B. Vorhandene Ubuntu-Testinstallation aktualisieren
+
+Nur auf der vorgesehenen Test-VM verwenden. Vorher Snapshot oder externe Sicherung
+selbst anlegen. Das Setup erhält vorhandene INI-Einträge einschließlich fehlender
+oder deaktivierter Audiooptionen, Datenbanken, Passwörter, Zertifikate und eigene
+WAVs. Es aktiviert vorhandene Effekte nicht nachträglich.
+
+Im **vorhandenen** Quellverzeichnis (Pfad bei Bedarf anpassen):
+
+```bash
+cd "$HOME/src/mumble-funk"
+git status --short --branch
+```
+
+Nur ohne eigene Änderungen fortfahren. Eigene Änderungen separat sichern; kein
+`reset --hard`, kein `clean`. Die private WAV gehört nicht in dieses Verzeichnis.
+Eine zusätzliche lokale INI-Sicherung außerhalb des Repositorys erstellen:
+
+```bash
+backup_dir="/var/backups/mumble-funk/manual-$(date -u +%Y%m%dT%H%M%S)-$$"
+sudo install -d -m 0700 "$backup_dir"
+sudo cp -a /etc/mumble-funk "$backup_dir/config"
+```
+
+Den veröffentlichten Feature-Stand explizit abrufen; das funktioniert auch bei
+älteren Single-Branch-Klonen:
+
+```bash
+git fetch origin refs/heads/feature/radio-noise:refs/remotes/origin/feature/radio-noise
+if git show-ref --verify --quiet refs/heads/feature/radio-noise; then
+  git switch --no-guess feature/radio-noise
+else
+  git switch --no-track -c feature/radio-noise refs/remotes/origin/feature/radio-noise
+fi
+git merge --ff-only origin/feature/radio-noise
+bash scripts/funk/setup.sh --experimental-radio-noise
+sudo systemctl --no-pager --full status mumble-funk
+cat /opt/mumble-funk/current/BUILD-INFO
+```
+
+Der erste Wechsel legt den Branch bei Bedarf ohne automatische Upstream-Zuordnung
+an; der explizite Fetch funktioniert weiterhin auch ohne diese Zuordnung.
+Ein bereits existierender, abweichender Branch darf nicht zurückgesetzt werden.
+Während des Builds läuft der bisherige Dienst weiter. Erst bei der Installation
+wird ausschließlich `mumble-funk` kurz gestoppt; Konfiguration und vollständiger
+Datenbankordner werden dabei konsistent unter `/var/backups/mumble-funk/` gesichert.
+Diese lokalen Sicherungen enthalten Geheimnisse; privat aufbewahren. Sie ersetzen
+keinen extern aufbewahrten Snapshot bzw. keine externe Sicherung. Rückkehr zum bisherigen Programm:
+[Setup-Update/Rollback](setup.md#updates).
+
+### C. Private Aufnahme vom eigenen Computer übertragen
+
+Auf dem **eigenen Computer**, in dem Ordner mit `static.wav` (PowerShell unter
+Windows mit OpenSSH oder ein Linux-/macOS-Terminal): Benutzer und VM-IP ersetzen.
+Für SCP muss der SSH-Dienst der VM erreichbar sein.
+
+```bash
+scp static.wav BENUTZER@VM-IP:radio-noise.wav
+```
+
+Alternativ mit einem SFTP-Programm nach `/home/BENUTZER/radio-noise.wav` kopieren.
+Nicht nach GitHub oder ins Git-Verzeichnis übertragen. Das Original auf dem
+Computer bleibt erhalten. Danach auf der **Ubuntu-VM**:
+
+```bash
+sudo install -d -o root -g mumble-funk -m 0750 /etc/mumble-funk/sounds
+sudo install -o root -g mumble-funk -m 0640 \
+  "$HOME/radio-noise.wav" /etc/mumble-funk/sounds/radio-noise.wav
+```
+
+Vergleich und Leserechte prüfen:
+
+```bash
+sudo cmp "$HOME/radio-noise.wav" /etc/mumble-funk/sounds/radio-noise.wav
+sudo -u mumble-funk test -r /etc/mumble-funk/sounds/radio-noise.wav
+sudo stat -c '%U:%G %a %n' /etc/mumble-funk/sounds /etc/mumble-funk/sounds/radio-noise.wav
+```
+
+Erwartet: Verzeichnis `root:mumble-funk 750`, Datei `root:mumble-funk 640`.
+`cmp` und `test` bleiben bei Erfolg still. Die Datei wird bytegleich kopiert, nicht
+resampelt, normalisiert oder umkodiert. Der Dienst erhält Leserecht, kein Schreibrecht.
+Der Pfad liegt außerhalb von `ProtectHome` und ist unter `ProtectSystem=strict`
+lesbar. Keine Rauschaufnahme wird durch den Installer geliefert oder ersetzt.
+
+### D. Bewusst einschalten und Konfiguration prüfen
+
+Zunächst nur die INI sichern und öffnen:
+
+```bash
+sudo cp -a /etc/mumble-funk/server.ini "/etc/mumble-funk/server.ini.before-noise-$(date -u +%Y%m%dT%H%M%S)"
+sudo nano /etc/mumble-funk/server.ini
+```
+
+Diese drei Schlüssel **jeweils genau einmal** setzen:
+
+```ini
+radionoise=true
+radionoisefile=/etc/mumble-funk/sounds/radio-noise.wav
+radionoisevolume=20
+```
+
+Vorhandene aktive Einträge ersetzen, nicht nochmals anhängen. Fehlende Schlüssel
+im allgemeinen Bereich **vor der ersten `[Abschnitt]`-Zeile** einfügen, oder in
+einem bereits vorhandenen `[General]`-Abschnitt. Keinen `[server]`-Abschnitt und
+keinen zweiten `[General]`-Abschnitt erfinden. Andere Optionen, insbesondere
+Passwort, Datenbank und bestehende Audioeinstellungen, nicht ändern. Mit Strg+O,
+Enter speichern und mit Strg+X schließen.
+
+Dieser nur lesende Check prüft die drei Werte und Doppelungen im allgemeinen
+INI-Bereich, ohne Passwörter auszugeben:
+
+```bash
+sudo python3 - <<'PY'
+from pathlib import Path
+wanted = {'radionoise': 'true',
+          'radionoisefile': '/etc/mumble-funk/sounds/radio-noise.wav',
+          'radionoisevolume': '20'}
+found = {key: [] for key in wanted}
+section = 'General'
+for line in Path('/etc/mumble-funk/server.ini').read_text(encoding='utf-8-sig').splitlines():
+    line = line.strip()
+    if not line or line.startswith(('#', ';')):
+        continue
+    if line.startswith('['):
+        section = line
+        if line == '[General]':
+            section = 'General'
+        continue
+    if section == 'General' and '=' in line:
+        key, value = (part.strip() for part in line.split('=', 1))
+        if key in found:
+            found[key].append(value)
+for key, expected in wanted.items():
+    if found[key] != [expected]:
+        raise SystemExit(f'{key}: fehlt, doppelt oder falscher Wert; INI prüfen, noch nicht neu starten.')
+    print(f'{key}={expected}')
+print('INI-Prüfung erfolgreich.')
+PY
+sudo mumble-funk-audio status
+```
+
+`status` zeigt die bisherigen Audioeinstellungen; die neuen Rauschwerte werden
+oben separat geprüft. Falls in einer älteren Installation Effekte deaktiviert
+sind, bleiben sie so; für den gewünschten Hörtest die vorhandenen Verwaltungs-
+befehle aus [squelch-ubuntu.md](squelch-ubuntu.md) und [audio-volume.md](audio-volume.md)
+verwenden. Keine pauschale Migration. Falls die Datenbank verwaltete Einstellungen
+überlagert, bei abweichendem Verhalten erst deren Herkunft klären, nicht die
+Datenbank direkt verändern.
+
+Nach erfolgreicher Prüfung nur diesen Dienst neu starten:
+
+```bash
+sudo systemctl restart mumble-funk
+sudo systemctl --no-pager --full status mumble-funk
+sudo tail -n 60 /var/log/mumble-funk/server.log
+```
+
+Erwartet wird im **neuen Startabschnitt** `Experimental radio noise enabled:`.
+`Radio noise disabled:` weist auf ungültige Lautstärke/Datei oder einen Ladefehler
+hin. Pfad, Format und Leserechte prüfen; andere Audioeffekte sollen weiterlaufen.
+Bei Volume 0 wird Rauschen bewusst deaktiviert. Ein Neustart ist nach Änderungen
+an Datei, Pfad oder Lautstärke erforderlich.
+
+### E. Wieder deaktivieren
+
+```bash
+sudo nano /etc/mumble-funk/server.ini
+```
+
+Den vorhandenen allgemeinen Eintrag auf `radionoise=false` ändern, nur einmal.
+Pfad, Lautstärke, WAV und andere Audiooptionen stehen lassen. Danach:
+
+```bash
+sudo systemctl restart mumble-funk
+sudo systemctl --no-pager --full status mumble-funk
+```
+
+### F. Verbindung und Hörtest
+
+Adresse und Port ohne Passwort bzw. ausdrücklich lokal mit Passwort anzeigen:
+
+```bash
+sudo mumble-funk-info --hide-password
+sudo mumble-funk-info
+```
+
+Passwort nur privat am Terminal ansehen; keine Ausgabe in Testberichte, Screenshots
+oder öffentliche Logs kopieren. Clients verbinden sich zur IP der Test-VM auf
+**64739** mit eigenem Benutzernamen und gegebenenfalls dem Zugangspasswort. In einer
+frischen VM erstmals angebotene Serverzertifikate prüfen. Falls eine Firewall
+aktiv ist, TCP **und** UDP 64739 zwischen Clients und VM erlauben; das Setup ändert
+weder Ubuntu-/Proxmox-Firewall noch Router. Nicht allein hierfür eine unbekannte
+Firewallkonfiguration aktivieren.
+
+Zwei normale, unveränderte Clients in denselben Kanal bringen; Kopfhörer helfen
+gegen Rückkopplung. Nacheinander prüfen:
+
+| Test | Erwartung / Beobachtung |
+| --- | --- |
+| Windows-Mumble sendet | Open, Rauschen und verständliche vollständige Sprache; nach PTT-Ende Rauschen aus, Close. |
+| Mumla sendet | Open, Rauschen und Sprache; ohne Ende-Markierung stoppt Rauschen erst beim Simplex-Timeout, dann Close bei aktiviertem Fallback. Ein Timeout beweist kein PTT-Loslassen. |
+| 60–90 Sekunden senden | Kontinuierliche Sprachpakete senden (sprechen, nicht nur still PTT halten); keine hörbaren Loop-Klicks oder periodischen Aussetzer. CPU parallel beobachten. |
+| Mehrfach PTT | Unterschiedliche Abschnitte durch neue Zufallsstarts; keine alten Effekte nach dem Wechsel. |
+| Zweiter Benutzer sendet während Belegung | Sein Senden bleibt blockiert, Busy funktioniert; kein zusätzliches Senderecht. |
+| Kanalwechsel / Disconnect | Zugehöriges Rauschen endet; keine Effekte im falschen Kanal oder für eine neue Session. Bereits gepufferte Pakete können kurz nachlaufen. |
+| Lautstärke 0, 10, 20, 30, 50 | Nur `radionoisevolume` ändern und Dienst jeweils neu starten; 0 stumm, Sprache stets verständlich, übrige Effekte unverändert. |
+
+CPU und neue Servermeldungen auf der VM beobachten:
+
+```bash
+ps -C mumble-server -o pid,pcpu,pmem,etime,args
+sudo tail -f /var/log/mumble-funk/server.log
+```
+
+Strg+C beendet nur die Loganzeige. Notieren: getestete Git-Revision aus BUILD-INFO,
+Clientversionen, Sender/Empfänger-Rollen, Lautstärke, Transport und hörbare Fehler
+(z. B. erste/letzte Silbe, verzögerter Close). Kein Passwort und keine privaten
+Aufnahmen mitsenden. Bei zwei Geräten ist der blockierte Sender nicht zugleich
+Empfänger der angenommenen Übertragung; Busy-Unterbrechung eines bereits laufenden
+privaten Empfänger-Effektstreams wird zusätzlich automatisiert geprüft.
+
+Diese Anleitung dokumentiert **noch keine erfolgreichen Geräte-Hörtests** oder
+vollständige systemd-/Proxmox-VM-Praxistests. Solche Ergebnisse liefert erst der
+Betreiber. Installation, Verwaltung und Veröffentlichung des offiziellen
+Rausch-Assets sowie Docker-Erweiterungen bleiben späteren Phasen vorbehalten.

@@ -1,5 +1,26 @@
 # Tests der Ubuntu-Installation
 
+## Experimentelle Rausch-Testinstallation (B2c-1)
+
+```bash
+python3 tests/funk-install/test_source.py
+python3 tests/funk-install/test_setup.py
+python3 tests/funk-install/test_radio_noise_install.py build/funk/mumble-server
+```
+
+Die Quelltests verwenden echte wegwerfbare Git-Repositories mit lokalen Bare-
+Remotes statt GitHub-Schreibzugriffen. Sie prüfen den eigenen Opt-in-Schalter,
+exakten lokalen/gecacheten/veröffentlichten Commit, Herkunft, Mumble-Basis und
+unveröffentlichte Dateien. Orchestrierungstests prüfen die Weitergabe des Schalters
+über Setup, Build und Install sowie Bestandsschutz; apt/systemd/Build sind dabei
+Mocks. Der neue Staging-Test verwendet das echte vorhandene Serverbinary: frische
+Installation ohne Rausch-WAV und ohne Aktivierung, danach manuelles WAV-Laden mit
+20 % und Wiederholung unter Erhalt von INI, SQLite-Daten und WAV. Er verändert
+keinen echten Dienst. Optional `MUMBLE_FUNK_NOISE_WAV=/absoluter/pfad/static.wav`
+voranstellen; ohne private Aufnahme verwendet er die öffentliche Busy-Testdatei.
+Der normale Server-CI-Workflow führt ihn ebenfalls aus. Das ersetzt weder eine
+vollständige Ubuntu-VM-Installation noch Hörtests; Anleitung: [radio-noise.md](../../docs/funk/radio-noise.md).
+
 Die Installationstests laufen getrennt von den 18 CTest-Programmen des Servers:
 
 ```bash
