@@ -1,0 +1,5 @@
+add_executable(TestNoiseScheduler TestNoiseScheduler.cpp)
+target_link_libraries(TestNoiseScheduler PRIVATE audio-feedback)
+target_compile_definitions(TestNoiseScheduler PRIVATE AUDIO_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/audio")
+add_test(NAME TestNoiseScheduler COMMAND TestNoiseScheduler)
+set_tests_properties(TestNoiseScheduler PROPERTIES TIMEOUT 120)

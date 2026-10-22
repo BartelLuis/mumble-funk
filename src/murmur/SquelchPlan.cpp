@@ -99,6 +99,7 @@ bool SquelchPlan::consume(const Cue &cue, Identity currentSender, Identity curre
 	for (auto &recipient : stream->second.recipients) {
 		if (!(recipient.identity == cue.recipient))
 			continue;
+		if (cue.kind == Kind::Noise || cue.kind == Kind::NoiseEnd) return false;
 		if (cue.kind == Kind::Open && !recipient.opened) {
 			recipient.opened = true;
 			return true;
@@ -143,7 +144,10 @@ bool SquelchPlan::current(const Cue &cue) const {
 	if (stream == m_channels.end() || stream->second.generation != cue.transmission
 		|| !(stream->second.sender == cue.sender)) return false;
 	for (const auto &recipient : stream->second.recipients)
-		if (recipient.identity == cue.recipient)
+		if (recipient.identity == cue.recipient) {
+			if (cue.kind == Kind::Noise) return !stream->second.ended;
+			if (cue.kind == Kind::NoiseEnd) return true;
 			return recipient.opened && (cue.kind == Kind::Open || (stream->second.ended && recipient.closed));
+		}
 	return false;
 }

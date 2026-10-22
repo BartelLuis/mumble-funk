@@ -9,7 +9,8 @@
 // Future signals share this loader/encoder and supply their own fallback waveform.
 class AudioSignal {
 public:
-	enum class LengthPolicy { Busy, ShortSignal };
+	enum class LengthPolicy { Busy, ShortSignal, RadioNoise };
+	// RadioNoise: exact 48-kHz PCM, 20 ms..60 s, <=8 MiB; no resampling or tail.
 	// Busy accepts 20..1250 ms, with the existing 128-KiB file bound. Optional short cues accept >=1 ms;
 	// both paths retain all other bounds, the lookahead tail and attenuation.
 	static std::vector< float > loadWav(const QString &path, LengthPolicy policy = LengthPolicy::Busy);

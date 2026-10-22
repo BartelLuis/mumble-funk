@@ -1,0 +1,7 @@
+add_executable(TestNoiseIntegration TestNoiseIntegration.cpp)
+set_target_properties(TestNoiseIntegration PROPERTIES AUTOMOC ON)
+target_link_libraries(TestNoiseIntegration PRIVATE shared Qt5::Test audio-feedback)
+target_compile_definitions(TestNoiseIntegration PRIVATE MUMBLE_SERVER_PATH="$<TARGET_FILE:mumble-server>" AUDIO_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets/audio")
+add_dependencies(TestNoiseIntegration mumble-server)
+add_test(NAME TestNoiseIntegration COMMAND TestNoiseIntegration)
+set_tests_properties(TestNoiseIntegration PROPERTIES TIMEOUT 180)

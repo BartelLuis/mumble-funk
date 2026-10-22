@@ -3,6 +3,9 @@
 #ifndef MUMBLE_MURMUR_AUDIOFEEDBACK_H_
 #define MUMBLE_MURMUR_AUDIOFEEDBACK_H_
 #include "SquelchPlan.h"
+#include "RadioNoise.h"
+#include <array>
+#include <set>
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <cstdint>
@@ -12,11 +15,11 @@
 #include <mutex>
 #include <vector>
 
-// Producers only submit identity snapshots. Encoding is done once at startup;
+// Producers only submit identity snapshots. Clips encode at startup, noise on workers.
 // tick/cancel and delivery run on the server's Qt main thread, never the UDP thread.
 class AudioFeedback {
 public:
-	enum class Signal { Busy, SquelchOpen, SquelchClose };
+	enum class Signal { Busy, SquelchOpen, SquelchClose, Noise };
 	// Lifecycle/recipient snapshots are separate from clips. Future continuous
 	// effects can replace this bounded clip renderer, without changing Simplex.
 	struct Recipient {
@@ -35,6 +38,8 @@ public:
 	void configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume,
 		bool openEnabled = true, bool closeEnabled = true);
 	bool requestSquelch(const SquelchPlan::Cue &cue);
+	bool configureNoise(const QString &file, int volume); // Startup only.
+	bool requestNoise(SquelchPlan::Cue cue); // Bounded, try-lock producer queue.
 	void tick(std::int64_t nowUs, const Delivery &deliver, const CueGate &gate = {});
 	void cancel(std::uint64_t connection);
 	const std::vector< QByteArray > &clip(Signal signal) const;
@@ -65,5 +70,15 @@ private:
 	std::mutex m_mutex;
 	std::deque< Request > m_pending, m_cues;
 	std::map< std::uint64_t, Playback > m_playback;
+    struct NoiseState { SquelchPlan::Cue cue; std::size_t nextSample; int slot = -1; std::size_t start = 0; };
+    struct NoiseSlot { std::unique_ptr<RadioNoise> producer; std::uint64_t connection = 0, transmission = 0; };
+    std::int64_t m_lastNoiseTick = 0;
+    RadioNoise::PCM m_noisePCM;
+    std::mt19937 m_random;
+    std::array<NoiseSlot, RadioNoise::MaxInstances> m_noiseSlots;
+    std::map<std::uint64_t, NoiseState> m_noise;
+    std::deque<SquelchPlan::Cue> m_noiseRequests;
+    void updateNoise(std::int64_t now, const CueGate &gate, const std::deque<SquelchPlan::Cue> &requests);
+    void startNoise(std::int64_t now, const CueGate &gate, const std::set<std::uint64_t> &waiting);
 };
 #endif
