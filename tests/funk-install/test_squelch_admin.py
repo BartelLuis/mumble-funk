@@ -97,9 +97,11 @@ class SquelchAdminTests(unittest.TestCase):
     def test_noise_status_read_only_secret_whitelist_native_and_container(self):
         secrets = {'serverpassword': 'TEST_ONLY_password', 'icesecret': 'TEST_ONLY_ice',
                    'sqlpassword': 'TEST_ONLY_sql', 'sslkey': 'TEST_ONLY_key'}
-        self.config.write_text('radionoise=false\nradionoisefile=/missing/kept.wav\nradionoisevolume=29\n'
-                               + ''.join(f'{key}={value}\n' for key,value in secrets.items())
-                               + '[Other]\nradionoise=true\nradionoisefile=/wrong-section.wav\n')
+        # These inert sentinels exercise secret filtering, not authentication.
+        # Keep the INI in memory: no credential-shaped fixture reaches disk.
+        fixture = ('radionoise=false\nradionoisefile=/missing/kept.wav\nradionoisevolume=29\n'
+                   + ''.join(f'{key}={value}\n' for key,value in secrets.items())
+                   + '[Other]\nradionoise=true\nradionoisefile=/wrong-section.wav\n')
         before, metadata = self.config.read_bytes(), self.config.stat()
         # Exercise the production branch with a temporary root, never the host's /etc.
         # A status request must bypass all service, lock, validation and write actions.
@@ -107,14 +109,17 @@ class SquelchAdminTests(unittest.TestCase):
             output, errors = io.StringIO(), io.StringIO()
             with mock.patch.object(AUDIO.Path, 'resolve', return_value=Path('/')), \
                  mock.patch.object(AUDIO.os, 'geteuid', return_value=0), \
+                 mock.patch.object(AUDIO.Path, 'read_bytes', autospec=True,
+                                   return_value=fixture.encode('utf-8')) as config_read, \
                  mock.patch.object(AUDIO.COMMON, 'checked', side_effect=AssertionError('Unexpected external command')), \
                  mock.patch.object(AUDIO.COMMON, 'atomic_config', side_effect=AssertionError('Unexpected config write')), \
                  mock.patch.object(AUDIO, 'installation_lock', side_effect=AssertionError('Unexpected install lock')), \
                  contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
                 self.assertEqual(AUDIO.main(['status', '--root', str(self.root)], container=container), 0)
+            config_read.assert_called_once_with(self.config)
             state = json.loads(output.getvalue())
-            self.assertEqual((state['radionoise'],state['radionoisefile'],state['radionoisevolume']),
-                             ('false','/missing/kept.wav','29'))
+            self.assertEqual(state, dict(AUDIO.DEFAULTS, radionoise='false',
+                                        radionoisefile='/missing/kept.wav', radionoisevolume='29'))
             self.assertEqual(errors.getvalue(), '')
             for key, value in secrets.items():
                 self.assertNotIn(key, state)
