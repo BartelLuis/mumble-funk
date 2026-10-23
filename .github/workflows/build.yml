@@ -34,6 +34,16 @@ jobs:
           python3 tests/funk-install/test_audio_defaults.py build/funk/mumble-server build/funk/FunkDockerProbe
           python3 tests/funk-install/test_radio_noise_install.py build/funk/mumble-server
       - name: Build Docker image (includes server and runtime tests)
-        run: docker compose build
+        run: |
+          # A checkout made with umask 0077 must work for runtime UID 10001 too.
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          files = list(Path('assets/audio').glob('*')) + [
+              Path('scripts/funk/audio.py'), Path('scripts/funk/audio-preview/audio_control.py')]
+          for path in files:
+              if path.is_file():
+                  path.chmod(path.stat().st_mode & 0o700)
+          PYTHON
+          docker compose build
       - name: Verify TCP/UDP, Simplex, persistence and recovery
-        run: python3 scripts/docker/tests/integration.py --probe "$PWD/build/funk/FunkDockerProbe" --native-server "$PWD/build/funk/mumble-server" --audio-feedback --host-port 64740
+        run: python3 scripts/docker/tests/integration.py --probe "$PWD/build/funk/FunkDockerProbe" --native-server "$PWD/build/funk/mumble-server" --audio-feedback --radio-noise --host-port 64740

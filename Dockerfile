@@ -49,12 +49,14 @@ RUN set -eu; export DEBIAN_FRONTEND=noninteractive; \
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/mumble-server /usr/local/bin/mumble-server
 COPY scripts/docker/runtime.py /usr/local/bin/funk-container
-COPY scripts/funk/audio.py scripts/funk/audio-preview/audio_control.py /usr/local/lib/mumble-funk/
-COPY assets/audio/busy-tone.wav assets/audio/squelch-open.wav assets/audio/squelch-close.wav assets/audio/LICENSE.md /usr/local/share/mumble-funk/audio/
-COPY LICENSE /usr/share/doc/mumble-funk/LICENSE
+COPY --chmod=0644 scripts/funk/audio.py scripts/funk/audio-preview/audio_control.py /usr/local/lib/mumble-funk/
+COPY --chmod=0644 assets/audio/busy-tone.wav assets/audio/squelch-open.wav assets/audio/squelch-close.wav assets/audio/LICENSE.md /usr/local/share/mumble-funk/audio/
+COPY --chmod=0644 LICENSE /usr/share/doc/mumble-funk/LICENSE
 COPY 3rdPartyLicenses /usr/share/doc/mumble-funk/third-party
 COPY --from=build /src/3rdparty/speexdsp/COPYING /usr/share/doc/mumble-funk/SpeexDSP-COPYING
-RUN chmod 0755 /usr/local/bin/funk-container; \
+RUN chmod 0755 /usr/local/bin/funk-container /usr/local/lib/mumble-funk \
+      /usr/local/share/mumble-funk /usr/local/share/mumble-funk/audio; \
+    chmod -R a+rX /usr/share/doc/mumble-funk; \
     ! ldd /usr/local/bin/mumble-server | grep 'not found'
 ENV PYTHONDONTWRITEBYTECODE=1
 USER 10001:10001

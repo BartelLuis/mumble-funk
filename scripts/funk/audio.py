@@ -73,6 +73,8 @@ def main(argv=None, container=False):
                 'enable-close', 'disable-close', 'open-volume', 'close-volume',
                 'enable-timeout-close', 'disable-timeout-close',
                 'set-open', 'set-close', 'reset-open', 'reset-close']
+    if container:
+        commands += ['set-radio-noise', 'enable-radio-noise', 'disable-radio-noise', 'radio-noise-volume']
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=commands, nargs='?', default='status')
     parser.add_argument('value', nargs='?')
@@ -84,7 +86,7 @@ def main(argv=None, container=False):
         parser.error('Bitte sudo mumble-funk-audio verwenden.')
     if production and args.binary:
         parser.error('Eigener Binary-Pfad nur für isolierte Tests erlaubt.')
-    valued = {'boost', 'volume', 'open-volume', 'close-volume', 'set-busy-tone', 'set-open', 'set-close'}
+    valued = {'boost', 'volume', 'open-volume', 'close-volume', 'set-busy-tone', 'set-open', 'set-close', 'set-radio-noise', 'radio-noise-volume'}
     if (args.command in valued) != (args.value is not None):
         parser.error('Dieser Befehl benötigt genau einen Wert.' if args.command in valued else 'Kein weiterer Wert erlaubt.')
     root = args.root
@@ -111,8 +113,9 @@ def main(argv=None, container=False):
                         or '/opt/mumble-funk/current/mumble-server -ini /etc/mumble-funk/server.ini -fg' not in command):
                     raise RuntimeError('Dienst gehört nicht zur erwarteten mumble-funk-Installation.')
             if args.command.startswith('set-'):
-                signal = {'set-busy-tone': 'busy', 'set-open': 'open', 'set-close': 'close'}[args.command]
-                key = 'busytonefile' if signal == 'busy' else 'squelch'+signal+'file'
+                signal = {'set-busy-tone': 'busy', 'set-open': 'open', 'set-close': 'close', 'set-radio-noise': 'radio-noise'}[args.command]
+                key = ('radionoisefile' if signal == 'radio-noise' else
+                       'busytonefile' if signal == 'busy' else 'squelch'+signal+'file')
                 COMMON.update_ini(text, {key: ''})  # Reject duplicates before copying.
                 if sounds.is_symlink():
                     raise RuntimeError('Signalverzeichnis darf kein symbolischer Link sein.')
@@ -122,7 +125,9 @@ def main(argv=None, container=False):
                     os.chown(sounds, 0, pwd.getpwnam(INSTANCE).pw_gid)
                 name = COMMON.managed_copy(args.value, sounds, binary, production and not container,
                                            instance=INSTANCE, prefix=signal,
-                                           validator='--validate-feedback-wav' if signal == 'busy' else '--validate-squelch-wav')
+                                           validator=('--validate-radio-noise-wav' if signal == 'radio-noise' else
+                                                      '--validate-feedback-wav' if signal == 'busy' else '--validate-squelch-wav'),
+                                           max_bytes=8*1024*1024 if signal == 'radio-noise' else 131072)
                 updates = {key: ('/var/lib/mumble-funk/audio/' if container else '/etc/mumble-funk/sounds/')+name}
             elif args.command == 'use-standard-busy-tone':
                 COMMON.checked([str(binary), '--validate-feedback-wav', str(root/BUSY_STANDARD.lstrip('/'))])
@@ -137,11 +142,22 @@ def main(argv=None, container=False):
                 if not re.fullmatch(r'(0|[1-9]|1[0-2])', args.value):
                     raise RuntimeError('Audio Boost muss eine ganze Zahl zwischen 0 und 12 dB sein.')
                 updates = {'feedbackboostdb': args.value}
-            elif args.command in ('volume', 'open-volume', 'close-volume'):
+            elif args.command in ('volume', 'open-volume', 'close-volume', 'radio-noise-volume'):
                 if not re.fullmatch(r'\d{1,3}', args.value) or int(args.value) > 100:
                     raise RuntimeError('Lautstärke muss zwischen 0 und 100 liegen.')
-                key = {'volume': 'busytonevolume', 'open-volume': 'squelchopenvolume', 'close-volume': 'squelchclosevolume'}[args.command]
+                key = {'volume': 'busytonevolume', 'open-volume': 'squelchopenvolume', 'close-volume': 'squelchclosevolume',
+                       'radio-noise-volume': 'radionoisevolume'}[args.command]
                 updates = {key: str(int(args.value))}
+            elif args.command == 'enable-radio-noise':
+                if any(configured.get(key, 'false').lower() != 'true' for key in ('simplex', 'audiofeedback')):
+                    raise RuntimeError('Rauschen benötigt bereits aktiviertes Simplex und Audio-Feedback.')
+                selected = configured.get('radionoisefile', '')
+                if not selected or not Path(selected).is_absolute():
+                    raise RuntimeError('Zuerst eine eigene Rausch-WAV importieren.')
+                COMMON.checked([str(binary), '--validate-radio-noise-wav', str(root/selected.lstrip('/'))])
+                updates = {'radionoise': 'true'}
+            elif args.command == 'disable-radio-noise':
+                updates = {'radionoise': 'false'}
             elif args.command == 'enable-squelch':
                 if configured.get('simplex', 'false').lower() != 'true':
                     raise RuntimeError('Squelch benötigt bereits aktiviertes Simplex; Simplex wird nicht automatisch geändert.')

@@ -13,13 +13,14 @@ import json, os, sys
 args=sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as log: log.write(json.dumps(args)+'\\n')
 if 'ps' in args: print('test-container' if os.environ.get('RUNNING')=='yes' else '')
+if 'exec' in args and os.environ.get('UNHEALTHY')=='yes': sys.exit(1)
 if 'run' in args:
     if '-v' in args:
         from pathlib import Path
         source=args[args.index('-v')+1].split(':',1)[0]
         assert Path(source).read_bytes()==b'private-local-fixture'
     if os.environ.get('FAIL')=='yes': sys.exit(7)
-    print('{}')
+    print('AUDIO-REVISION='+'a'*64 if 'audio' in args and args[-1]!='status' else '{}')
 '''
 
 
@@ -51,12 +52,14 @@ class AudioWrapperTests(unittest.TestCase):
     def test_mutations_resume_only_previously_running_service(self):
         calls = self.run_command('disable-squelch')
         self.assertIn(['compose', 'stop', '--timeout', '30', 'mumble-funk'], calls)
-        self.assertEqual(calls[-1], ['compose', 'start', 'mumble-funk'])
-        for command in ('enable-timeout-close', 'disable-timeout-close', 'use-standard-busy-tone', 'reset-busy-tone'):
+        self.assertIn(['compose', 'start', 'mumble-funk'], calls)
+        self.assertEqual(calls[-1], ['compose', 'exec', '-T', 'mumble-funk', 'funk-container', 'health'])
+        for command in ('enable-timeout-close', 'disable-timeout-close', 'use-standard-busy-tone', 'reset-busy-tone', 'enable-radio-noise', 'disable-radio-noise'):
             self.calls_file.unlink()
             calls = self.run_command(command)
             self.assertIn(['compose', 'run', '--rm', '--no-deps', '-T', 'mumble-funk', 'audio', command], calls)
-            self.assertEqual(calls[-1], ['compose', 'start', 'mumble-funk'])
+            self.assertIn(['compose', 'start', 'mumble-funk'], calls)
+            self.assertEqual(calls[-1], ['compose', 'exec', '-T', 'mumble-funk', 'funk-container', 'health'])
         self.calls_file.unlink(); self.env['RUNNING'] = 'no'
         calls = self.run_command('open-volume', '80')
         self.assertFalse(any('start' in call for call in calls))
@@ -66,7 +69,7 @@ class AudioWrapperTests(unittest.TestCase):
             if self.calls_file.exists(): self.calls_file.unlink()
             calls = self.run_command('boost', value)
             self.assertIn(['compose','run','--rm','--no-deps','-T','mumble-funk','audio','boost',value], calls)
-            self.assertEqual(calls[-1], ['compose','start','mumble-funk'])
+            self.assertIn(['compose','start','mumble-funk'], calls)
         self.calls_file.unlink()
         for value in ('13','100','-1','1.5','NaN','inf','01','+6'):
             self.assertEqual(self.run_command('boost',value,ok=False), [])
@@ -82,8 +85,30 @@ class AudioWrapperTests(unittest.TestCase):
         mount = imported[imported.index('-v')+1]
         self.assertTrue(mount.endswith(':/tmp/funk-import.wav:ro'))
         self.assertFalse(Path(mount.split(':', 1)[0]).exists())
-        self.assertEqual(calls[-1], ['compose', 'start', 'mumble-funk'])
+        self.assertIn(['compose', 'start', 'mumble-funk'], calls)
+        self.assertEqual(calls[-1], ['compose', 'exec', '-T', 'mumble-funk', 'funk-container', 'health'])
         self.assertEqual(asset.read_bytes(), b'private-local-fixture')
+
+    def test_radio_noise_import_volume_and_bounds_preserve_env(self):
+        asset=self.root/'noise.wav';asset.write_bytes(b'private-local-fixture')
+        calls=self.run_command('set-radio-noise',str(asset))
+        self.assertTrue(any('set-radio-noise' in call and '-v' in call for call in calls))
+        for value in ('0','20','100'):
+            self.calls_file.unlink()
+            calls=self.run_command('radio-noise-volume',value)
+            self.assertIn(['compose','run','--rm','--no-deps','-T','mumble-funk','audio','radio-noise-volume',value],calls)
+        self.calls_file.unlink()
+        for value in ('101','-1','NaN','1.5'):
+            self.assertEqual(self.run_command('radio-noise-volume',value,ok=False),[])
+
+    def test_failed_restart_attempts_guarded_config_rollback(self):
+        # No real waits: replace sleep only in this temporary fixture.
+        sleep=self.root/'bin/sleep';sleep.write_text('#!/bin/sh\nexit 0\n');sleep.chmod(0o755)
+        self.env['UNHEALTHY']='yes'
+        calls=self.run_command('enable-radio-noise',ok=False)
+        self.assertIn(['compose','run','--rm','--no-deps','-T','mumble-funk','audio-rollback','a'*64],calls)
+        self.assertEqual(sum(call==['compose','start','mumble-funk'] for call in calls),2)
+
 
     def test_invalid_commands_do_not_stop_anything(self):
         for args in [('open-volume', '101'), ('disable-squelch', 'extra'), ('set-close', '/missing'), ('unknown',)]:

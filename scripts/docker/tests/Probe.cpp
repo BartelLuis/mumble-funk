@@ -108,6 +108,93 @@ static void installedAudio(Client &a, Client &b, Client &observer, bool muted) {
  check(observer.audio(600).isEmpty(),"Repeated timeout duplicated Close");
  std::cout<<"Installed audio defaults verified: Open, Close, Busy, boost8, volume50; TCP/encrypted UDP and Simplex"<<(muted?"; volume0 silent":"")<<std::endl;
 }
+// Exercise the published container, its persistent imported WAV and the SAME
+// server engine as native builds. These are protocol/decoder tests, not hearing tests.
+static void radioNoise(Client &a, Client &b, Client &receiver) {
+ auto check=[](bool ok,const char *message){if(!ok){std::cerr<<message<<std::endl;std::exit(1);}};
+ const auto voice=AudioSignal::encode(AudioSignal::syntheticBusy(),100).front();
+ const auto close=AudioSignal::encodeWavSignal(QStringLiteral(AUDIO_ASSET_DIR)+"/squelch-close.wav",50,8);
+ const auto busy=AudioSignal::encode(AudioSignal::loadWav(QStringLiteral(AUDIO_ASSET_DIR)+"/busy-tone.wav"),50,8);
+ auto decode=[&](const QList<Received> &packets){
+  int error=0;std::vector<float> result;
+  std::unique_ptr<OpusDecoder,decltype(&opus_decoder_destroy)> decoder(opus_decoder_create(48000,1,&error),opus_decoder_destroy);
+  check(decoder && !error,"Radio decoder initialization failed");
+  for(const auto &p:packets){std::array<float,960> pcm{};
+   check(opus_decode_float(decoder.get(),reinterpret_cast<const unsigned char*>(p.payload.constData()),p.payload.size(),pcm.data(),960,0)==960,"Radio stream undecodable");
+   for(float value:pcm){check(std::isfinite(value)&&std::abs(value)<1,"Radio sample invalid");result.push_back(value);}
+  }return result;
+ };
+ QList<Received> reference;for(const auto &packet:close)reference.append({0,0,false,packet});
+ const auto expected=decode(reference);
+ std::uint64_t frame=0,previousEnd=0;
+ for(int test=0;test<4;++test){
+  const bool udp=test%2,timeout=test>=2;const int duration=test==3?62000:2000;
+  if(udp){
+   if(a.udp.state()==QAbstractSocket::UnconnectedState)check(a.udp.bind(QHostAddress(QHostAddress::LocalHost),0),"Radio UDP bind failed");
+   if(receiver.udp.state()==QAbstractSocket::UnconnectedState)check(receiver.udp.bind(QHostAddress(QHostAddress::LocalHost),0),"Receiver UDP bind failed");
+   check(a.udpBarrier()&&receiver.udpBarrier(),"Encrypted UDP connectivity failed");
+  }
+  auto read=[&](int ms){
+   auto all=receiver.audio(ms);
+   while(receiver.udp.state()==QAbstractSocket::BoundState && receiver.udp.hasPendingDatagrams()){
+    QByteArray encrypted(int(receiver.udp.pendingDatagramSize()),'\0');
+    check(receiver.udp.readDatagram(encrypted.data(),encrypted.size())==encrypted.size()&&encrypted.size()>4,"Receiver UDP read failed");
+    QByteArray plain(encrypted.size()-4,'\0');
+    check(receiver.crypt.decrypt(reinterpret_cast<const unsigned char*>(encrypted.constData()),reinterpret_cast<unsigned char*>(plain.data()),unsigned(encrypted.size())),"Effect UDP authentication failed");
+    Mumble::Protocol::UDPDecoder<Mumble::Protocol::Role::Client> decoder(receiver.version);
+    check(decoder.decode({reinterpret_cast<const Mumble::Protocol::byte*>(plain.constData()),std::size_t(plain.size())}),"Effect UDP decode failed");
+    if(decoder.getMessageType()==Mumble::Protocol::UDPMessageType::Audio){const auto p=decoder.getAudioData();
+     all.append({p.senderSession,p.frameNumber,p.isLastFrame,QByteArray(reinterpret_cast<const char*>(p.payload.data()),int(p.payload.size()))});}
+   }return all;
+  };
+  auto speak=[&](bool last){Mumble::Protocol::AudioData audio;audio.frameNumber=frame;frame+=2;audio.isLastFrame=last;audio.targetOrContext=0;
+   audio.payload={reinterpret_cast<const Mumble::Protocol::byte*>(voice.constData()),std::size_t(voice.size())};
+   Mumble::Protocol::UDPAudioEncoder<Mumble::Protocol::Role::Client> encoder(a.version);const auto bytes=encoder.encodeAudioPacket(audio);
+   QByteArray packet(reinterpret_cast<const char*>(bytes.data()),int(bytes.size()));return udp?a.sendEncrypted(packet):a.sendRaw(Type::UDPTunnel,packet);
+  };
+  QTest::qWait(30);QElapsedTimer timer;timer.start();qint64 due=0,nextKeepalive=5000;int count=0;bool rejected=false;
+  const auto startFrame=frame;QList<Received> all,bob;
+  while(timer.elapsed()<duration){
+   if(timer.elapsed()>=due){check(speak(false),"Continuous container speech send failed");++count;due+=20;}
+   if(test==0&&!rejected&&timer.elapsed()>=400){check(b.speak(true)&&b.udpBarrier(),"Busy rejection failed");rejected=true;}
+   // Real clients keep TLS control alive even when media travels over UDP.
+   if(timer.elapsed()>=nextKeepalive){
+    check(a.barrier()&&b.barrier()&&receiver.barrier(),"Radio control keepalive failed");
+    if(udp)check(a.udpBarrier(),"Radio UDP keepalive failed");nextKeepalive+=5000;
+   }
+   all+=read(0);bob+=b.audio(0);QTest::qWait(1);
+  }
+  if(!timeout){check(speak(true),"Confirmed container terminator failed");++count;}
+  check(udp?a.udpBarrier():a.barrier(),"Container voice fence failed");
+  all+=read(900);bob+=b.audio(0);
+  QList<Received> effects;int heard=0;
+  for(const auto &p:all){
+   if(p.session==receiver.session)effects.append(p);
+   else {check(p.session==a.session&&p.payload==voice,"Speech changed or Busy leaked to wrong receiver");
+    check(p.frame==startFrame+std::uint64_t(heard)*2,"Speech sequence missing");++heard;
+    check(p.last==(!timeout&&heard==count),"Speech end flag changed");}
+  }
+  check(heard==count,"Original speech missing");
+  check(effects.size()>duration/25&&effects.size()>int(close.size()+1),"Continuous radio stream incomplete");
+  check(!effects.first().last&&effects.last().last,"Radio final marker missing");
+  if(test)check(effects.first().frame>previousEnd,"Radio stream reused old sequence");
+  for(int i=0;i<effects.size();++i){check(effects[i].last==(i+1==effects.size()),"Intermediate radio terminator");
+   if(i)check(effects[i].frame==effects[i-1].frame+2,"Radio sequence gap or reset");}
+  previousEnd=effects.last().frame;
+  const auto actual=decode(effects);check(actual.size()>=expected.size(),"Close too short");
+  const auto offset=actual.size()-expected.size();double dot=0,x2=0,y2=0;
+  for(std::size_t i=960;i<expected.size();++i){double x=actual[offset+i],y=expected[i];dot+=x*y;x2+=x*x;y2+=y*y;}
+  check(x2>0&&y2>0&&dot/std::sqrt(x2*y2)>.85,"Complete decoded Close missing after container Noise");
+  if(test==0){int first=-1;for(int i=0;i<bob.size();++i)if(bob[i].session==b.session&&bob[i].payload==busy.front()){first=i;break;}
+   check(first>0&&bob[first-1].last,"Busy did not safely interrupt private effect");
+   check(bob.size()>=first+int(busy.size()),"Busy incomplete");
+   for(std::size_t i=0;i<busy.size();++i)check(bob[first+int(i)].payload==busy[i]&&bob[first+int(i)].last==(i+1==busy.size()),"Busy priority or bytes changed");}
+  check(a.audio(0).isEmpty(),"Private radio effects sent to original sender");
+  std::cout<<"PASS: container radio "<<duration<<"ms "<<(udp?"encrypted UDP":"TCP")<<(timeout?" timeout":" confirmed")<<"; speech="<<heard<<" effects="<<effects.size()<<"; one final marker, decoded Close"<<std::endl;
+ }
+ std::cout<<"Container Open/Noise/Close verified; TCP + encrypted UDP, Busy and unchanged speech"<<std::endl;
+}
+
 int main(int argc,char **argv) {
  QCoreApplication app(argc,argv);
  if(argc<2) return 2;
@@ -122,6 +209,7 @@ int main(int argc,char **argv) {
  check(login(a,port,"DockerAlice",password),"TCP/TLS login A failed");
  check(login(b,port,"DockerBob",password),"TCP/TLS login B failed");
  check(login(observer,port,"DockerObserver",password),"TCP/TLS observer login failed");
+ if(argc>2 && QString::fromLocal8Bit(argv[2])=="--radio-noise") {radioNoise(a,b,observer);return 0;}
  if(argc>2 && (QString::fromLocal8Bit(argv[2])=="--audio-defaults" || QString::fromLocal8Bit(argv[2])=="--audio-defaults-muted")) {
   installedAudio(a,b,observer,QString::fromLocal8Bit(argv[2])=="--audio-defaults-muted");return 0;
  }

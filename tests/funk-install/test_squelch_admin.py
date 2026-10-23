@@ -124,6 +124,69 @@ class SquelchAdminTests(unittest.TestCase):
         self.assertFalse((self.config.parent/'server.ini.before-audio-change').exists())
         self.assertFalse((self.root/'run/lock/mumble-funk-install.lock').exists())
 
+    def container_command(self,*args,ok=True):
+        out,err=io.StringIO(),io.StringIO()
+        with contextlib.redirect_stdout(out),contextlib.redirect_stderr(err):
+            code=AUDIO.main([*args,'--root',str(self.root),'--binary',str(BINARY)],container=True)
+        self.assertEqual(code==0,ok,out.getvalue()+err.getvalue())
+        return out.getvalue()
+
+    def test_container_noise_import_larger_than_short_assets_and_management(self):
+        import wave
+        source=self.root/'own noise.wav'
+        with wave.open(str(source),'wb') as wav:
+            wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(48000)
+            wav.writeframes(b'\x00\x01'*96000)  # 2s / 192044 bytes, above old 128 KiB limit.
+        before=self.status()
+        self.container_command('set-radio-noise',str(source))
+        state=self.status();selected=state['radionoisefile']
+        self.assertTrue(selected.startswith('/var/lib/mumble-funk/audio/radio-noise-'))
+        target=self.root/selected.lstrip('/')
+        self.assertEqual(target.read_bytes(),source.read_bytes())
+        self.assertEqual(target.stat().st_mode & 0o777,0o640)
+        self.assertEqual(state['radionoise'],'false')  # Import never enables effects.
+        self.container_command('set-radio-noise',str(source))  # idempotent immutable copy
+        self.container_command('enable-radio-noise')
+        self.assertEqual(self.status()['radionoise'],'true')
+        for value in ('0','20','100'):
+            self.container_command('radio-noise-volume',value)
+            self.assertEqual(self.status()['radionoisevolume'],value)
+        self.container_command('disable-radio-noise')
+        after=self.status()
+        for key in ('radionoise','radionoisefile','radionoisevolume'):after.pop(key);before.pop(key)
+        self.assertEqual(after,before)  # Busy, Simplex and Squelch not modified.
+        self.assertEqual(target.read_bytes(),source.read_bytes())
+        target.write_bytes(b'operator modified existing file')
+        original=self.config.read_bytes()
+        self.container_command('set-radio-noise',str(source),ok=False)
+        self.assertEqual(self.config.read_bytes(),original)
+        self.assertEqual(target.read_bytes(),b'operator modified existing file')
+
+    def test_container_noise_invalid_files_values_and_enable_do_not_change_settings(self):
+        import wave
+        original=self.config.read_bytes()
+        self.container_command('enable-radio-noise',ok=False)
+        for name,channels,rate,frames in [('stereo',2,48000,960),('rate',1,44100,960),('short',1,48000,959),('long',1,48000,2880001)]:
+            source=self.root/(name+'.wav')
+            with wave.open(str(source),'wb') as wav:
+                wav.setnchannels(channels);wav.setsampwidth(2);wav.setframerate(rate);wav.writeframes(b'\x00\x01'*(frames*channels))
+            self.container_command('set-radio-noise',str(source),ok=False)
+            self.assertEqual(self.config.read_bytes(),original)
+        source=self.root/'huge.wav'
+        with source.open('wb') as wav:wav.truncate(8388609)
+        self.container_command('set-radio-noise',str(source),ok=False)
+        link=self.root/'link.wav';link.symlink_to(REPO/'assets/audio/squelch-close.wav')
+        self.container_command('set-radio-noise',str(link),ok=False)
+        for value in ('101','-1','NaN','1.5'):
+            self.container_command('radio-noise-volume',value,ok=False)
+        self.assertEqual(self.config.read_bytes(),original)
+        self.container_command('set-radio-noise',str(REPO/'assets/audio/squelch-close.wav'))
+        self.config.write_text(self.config.read_text().replace('audiofeedback=true','audiofeedback=false'))
+        original=self.config.read_bytes()
+        self.container_command('enable-radio-noise',ok=False)
+        self.assertEqual(self.config.read_bytes(),original)
+
+
     def test_master_and_independent_switches_keep_busy_settings(self):
         self.command('enable-squelch')
         self.assertEqual(self.status()['squelch'], 'true')

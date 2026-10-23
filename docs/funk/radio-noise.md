@@ -119,9 +119,11 @@ Prüfsumme. Ohne diese Datei verwenden die Tests vorhandene öffentliche Kurzsig
 beziehungsweise programmgenerierte Test-WAVs. Die private Aufnahme ist kein
 Repository-Asset und wird nicht heruntergeladen oder veröffentlicht.
 
-B2b ergänzt keine Audioverwaltung oder neuen Ports. B2c-1 ergänzt nachfolgend
-die ausdrückliche Ubuntu-Testinstallation; vollständige Verwaltung und weitere
-Backup-/Restore-Erweiterungen bleiben späteren Phasen vorbehalten.
+B2b ergänzte zunächst keine Audioverwaltung oder neuen Ports. B2c-1 ergänzt
+nachfolgend die ausdrückliche Ubuntu-Testinstallation. Die inzwischen ergänzte
+[Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) verwendet
+das bestehende State-Volume einschließlich Backup/Restore; native Dateipfade
+und die nachfolgende Ubuntu-Anleitung bleiben davon unabhängig.
 
 ## B2c-1: Ubuntu-Snapshot-VM für den ersten Hörtest
 
@@ -410,10 +412,13 @@ Aufnahmen mitsenden. Bei zwei Geräten ist der blockierte Sender nicht zugleich
 Empfänger der angenommenen Übertragung; Busy-Unterbrechung eines bereits laufenden
 privaten Empfänger-Effektstreams wird zusätzlich automatisiert geprüft.
 
-Diese Anleitung dokumentiert **noch keine erfolgreichen Geräte-Hörtests** oder
-vollständige systemd-/Proxmox-VM-Praxistests. Solche Ergebnisse liefert erst der
-Betreiber. Installation, Verwaltung und Veröffentlichung des offiziellen
-Rausch-Assets sowie Docker-Erweiterungen bleiben späteren Phasen vorbehalten.
+Die ursprüngliche B2c-1-Anleitung war allein kein Nachweis erfolgreicher
+Geräte-Hörtests. Den inzwischen gemeldeten Ubuntu-Betreiber-Hörtest beschreibt
+der Anfang dieses Dokuments; Docker-Hörtests bleiben separat erforderlich.
+Bereitstellung und Veröffentlichung eines offiziellen
+Rausch-Assets bleiben späteren Phasen vorbehalten. Die private
+[Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) ist auf
+diesem Feature-Branch ergänzt; sie veröffentlicht keine Aufnahme.
 
 ## Korrekturen: Close nach kurzer und langer Rauschübertragung
 
