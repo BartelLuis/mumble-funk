@@ -44,6 +44,9 @@ public:
 	bool configureNoise(const QString &file, int volume); // Startup only.
 	bool requestNoise(SquelchPlan::Cue cue); // Bounded, try-lock producer queue.
 	void tick(std::int64_t nowUs, const Delivery &deliver, const CueGate &gate = {}, const Capacity &capacity = {});
+	static constexpr int RetryIntervalMs = 5;
+	// Main-thread timer scheduling only. Zero preserves the legacy non-Noise timer.
+	int nextTickDelayMs(std::int64_t nowUs) const;
 	void cancel(std::uint64_t connection);
 	const std::vector< QByteArray > &clip(Signal signal) const;
 

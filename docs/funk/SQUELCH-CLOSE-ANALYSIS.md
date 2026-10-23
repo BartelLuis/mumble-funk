@@ -78,7 +78,9 @@ einen angenommenen Sprachbeginn, nicht die physische Taste.
 - Producer-Kommandos sind Try-Lock-Operationen. Bereits codierte und ein gerade
   bearbeitetes Paket werden geordnet ausgeliefert, nicht aus dem laufenden
   Encoderstrom herausgeschnitten. Der Phasenwechsel kann daher einige Frames
-  benötigen. Kein Aufholen durch Paketbursts.
+  benötigen. Keine unbeschränkten Paketbursts. Die spätere Timingkorrektur erlaubt
+  begrenztes Aufholen über getrennte Timeraufrufe; siehe
+  [Audio-Timing](AUDIO-TIMING-ANALYSIS.md).
 - Close wird genau einmal reserviert. Sein erstes Paket muss weiterhin innerhalb
   von 300 ms nach der Ende-Anforderung zugestellt werden; die Frist wird auch
   nach einer frühen Reservierung geprüft. Veraltetes Close entfällt.
@@ -180,3 +182,12 @@ GitHub-CI wird nach dem Push ausdrücklich nicht abgewartet.
 Die anschließend zusätzlich erweiterte Scheduler-Matrix (beide Endearten bei
 allen Übergangsstörungen sowie bestätigtes/Timeout-Ende nach jeweils 62 Sekunden)
 bestand ebenfalls vollständig. Die abschließende Scheduler-Prüfung dauerte 43,82 s.
+
+## Spätere Praxisrückmeldung
+
+Der Betreiber bestätigt Close auf Windows → Mumla nach der Installation von
+`db4f76f3c85519af271ba41fb0aba174259e1320`. Neu gemeldete kurze Unterbrechungen
+während laufender Übertragung wurden separat untersucht: Ein zurückgesetzter
+Fälligkeitstermin konnte trotz intakter Sequenzen die Effektversorgung halbieren.
+Siehe [Timinganalyse und Korrektur](AUDIO-TIMING-ANALYSIS.md). Die gemeinsame
+Open-/Noise-/Close-Architektur und die Original-WAVs bleiben bestehen.

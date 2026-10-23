@@ -275,7 +275,9 @@ void AudioFeedback::tickRadio(std::int64_t now, const Delivery &deliver, const C
         }
         const bool sent = deliver(p.request.recipient, s.reserve.opus, p.nextFrame, terminal);
         s.nextSample = s.reserve.nextSample;
-        p.nextFrame += 2; ++p.index; p.lastActivity = now; s.lastPacket = now; s.due = now + 20000;
+        // Advance the media clock, not callback time: 21/19-ms timer jitter
+        // must not turn every second callback into a skipped 20-ms frame.
+        p.nextFrame += 2; ++p.index; p.lastActivity = now; s.lastPacket = now; s.due += 20000;
         if (!sent || terminal) {
             p.active = false; p.availableAt = now + 60000;
             it = m_noise.erase(it); continue;
@@ -283,6 +285,30 @@ void AudioFeedback::tickRadio(std::int64_t now, const Delivery &deliver, const C
         s.reserve = std::move(next); s.hasReserve = true;
         ++it;
     }
+}
+
+int AudioFeedback::nextTickDelayMs(std::int64_t now) const {
+    if (!m_noisePCM) return 0;
+    std::int64_t delay = 20000;
+    const auto consider = [&](std::int64_t due) {
+        // One frame per recipient/callback. Recover recent delay with separate
+        // >=5-ms retry callbacks, never an unbounded in-callback catch-up loop.
+        delay = std::min(delay, due > now ? due - now : std::int64_t(RetryIntervalMs) * 1000);
+    };
+    for (const auto &entry : m_noise) {
+        const auto play = m_playback.find(entry.first);
+        if (play != m_playback.end()) {
+            if (play->second.active && play->second.request.signal == Signal::Busy) continue;
+            if (entry.second.slot < 0 && play->second.availableAt > now) { consider(play->second.availableAt); continue; }
+        }
+        consider(entry.second.due);
+    }
+    for (const auto &entry : m_playback) {
+        const auto &p = entry.second;
+        if (p.active && p.request.signal == Signal::Busy)
+            consider(p.started + std::int64_t(p.index) * 20000);
+    }
+    return static_cast<int>((delay + 999) / 1000); // Round up: never intentionally wake before due.
 }
 
 void AudioFeedback::tick(std::int64_t now, const Delivery &deliver, const CueGate &gate, const Capacity &capacity) {

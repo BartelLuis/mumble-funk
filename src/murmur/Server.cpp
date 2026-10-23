@@ -2087,7 +2087,13 @@ void Server::checkTimeout() {
 void Server::deliverAudioFeedback() {
 	// Optional playback yields to current voice processing. The write lock makes
 	// cue validation + delivery atomic against UDP lifecycle/recipient updates.
-	if (m_squelchPlan && !qrwlVoiceThread.tryLockForWrite()) return;
+	if (m_squelchPlan && !qrwlVoiceThread.tryLockForWrite()) {
+		// Yield to speech without losing a whole 20-ms output opportunity.
+		// Restart this same timer; retries cannot accumulate queued callbacks.
+		if (m_audioFeedback->nextTickDelayMs(SimplexController::monotonicUs()))
+			m_audioFeedbackTimer->start(AudioFeedback::RetryIntervalMs);
+		return;
+	}
 	struct Unlock { QReadWriteLock *lock; ~Unlock() { if (lock) lock->unlock(); } } unlock{m_squelchPlan ? &qrwlVoiceThread : nullptr};
 	// Main-thread only. No raw user pointer survives this callback. TCP tunneling
 	// uses the normal client decoder even for clients sending encrypted UDP audio.
@@ -2135,6 +2141,8 @@ void Server::deliverAudioFeedback() {
 			&& static_cast<unsigned int>(receiver->cChannel->iId) == recipient.channel
 			&& receiver->feedbackWritable(continuous ? 1024 : 65536);
 	});
+	const int delay = m_audioFeedback->nextTickDelayMs(SimplexController::monotonicUs());
+	if (delay) m_audioFeedbackTimer->start(delay);
 }
 
 void Server::tcpTransmitData(QByteArray a, unsigned int id) {

@@ -75,6 +75,18 @@ zwischen unabhängigen Streams, etwa bei Busy, ist weiterhin keine Garantie für
 einen Decoderreset auf jedem Client. Details und Grenzen:
 [Squelch-Close-Analyse](SQUELCH-CLOSE-ANALYSIS.md).
 
+## Zeitplanung während laufender Übertragung
+
+Der Effektstream verwendet ein fortlaufendes 20-ms-Medienraster. Der Timer wird
+an der nächsten Fälligkeit ausgerichtet; kurze Lock-/Producer-Konflikte werden
+nicht blockierend nach 5 ms erneut versucht. Pro Empfänger wird höchstens ein
+Frame je Callback zugestellt; Puffer-, Stall- und Close-Fristen bleiben bestehen.
+Damit führen leicht schwankende Timeraufrufe nicht mehr zu regelmäßigen 40-ms-
+Lücken. Ohne Rauschen bleibt die bisherige Timerplanung erhalten.
+
+Ursache, vorher/nachher-Messung, UDP-Lasttests und verbleibender Hörtest:
+[Analyse der Audioaussetzer](AUDIO-TIMING-ANALYSIS.md).
+
 ## Lokale Prüfungen
 
 Der normale Server-Build registriert `TestRadioNoise`, `TestNoiseScheduler` und

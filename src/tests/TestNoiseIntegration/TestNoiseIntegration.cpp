@@ -55,6 +55,7 @@ class TestNoiseIntegration : public QObject {
     Q_OBJECT
 private slots:
     void transport_data(); void transport();
+    void pacing_data(); void pacing();
     void longConfirmed();
     void shortReceiver_data(); void shortReceiver();
     void lifecycle_data(); void lifecycle();
@@ -116,6 +117,64 @@ void TestNoiseIntegration::transport() {
     if(ending!=2) QVERIFY2(closeCorrelation(effects)>.85,"Complete decoded Close missing after Noise");
     else QVERIFY(closeCorrelation(effects)<.85);
     QVERIFY(from(b.audio(150),b.session).isEmpty()); QVERIFY(from(a.audio(20),a.session).isEmpty());
+}
+void TestNoiseIntegration::pacing_data() {
+    QTest::addColumn<bool>("udp");QTest::addColumn<bool>("flood");
+    QTest::newRow("continuous-TCP")<<false<<false;
+    QTest::newRow("continuous-encrypted-UDP-with-1000pps")<<true<<true;
+}
+void TestNoiseIntegration::pacing() {
+    QFETCH(bool,udp);QFETCH(bool,flood);
+    Fixture f;QVERIFY(f.start("true",5000,500,true,config()));
+    Client source,receiver;QVERIFY(source.login(f.port,"TimingSource",true));
+    QVERIFY(receiver.login(f.port,"TimingReceiver",false));
+    if(udp){QVERIFY(source.udp.bind(QHostAddress(QHostAddress::LocalHost),0));QVERIFY(source.udpBarrier());}
+    const auto voice=AudioSignal::encode(AudioSignal::syntheticBusy(),100);
+    QTest::qWait(30);QElapsedTimer clock;clock.start();std::uint64_t frames=0,pings=0;
+    qint64 nextVoice=0;QList<Received> all;std::vector<qint64> voiceTimes,effectTimes;
+    while(clock.elapsed()<3000) {
+        const auto ms=clock.elapsed();
+        if(ms>=nextVoice){QVERIFY(sendVoice(source,voice[0],frames*2,false,udp));++frames;nextVoice+=20;}
+        if(flood) {
+            // Authenticated UDP pings exercise decrypt/read-lock traffic without
+            // exceeding the unchanged voice bandwidth budget or changing speech.
+            for(int n=0;n<10 && pings<std::uint64_t(ms);++n) {
+                Mumble::Protocol::UDPPingEncoder<Mumble::Protocol::Role::Client> encoder(source.version);
+                Mumble::Protocol::PingData ping;ping.timestamp=++pings;
+                const auto bytes=encoder.encodePingPacket(ping);
+                QVERIFY(source.sendEncrypted(QByteArray(reinterpret_cast<const char *>(bytes.data()),int(bytes.size()))));
+            }
+        }
+        const auto packets=receiver.audio(0);const auto at=clock.nsecsElapsed()/1000;
+        for(const auto &packet:packets) {
+            all.append(packet);
+            if(packet.session==receiver.session)effectTimes.push_back(at);
+            if(packet.session==source.session)voiceTimes.push_back(at);
+        }
+        QTest::qWait(1);
+    }
+    const auto live=from(all,receiver.session);
+    QVERIFY2(live.size()>=144,"Private stream delivered less than 96% of nominal 50-Hz audio during continuous voice");
+    for(const auto &p:live)QVERIFY2(!p.last,"Private effect stream aborted during otherwise active voice");
+    QVERIFY(sendVoice(source,voice[1],frames*2,true,udp));
+    if(udp)QVERIFY(source.udpBarrier());else QVERIFY(source.barrier());
+    all+=receiver.audio(700);
+    const auto speech=from(all,source.session),effects=from(all,receiver.session);
+    QCOMPARE(std::uint64_t(speech.size()),frames+1);
+    for(int i=0;i<speech.size();++i) {
+        QCOMPARE(speech[i].frame,std::uint64_t(i)*2);
+        QCOMPARE(speech[i].payload,i==speech.size()-1?voice[1]:voice[0]);
+        QCOMPARE(speech[i].last,i==speech.size()-1);
+    }
+    int ends=0;
+    for(int i=0;i<effects.size();++i){if(i)QCOMPARE(effects[i].frame,effects[i-1].frame+2);if(effects[i].last)++ends;}
+    QCOMPARE(ends,1);QVERIFY(effects.back().last);QVERIFY(closeCorrelation(effects)>.85);
+    const auto maximumGap=[](const std::vector<qint64> &times){qint64 gap=0;for(std::size_t i=1;i<times.size();++i)gap=std::max(gap,times[i]-times[i-1]);return gap;};
+    qInfo("Live receiver observations: speech=%d effects=%d UDP-pings=%llu max_speech_gap_us=%lld max_effect_gap_us=%lld (poll granularity ~5ms; not server send timestamps)",
+        int(voiceTimes.size()),int(effectTimes.size()),static_cast<unsigned long long>(pings),
+        static_cast<long long>(maximumGap(voiceTimes)),static_cast<long long>(maximumGap(effectTimes)));
+    if(flood)QVERIFY(pings>=2500);
+    f.server.stop();QCOMPARE(f.count("released","marker_confirmed"),1);QCOMPARE(f.count("released","timeout_suspected"),0);
 }
 void TestNoiseIntegration::longConfirmed() {
     // Exercise both input transports concurrently in separate real channels.

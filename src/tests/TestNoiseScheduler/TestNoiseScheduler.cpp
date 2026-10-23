@@ -1,6 +1,8 @@
 // Copyright The Mumble-Funk Contributors. BSD-style license: see LICENSE.
 #include "AudioFeedback.h"
 #include <QtCore/QFile>
+#include <QtCore/QReadWriteLock>
+#include <future>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QtEndian>
 #include <array>
@@ -193,7 +195,86 @@ static void lifecycleRegressions() {
     }
     std::cout<<"Unified lifecycle: disabled phases, confirmed/timeout, >300ms starvation, delayed tick, rapid PTT, disconnect/channel/reuse: OK\n";
 }
+// A precise Qt timer has fixed deadlines, but callback entry time still jitters.
+// Alternating 21/19-ms callback spacing must not halve a 20-ms audio stream.
+static void timerJitterRegression() {
+    Rig r(true,1);r.start();r.tick(10);const auto start=r.now;const auto before=r.heard.size();
+    for(int i=0;i<500;++i) {r.now=start+std::int64_t(i)*20000+(i%2==0?1000:0);r.tick();}
+    const auto count=r.heard.size()-before;
+    std::int64_t longest=0;
+    for(std::size_t i=before+1;i<r.heard.size();++i)longest=std::max(longest,r.heard[i].time-r.heard[i-1].time);
+    std::cout<<"Timer jitter: callbacks=500 packets="<<count<<" maximum_gap_us="<<longest<<std::endl;
+    CHECK(count>=499 && count<=501);CHECK(longest<=21000);
+    r.end();r.tick(20);const auto h=r.forUser(2);CHECK(h.back().last);r.decode();
+}
+// A real second-thread reader holds the same lock type used by Server. Test-only
+// synchronization may wait; production keeps tryLockForWrite()/producer try-locks.
+struct HeldVoiceLock {
+    std::promise<void> ready, release;
+    std::thread thread;
+    explicit HeldVoiceLock(QReadWriteLock &lock) : thread([&] {
+        QReadLocker held(&lock);ready.set_value();release.get_future().wait();
+    }) {ready.get_future().wait();}
+    ~HeldVoiceLock(){release.set_value();thread.join();}
+};
+static void adaptiveTimingRegressions() {
+    for(int mode=0;mode<7;++mode) {
+        const std::int64_t duration=mode==6?62000000:2000000;
+        Rig r(true,1);r.start();QReadWriteLock voice;
+        std::unique_ptr<HeldVoiceLock> heldVoice;
+        std::vector<std::unique_lock<std::mutex>> heldProducers;
+        std::int64_t next=0,nextSkip=200000;int retries=0,skips=0;
+        while(next<duration) {
+            r.now=next;
+            if((mode==1 || mode==6) && r.now>=nextSkip) {
+                // Qt coalesces missed expirations; there is no callback to tick().
+                r.now+=20000;nextSkip+=200000;++skips;
+            }
+            if(mode==2 && r.now>=300000 && r.now<320000 && !heldVoice)heldVoice.reset(new HeldVoiceLock(voice));
+            if(mode==2 && r.now>=320000)heldVoice.reset();
+            if(mode==3 && r.now>=300000 && r.now<360000 && heldProducers.empty())
+                heldProducers=AudioFeedbackTestAccess::holdProducers(r.feedback);
+            if(mode==3 && r.now>=360000)heldProducers.clear();
+            r.bufferedBytes=mode==4 && r.now>=300000 && r.now<360000?1024:0;
+            if(mode==5 && r.now>=300000 && !skips) {r.now+=120000;++skips;} // Controlled abort, not a normal gap.
+            if(!voice.tryLockForWrite()) {
+                ++retries;next=r.now+AudioFeedback::RetryIntervalMs*1000;continue;
+            }
+            const auto at=r.now;r.tick();voice.unlock();
+            const int delay=r.feedback.nextTickDelayMs(at);CHECK(delay>=1 && delay<=20);
+            next=at+delay*1000;
+        }
+        heldVoice.reset();heldProducers.clear();
+        const auto live=r.forUser(2);
+        if(mode==5) {
+            CHECK(live.back().last);CHECK(AudioFeedbackTestAccess::streams(r.feedback)==0);
+        } else {
+            CHECK(live.size()>=std::size_t(duration/20000-2));
+            CHECK(std::none_of(live.begin(),live.end(),[](const Heard &h){return h.last;}));
+            CHECK(AudioFeedbackTestAccess::streams(r.feedback)==1);
+        }
+        r.now=duration;r.end();const auto end=r.now;r.tick(20);const auto all=r.forUser(2);
+        CHECK(all.back().last);
+        const auto first=std::find_if(all.begin(),all.end(),[](const Heard &h){return h.segment==RadioNoise::Segment::Close;});
+        if(mode!=5) {
+            CHECK(first!=all.end() && first->time-end<=Plan::MaxCloseCueAgeUs);
+            CHECK(std::size_t(all.end()-first)==r.feedback.clip(AudioFeedback::Signal::SquelchClose).size());
+            CHECK(std::count_if(all.begin(),all.end(),[](const Heard &h){return h.last;})==1);
+        }
+        for(std::size_t i=1;i<all.size();++i)CHECK(all[i].frame==all[i-1].frame+2);
+        if(mode==2)CHECK(retries>=4);
+        r.decode();
+        std::cout<<"Adaptive timing: mode="<<mode<<" duration_us="<<duration<<" live_packets="<<live.size()
+                 <<" missed_ticks="<<skips<<" voice_lock_retries="<<retries<<": OK\n";
+    }
+}
 int main(int argc, char **argv) {
+    if (argc == 2 && std::string(argv[1]) == "--timing-probe") {
+        try {timerJitterRegression();adaptiveTimingRegressions();return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}
+    }
+    if (argc == 2 && std::string(argv[1]) == "--timer-probe") {
+        try {timerJitterRegression();return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}
+    }
     if (argc == 2 && std::string(argv[1]) == "--short-close-probe") return shortCloseProbe();
     try {
         CHECK(shortCloseProbe()==0);
