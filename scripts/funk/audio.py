@@ -23,6 +23,7 @@ DEFAULTS = {
     'squelchopenfile': STANDARD_DIR+'/squelch-open.wav',
     'squelchclosefile': STANDARD_DIR+'/squelch-close.wav',
     'squelchopenvolume': '50', 'squelchclosevolume': '50',
+    'radionoise': 'false', 'radionoisefile': '', 'radionoisevolume': '20',
 }
 HERE = Path(__file__).resolve().parent
 COMMON_PATH = next(p for p in (HERE/'audio_control.py', HERE/'audio-preview/audio_control.py',

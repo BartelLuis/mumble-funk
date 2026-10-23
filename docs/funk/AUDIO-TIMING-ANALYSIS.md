@@ -8,13 +8,20 @@ Branch `feature/radio-noise`, Draft-PR #9.
 Der Betreiber bestätigt nach der gemeinsamen Open-/Noise-/Close-Umstellung:
 Close funktioniert nun auch bei Windows-Mumble → Mumla mit aktivem Rauschen.
 Während laufender Übertragung sind aber kurze Unterbrechungen hörbar, ohne Close.
-Noch unklar ist, ob auf dem Gerät auch Sprache betroffen ist.
+Zum Zeitpunkt der Fehleruntersuchung war unklar, ob auf dem Gerät auch Sprache betroffen war.
 
-Die folgende Untersuchung weist einen **serverseitigen Timingfehler des privaten
-Effektstreams** nach und korrigiert ihn. Ein Mitschnitt der betroffenen VM oder
-eine Messung der Android-Audioausgabe liegt nicht vor. Deshalb ist die Zuordnung
-aller dort gehörten Aussetzer zu diesem Fehler weiterhin durch einen Hörtest zu
-bestätigen. Die reguläre Sprachweiterleitung wird nicht geändert.
+**Spätere Betreiber-Rückmeldung:** Nach Installation von
+`6f976a22f6511f372ff85ca2403592e5faa8e896` sind die kurzen Aussetzer im bisherigen
+Hörtest behoben; Rauschen und Close funktionieren. Der konkrete Android-
+Pufferablauf wurde damit weiterhin nicht instrumentiert. Umfang und Grenzen der
+Praxisbestätigung stehen in [radio-noise.md](radio-noise.md).
+
+Die damalige Untersuchung wies einen **serverseitigen Timingfehler des privaten
+Effektstreams** nach und korrigierte ihn. Ein Mitschnitt der betroffenen VM oder
+eine Messung der Android-Audioausgabe lag nicht vor. Deshalb musste zunächst ein
+erneuter Hörtest die Zuordnung bestätigen. Die anschließende erfolgreiche
+Betreiber-Rückmeldung ist oben ergänzt; die ursprüngliche Analyse bleibt als
+Nachweis erhalten. Die reguläre Sprachweiterleitung wurde nicht geändert.
 
 ## Reproduzierter Fehler
 
@@ -154,4 +161,5 @@ Der vorhandene Server wurde inkrementell erfolgreich gebaut. Anschließend besta
 Netzwerk-Lastprüfungen sowie sämtliche bisherigen Server-/Audio-Regressionen.
 Keine Tests entfernt, keine WAV verändert, keine neue Abhängigkeit. Die normale
 UDP-/TCP-Sprachweiterleitung und die Simplex-Implementierung sind unverändert.
-GitHub-CI wird nach dem Push nicht abgewartet; der Geräte-Hörtest ist noch offen.
+Die GitHub-CI wurde damals nach dem Push nicht abgewartet. Der anschließend
+vom Betreiber erfolgreich abgeschlossene Hörtest ist oben nachgetragen.

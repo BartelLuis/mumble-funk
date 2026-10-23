@@ -1,6 +1,8 @@
 """Native staged installation and shared native/container audio administration."""
 import hashlib
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 BINARY = Path(sys.argv.pop(1)).resolve()
 REPO = Path(__file__).resolve().parents[2]
@@ -58,10 +61,68 @@ class SquelchAdminTests(unittest.TestCase):
         # Staging must report its actual source, not pretend to be the feature head.
         branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
         self.assertIn('branch='+branch+'\n', info)
-        self.assertIn('experimental='+str(branch in ('dev', 'feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset', 'feature/audio-defaults')).lower()+'\n', info)
+        self.assertIn('experimental='+str(branch in ('dev', 'feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset', 'feature/audio-defaults', 'feature/radio-noise')).lower()+'\n', info)
         revision = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
         self.assertIn('revision='+revision+'\n', info)
         self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())
+
+    def test_noise_status_missing_values_preserves_all_legacy_fields(self):
+        # Explicit pre-existing schema: new fields must only extend this object.
+        legacy = {
+            'feedbackboostdb': '8', 'audiofeedback': 'false', 'busytone': 'false',
+            'busytonefile': '/etc/mumble-funk/sounds/custom-busy.wav', 'busytonevolume': '31',
+            'squelch': 'false', 'squelchopen': 'false', 'squelchclose': 'true',
+            'squelchclosetimeoutfallback': 'false',
+            'squelchopenfile': '/etc/mumble-funk/sounds/custom-open.wav',
+            'squelchclosefile': '/etc/mumble-funk/sounds/custom-close.wav',
+            'squelchopenvolume': '17', 'squelchclosevolume': '83',
+        }
+        self.config.write_text('[General]\n'+''.join(f'{key}={value}\n' for key,value in legacy.items()))
+        before = self.config.read_bytes()
+        self.assertEqual(self.status(), dict(legacy, radionoise='false', radionoisefile='', radionoisevolume='20'))
+        self.assertEqual(self.config.read_bytes(), before)
+
+    def test_noise_status_enabled_disabled_and_full_custom_file(self):
+        # Deliberately not a loadable WAV: status describes INI, not runtime success.
+        path = '/etc/mumble-funk/sounds/Eigenes Rauschen ä=Test.wav'
+        for enabled, volume in [('true','20'), ('false','77'), ('true','0')]:
+            with self.subTest(enabled=enabled, volume=volume):
+                self.config.write_text('[General]\nradionoise='+enabled+'\nradionoisefile='+json.dumps(path)+'\nradionoisevolume='+volume+'\n')
+                state = self.status()
+                self.assertEqual((state['radionoise'], state['radionoisefile'], state['radionoisevolume']),
+                                 (enabled, path, volume))
+                self.assertNotIn('loaded', state)
+                self.assertTrue(all(isinstance(value, str) for value in state.values()))
+
+    def test_noise_status_read_only_secret_whitelist_native_and_container(self):
+        secrets = {'serverpassword': 'TEST_ONLY_password', 'icesecret': 'TEST_ONLY_ice',
+                   'sqlpassword': 'TEST_ONLY_sql', 'sslkey': 'TEST_ONLY_key'}
+        self.config.write_text('radionoise=false\nradionoisefile=/missing/kept.wav\nradionoisevolume=29\n'
+                               + ''.join(f'{key}={value}\n' for key,value in secrets.items())
+                               + '[Other]\nradionoise=true\nradionoisefile=/wrong-section.wav\n')
+        before, metadata = self.config.read_bytes(), self.config.stat()
+        # Exercise the production branch with a temporary root, never the host's /etc.
+        # A status request must bypass all service, lock, validation and write actions.
+        for container in (False, True):
+            output, errors = io.StringIO(), io.StringIO()
+            with mock.patch.object(AUDIO.Path, 'resolve', return_value=Path('/')), \
+                 mock.patch.object(AUDIO.os, 'geteuid', return_value=0), \
+                 mock.patch.object(AUDIO.COMMON, 'checked', side_effect=AssertionError('Unexpected external command')), \
+                 mock.patch.object(AUDIO.COMMON, 'atomic_config', side_effect=AssertionError('Unexpected config write')), \
+                 mock.patch.object(AUDIO, 'installation_lock', side_effect=AssertionError('Unexpected install lock')), \
+                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                self.assertEqual(AUDIO.main(['status', '--root', str(self.root)], container=container), 0)
+            state = json.loads(output.getvalue())
+            self.assertEqual((state['radionoise'],state['radionoisefile'],state['radionoisevolume']),
+                             ('false','/missing/kept.wav','29'))
+            self.assertEqual(errors.getvalue(), '')
+            for key, value in secrets.items():
+                self.assertNotIn(key, state)
+                self.assertNotIn(value, output.getvalue()+errors.getvalue())
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(self.config.stat().st_mtime_ns, metadata.st_mtime_ns)
+        self.assertFalse((self.config.parent/'server.ini.before-audio-change').exists())
+        self.assertFalse((self.root/'run/lock/mumble-funk-install.lock').exists())
 
     def test_master_and_independent_switches_keep_busy_settings(self):
         self.command('enable-squelch')

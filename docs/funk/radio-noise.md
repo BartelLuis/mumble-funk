@@ -4,6 +4,16 @@ Diese Vorschau ergänzt den privaten AudioFeedback-Weg. Der Simplex-Controller u
 Sprachpakete bleiben unverändert. Eine Freigabe setzt Hörtests mit Windows-Mumble
 und Android-Mumla voraus; automatisierte Paket-/Opus-Tests ersetzen diese nicht.
 
+**Betreiber-Hörtest erfolgreich:** Der Stand
+`6f976a22f6511f372ff85ca2403592e5faa8e896` wurde auf der Ubuntu-Test-VM praktisch
+geprüft. Kontinuierliches Rauschen, der gemeinsame Open-/Noise-/Close-Stream und
+Close beim Senden vom Windows-Client funktionieren; die zuvor gehörten kurzen
+Audioaussetzer sind behoben. Dies bestätigt den bisherigen Testumfang und ist
+**keine allgemeine Stable-Freigabe** oder abgeschlossener Langzeit-/Lasttest.
+
+Die [gemeinsame Befehlsübersicht](ubuntu-commands.md) erklärt Serverinformationen
+mit/ohne Passwort, Audio-Status, Dienststatus, installierten Commit und Serverlog.
+
 ## Konfiguration
 
 Neue Serveroptionen (Standardwerte):
@@ -313,8 +323,15 @@ PY
 sudo mumble-funk-audio status
 ```
 
-`status` zeigt die bisherigen Audioeinstellungen; die neuen Rauschwerte werden
-oben separat geprüft. Falls in einer älteren Installation Effekte deaktiviert
+`status` enthält neben den bisherigen Audioeinstellungen nun auch `radionoise`,
+`radionoisefile` und `radionoisevolume`, einschließlich der vollständigen
+konfigurierten Dateiangabe. Fehlende Werte werden als `false`, leerer Pfad und
+`20` dargestellt. Dies liest nur die INI und bestätigt keinen erfolgreichen
+WAV-Ladevorgang; Dienststatus, Startlog und Hörtest bleiben erforderlich.
+Die obige gezielte INI-Prüfung kontrolliert zusätzlich doppelte/falsch platzierte
+Einträge. Die Statusabfrage selbst startet keinen Dienst neu und gibt keine
+Passwörter aus; Details stehen in der [Befehlsübersicht](ubuntu-commands.md).
+Falls in einer älteren Installation Effekte deaktiviert
 sind, bleiben sie so; für den gewünschten Hörtest die vorhandenen Verwaltungs-
 befehle aus [squelch-ubuntu.md](squelch-ubuntu.md) und [audio-volume.md](audio-volume.md)
 verwenden. Keine pauschale Migration. Falls die Datenbank verwaltete Einstellungen
@@ -414,11 +431,12 @@ verwendet. Auch die zuvor nachgewiesenen Abbrüche ohne Noise-Ende bei TCP-Stau,
 Produzentenknappheit und verzögertem Scheduler haben gezielte Regressionstests.
 Siehe [Analyse und Tests](SQUELCH-CLOSE-ANALYSIS.md).
 
-**Erneuter Geräte-Hörtest erforderlich:** Auf der separaten Snapshot-Test-VM mit
+**Hörtest für künftige Änderungen:** Der oben genannte Betreiber-Test ist
+für den bisherigen Umfang erfolgreich. Bei weiteren Änderungen auf der separaten Snapshot-Test-VM mit
 der ursprünglichen Close-WAV testen, nicht mit einer um Stille verlängerten Kopie.
 Windows → Mumla für 2, 10 und mindestens 62 Sekunden, Noise an/aus; anschließend
 Mumla → Windows mit Timeout-Fallback, sehr kurzes PTT während Open, schnelle
 Wechsel und Busy prüfen. Erste/letzte Sprachsilben vollständig, Close genau einmal,
 keine hängenbleibenden Effekte. Automatisierte Server-, Opus- und Puffermodelltests
-bestätigen keine tatsächliche Wiedergabe auf dem Android-Gerät. Bis zum erneuten
-Hörtest bleibt die Version experimentell.
+bestätigen allein keine tatsächliche Wiedergabe auf dem Android-Gerät. Auch der
+erfolgreiche Betreiber-Hörtest ist keine allgemeine Freigabe; die Version bleibt experimentell.
