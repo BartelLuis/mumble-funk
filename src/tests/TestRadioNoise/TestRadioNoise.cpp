@@ -111,6 +111,49 @@ static void lifecycle(RadioNoise::PCM pcm) {
     rejects([&] { RadioNoise invalid(pcm, 20, pcm->size()); });
     std::cout << "Random start/shared PCM/independent interruption/fresh re-entry/zero: OK\n";
 }
+// Compare every packet across all three phases against ONE independent encoder.
+// This catches resets and queued-packet loss, not merely decodability.
+static void unified(RadioNoise::PCM noisePCM, bool shortBurst, bool withOpen, bool withClose) {
+    auto open = std::make_shared<const std::vector<float>>(897, .07f);
+    auto close = std::make_shared<const std::vector<float>>(2880, -.05f);
+    RadioNoise producer(noisePCM, 100, 0, true, withOpen ? open : RadioNoise::PCM{}, withClose ? close : RadioNoise::PCM{});
+    CHECK(producer.tryRestart(0, withOpen));
+    int error=0, lookahead=0;
+    std::unique_ptr<OpusEncoder, decltype(&opus_encoder_destroy)> encoder(opus_encoder_create(48000,1,OPUS_APPLICATION_AUDIO,&error),opus_encoder_destroy);
+    std::unique_ptr<OpusDecoder, decltype(&opus_decoder_destroy)> decoder(opus_decoder_create(48000,1,&error),opus_decoder_destroy);
+    CHECK(encoder && decoder && !error);
+    CHECK(opus_encoder_ctl(encoder.get(),OPUS_SET_BITRATE(24000))==OPUS_OK);
+    CHECK(opus_encoder_ctl(encoder.get(),OPUS_GET_LOOKAHEAD(&lookahead))==OPUS_OK);
+    std::size_t noiseCursor=0, openCursor=0, closeCursor=0; bool closing=false, finishing=false;
+    float peak=0;for(float v:*noisePCM)peak=std::max(peak,std::abs(v));const float gain=peak>.2f?.2f/peak:1.f;
+    int count=0, closes=0;
+    while(true) {
+        if(!finishing && count==(shortBurst?1:100)) {
+            while(!producer.tryFinish(withClose)) std::this_thread::yield();
+            finishing=true;
+        }
+        auto packet=next(producer); CHECK(packet.frame==100+std::uint64_t(count)*2);
+        const bool closePhase=packet.segment==RadioNoise::Segment::Close || packet.segment==RadioNoise::Segment::End;
+        if(closePhase) {closing=true;++closes;}
+        std::array<float,960> pcm{},decoded{};std::array<unsigned char,512> bytes{};
+        for(std::size_t i=0;i<pcm.size();++i) {
+            if(closing) {
+                if(withClose && closeCursor<close->size())pcm[i]=(*close)[closeCursor];
+                ++closeCursor;
+            } else if(withOpen && openCursor<open->size())pcm[i]=(*open)[openCursor++];
+            else {pcm[i]=(*noisePCM)[noiseCursor]*gain;noiseCursor=(noiseCursor+1)%noisePCM->size();}
+        }
+        int size=opus_encode_float(encoder.get(),pcm.data(),960,bytes.data(),bytes.size());
+        CHECK(size>0 && packet.opus==QByteArray(reinterpret_cast<const char *>(bytes.data()),size));
+        CHECK(opus_decode_float(decoder.get(),bytes.data(),size,decoded.data(),960,0)==960);
+        for(float v:decoded)CHECK(std::isfinite(v) && std::abs(v)<1);
+        ++count;CHECK(count<120);
+        if(packet.last)break;
+    }
+    CHECK(finishing && closes==(withClose?4:1));
+    CHECK(!withOpen || openCursor==open->size());
+    std::cout<<"Unified encoder: short="<<shortBurst<<" open="<<withOpen<<" close="<<withClose<<" packets="<<count<<": OK\n";
+}
 int main(int argc, char **argv) {
     try {
         QTemporaryDir dir; CHECK(dir.isValid()); loading(dir.path());
@@ -121,6 +164,7 @@ int main(int argc, char **argv) {
         std::cout << "5500 continuously decoded 20-ms frames: CPU=" << double(std::clock() - cpu) / CLOCKS_PER_SEC
                   << "s wall=" << std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count() << "s\n";
         lifecycle(pcm);
+        for(bool early:{false,true})for(bool open:{false,true})for(bool close:{false,true})unified(pcm,early,open,close);
         if (argc == 2) {
             QFile file(QString::fromLocal8Bit(argv[1])); CHECK(file.open(QIODevice::ReadOnly));
             const auto original = file.readAll();

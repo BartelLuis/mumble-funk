@@ -35,16 +35,20 @@ public:
 	bool customBusy() const { return m_customBusy; }
 	bool request(Signal signal, Recipient recipient, std::int64_t nowUs);
 	using CueGate = std::function<bool(const SquelchPlan::Cue &, bool starting)>;
+	// Separate lifecycle validity from transient output pressure. Continuous Noise
+	// retains its 1024-byte budget; finite cues retain their existing 64-KiB budget.
+	using Capacity = std::function<bool(const Recipient &, bool continuous)>;
 	void configureSquelch(const QString &openFile, const QString &closeFile, int openVolume, int closeVolume,
 		bool openEnabled = true, bool closeEnabled = true);
 	bool requestSquelch(const SquelchPlan::Cue &cue);
 	bool configureNoise(const QString &file, int volume); // Startup only.
 	bool requestNoise(SquelchPlan::Cue cue); // Bounded, try-lock producer queue.
-	void tick(std::int64_t nowUs, const Delivery &deliver, const CueGate &gate = {});
+	void tick(std::int64_t nowUs, const Delivery &deliver, const CueGate &gate = {}, const Capacity &capacity = {});
 	void cancel(std::uint64_t connection);
 	const std::vector< QByteArray > &clip(Signal signal) const;
 
 private:
+	friend struct AudioFeedbackTestAccess; // Deterministic producer-starvation tests only.
 	struct Request {
 		Signal signal;
 		Recipient recipient;
@@ -63,6 +67,7 @@ private:
 		bool finishEarly = false;
 	};
 	std::vector< QByteArray > m_busy, m_open, m_close;
+	RadioNoise::PCM m_openPCM, m_closePCM;
 	QString m_warning;
 	int m_boostDb = 0; // Startup-only effect gain; shared by all pre-encoded clips.
 	bool m_customBusy = false;
@@ -70,7 +75,14 @@ private:
 	std::mutex m_mutex;
 	std::deque< Request > m_pending, m_cues;
 	std::map< std::uint64_t, Playback > m_playback;
-    struct NoiseState { SquelchPlan::Cue cue; std::size_t nextSample; int slot = -1; std::size_t start = 0; };
+    struct NoiseState {
+        SquelchPlan::Cue cue; std::size_t nextSample; int slot = -1; std::size_t start = 0;
+        bool opened = false, finishing = false, hasClose = false, closeStarted = false, closeReserved = false;
+        SquelchPlan::Cue close{};
+        RadioNoise::Packet reserve{};
+        bool hasReserve = false;
+        std::int64_t due = 0, lastPacket = 0;
+    };
     struct NoiseSlot { std::unique_ptr<RadioNoise> producer; std::uint64_t connection = 0, transmission = 0; };
     std::int64_t m_lastNoiseTick = 0;
     RadioNoise::PCM m_noisePCM;
@@ -78,7 +90,10 @@ private:
     std::array<NoiseSlot, RadioNoise::MaxInstances> m_noiseSlots;
     std::map<std::uint64_t, NoiseState> m_noise;
     std::deque<SquelchPlan::Cue> m_noiseRequests;
-    void updateNoise(std::int64_t now, const CueGate &gate, const std::deque<SquelchPlan::Cue> &requests);
-    void startNoise(std::int64_t now, const CueGate &gate, const std::set<std::uint64_t> &waiting);
+    struct Terminal { Recipient recipient; QByteArray opus; std::uint64_t frame; };
+    std::deque<Terminal> m_terminals; // At most one reserved end per cancelled recipient (bounded).
+    void tickRadio(std::int64_t now, const Delivery &deliver, const CueGate &gate, const Capacity &capacity,
+        const std::deque<Request> &pending, const std::deque<Request> &cues,
+        const std::deque<SquelchPlan::Cue> &requests);
 };
 #endif

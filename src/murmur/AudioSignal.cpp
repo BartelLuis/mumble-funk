@@ -101,7 +101,7 @@ std::vector< float > AudioSignal::syntheticBusy() {
 	return pcm;
 }
 
-static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail, int boostDb) {
+static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail, int boostDb, float *preparedGain = nullptr) {
 	if (boostDb < 0 || boostDb > 12)
 		throw std::runtime_error("Feedback boost must be an integer from 0 to 12 dB");
 	// Busy: at most 60000 source samples (1250 ms at 48 kHz) + 960 tail.
@@ -154,7 +154,7 @@ static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int 
 			if (size < 0) throw std::runtime_error("Cannot encode feedback Opus audio");
 			result.emplace_back(reinterpret_cast<const char *>(bytes.data()), size);
 		}
-		if (boostDb == 0) return result;
+		if (boostDb == 0) { if (preparedGain) *preparedGain = gain; return result; }
 		std::unique_ptr<OpusDecoder, decltype(&opus_decoder_destroy)> decoder(
 			opus_decoder_create(48000, 1, &error), opus_decoder_destroy);
 		if (!decoder || error != OPUS_OK) throw std::runtime_error("Cannot verify feedback Opus audio");
@@ -169,7 +169,7 @@ static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int 
 				decodedPeak = std::max(decodedPeak, std::abs(sample));
 			}
 		}
-		if (decodedPeak <= 0.98f) return result;
+		if (decodedPeak <= 0.98f) { if (preparedGain) *preparedGain = gain; return result; }
 		gain *= 0.95f / decodedPeak;
 	}
 	throw std::runtime_error("Cannot encode feedback within safe decoded level");
@@ -180,4 +180,12 @@ std::vector<QByteArray> AudioSignal::encode(const std::vector<float> &pcm, int v
 }
 std::vector<QByteArray> AudioSignal::encodeWavSignal(const QString &path, int volume, int boostDb) {
 	return encodePCM(loadWav(path, LengthPolicy::ShortSignal), volume, true, boostDb);
+}
+std::vector<float> AudioSignal::streamWavSignal(const QString &path, int volume, int boostDb) {
+	auto pcm = loadWav(path, LengthPolicy::ShortSignal);
+	float gain = 0;
+	encodePCM(pcm, volume, true, boostDb, &gain); // Same bounded startup level verification.
+	pcm.resize(pcm.size() - 960);
+	for (auto &sample : pcm) sample *= gain;
+	return pcm;
 }

@@ -23,11 +23,40 @@ static bool sendVoice(Client &client, const QByteArray &pcm, std::uint64_t frame
 static QList<Received> from(const QList<Received> &all, unsigned session) {
     QList<Received> out; for (const auto &p : all) if (p.session == session) out.append(p); return out;
 }
+// Decode with the receiver's actual stream boundaries. Close is now encoded
+// with prior Open/Noise history, so reset-encoder byte equality is inappropriate.
+static std::vector<float> decoded(const QList<Received> &packets) {
+    std::vector<float> result;int error=0;
+    std::unique_ptr<OpusDecoder,decltype(&opus_decoder_destroy)> decoder(nullptr,opus_decoder_destroy);
+    for(const auto &p:packets) {
+        if(!decoder)decoder.reset(opus_decoder_create(48000,1,&error));
+        if(!decoder || error) return {};
+        std::array<float,960> pcm{};
+        if(opus_decode_float(decoder.get(),reinterpret_cast<const unsigned char *>(p.payload.constData()),p.payload.size(),pcm.data(),960,0)!=960)return {};
+        for(float v:pcm) {if(!std::isfinite(v))return {};result.push_back(v);}
+        if(p.last)decoder.reset();
+    }
+    return result;
+}
+static double closeCorrelation(const QList<Received> &effects) {
+    const auto clip=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50);
+    QList<Received> reference;
+    for(const auto &bytes:clip) {Received r{};r.payload=bytes;reference.append(r);}
+    const auto actual=decoded(effects),expected=decoded(reference);
+    if(actual.size()<expected.size() || expected.size()<=960)return 0;
+    double dot=0,a=0,b=0;
+    // The first frame includes the preceding Noise encoder history/lookahead.
+    // Remaining frames must contain the complete actual Close waveform.
+    const auto offset=actual.size()-expected.size();
+    for(std::size_t i=960;i<expected.size();++i){double x=actual[offset+i],y=expected[i];dot+=x*y;a+=x*x;b+=y*y;}
+    return a>0 && b>0?dot/std::sqrt(a*b):0;
+}
 class TestNoiseIntegration : public QObject {
     Q_OBJECT
 private slots:
     void transport_data(); void transport();
     void longConfirmed();
+    void shortReceiver_data(); void shortReceiver();
     void lifecycle_data(); void lifecycle();
     void reuse();
     void rapid();
@@ -52,8 +81,8 @@ void TestNoiseIntegration::transport() {
     auto received = b.audio(130); auto other = c.audio(30);
     auto effects = from(received,b.session); auto otherEffects = from(other,c.session);
     QVERIFY(effects.size()>3 && otherEffects.size()>3);
-    const auto open = AudioSignal::encodeWavSignal(asset("squelch-open.wav"),50);
-    QCOMPARE(effects[0].payload,open[0]); QCOMPARE(effects[1].payload,open[1]); QVERIFY(effects[1].last);
+    QVERIFY(!effects[0].last && !effects[1].last);
+    QVERIFY(!decoded(effects).empty());
     QCOMPARE(effects[2].payload,otherEffects[2].payload);
     if (!ending) {
         QVERIFY(b.speak()); QVERIFY(b.barrier()); received += b.audio(420);
@@ -80,10 +109,12 @@ void TestNoiseIntegration::transport() {
         first=false; previous=p.frame;
         std::array<float,960> decoded; QCOMPARE(opus_decode_float(decoder,
             reinterpret_cast<const unsigned char *>(p.payload.data()),p.payload.size(),decoded.data(),960,0),960);
-        if(p.payload==close[0]) ++closes;
+        if(p.last) ++closes;
     }
     opus_decoder_destroy(decoder);
-    QCOMPARE(closes,ending==2?0:1); QVERIFY(effects.back().last);
+    QCOMPARE(closes,ending==0?3:1); QVERIFY(effects.back().last);
+    if(ending!=2) QVERIFY2(closeCorrelation(effects)>.85,"Complete decoded Close missing after Noise");
+    else QVERIFY(closeCorrelation(effects)<.85);
     QVERIFY(from(b.audio(150),b.session).isEmpty()); QVERIFY(from(a.audio(20),a.session).isEmpty());
 }
 void TestNoiseIntegration::longConfirmed() {
@@ -136,17 +167,17 @@ void TestNoiseIntegration::longConfirmed() {
         QVERIFY(decoder && !error);
         for(int i=0;i<effects.size();++i) {
             if(i) QVERIFY2(effects[i].frame>effects[i-1].frame,"Private effect sequence went backwards after long Noise");
-            if(effects[i].payload==close[0]) ++closes;
+            if(effects[i].last) ++closes;
             std::array<float,960> pcm;
             QCOMPARE(opus_decode_float(decoder.get(),reinterpret_cast<const unsigned char *>(effects[i].payload.constData()),
                                       effects[i].payload.size(),pcm.data(),960,0),960);
         }
         QCOMPARE(closes,1);
         const int first=effects.size()-int(close.size());
-        QVERIFY(effects[first-1].last);
-        QCOMPARE(effects[first].frame,effects[first-1].frame+102);
+        QVERIFY(!effects[first-1].last);
+        QCOMPARE(effects[first].frame,effects[first-1].frame+2);
+        QVERIFY2(closeCorrelation(effects)>.85,"Complete Close waveform missing after long Noise");
         for(std::size_t i=0;i<close.size();++i) {
-            QCOMPARE(effects[first+int(i)].payload,close[i]);
             QCOMPARE(effects[first+int(i)].last,i+1==close.size());
         }
         QVERIFY(from(pair.first->audio(150),pair.first->session).isEmpty());
@@ -154,6 +185,54 @@ void TestNoiseIntegration::longConfirmed() {
     f.server.stop();
     QCOMPARE(f.count("released","marker_confirmed"),2);
     QCOMPARE(f.count("released","timeout_suspected"),0);
+}
+void TestNoiseIntegration::shortReceiver_data() {
+    QTest::addColumn<bool>("udp"); QTest::addColumn<bool>("timeout"); QTest::addColumn<int>("duration");
+    QTest::newRow("2s-confirmed-TCP") << false << false << 2000;
+    QTest::newRow("2s-confirmed-encrypted-UDP") << true << false << 2000;
+    QTest::newRow("2s-timeout-encrypted-UDP") << true << true << 2000;
+    QTest::newRow("10s-confirmed-encrypted-UDP") << true << false << 10000;
+}
+void TestNoiseIntegration::shortReceiver() {
+    QFETCH(bool,udp); QFETCH(bool,timeout); QFETCH(int,duration);
+    Fixture f; QVERIFY(f.start("true",500,500,true,config()+"squelchclosetimeoutfallback=true\n"));
+    Client source,receiver; QVERIFY(source.login(f.port,"TestSource",true));
+    QVERIFY(receiver.login(f.port,"LegacyReceiver",false));
+    if(udp) { QVERIFY(source.udp.bind(QHostAddress(QHostAddress::LocalHost),0)); QVERIFY(source.udpBarrier()); }
+    const auto voice=AudioSignal::encode(AudioSignal::syntheticBusy(),100);
+    QTest::qWait(30); QElapsedTimer elapsed; elapsed.start(); std::uint64_t count=0;
+    while(elapsed.elapsed()<duration) {
+        QVERIFY(sendVoice(source,voice[0],count*2,false,udp)); ++count; QTest::qWait(20);
+    }
+    if(!timeout) QVERIFY(sendVoice(source,voice[1],count*2,true,udp)); // Windows-style final Opus frame with terminator.
+    if(udp) QVERIFY(source.udpBarrier()); else QVERIFY(source.barrier());
+    const auto all=receiver.audio(900);
+    const auto speech=from(all,source.session);
+    QCOMPARE(std::uint64_t(speech.size()),count+(timeout?0:1));
+    for(std::uint64_t i=0;i<count;++i) {
+        QCOMPARE(speech[int(i)].payload,voice[0]); QCOMPARE(speech[int(i)].frame,i*2); QVERIFY(!speech[int(i)].last);
+    }
+    if(!timeout) { QVERIFY(speech.back().last); QCOMPARE(speech.back().payload,voice[1]); }
+    const auto effects=from(all,receiver.session);
+    const auto close=AudioSignal::encodeWavSignal(asset("squelch-close.wav"),50);
+    QVERIFY(effects.size()>int(close.size()+2));
+    const int first=effects.size()-int(close.size());
+    QVERIFY(!effects[first-1].last); QCOMPARE(effects[first].frame,effects[first-1].frame+2);
+    QVERIFY2(closeCorrelation(effects)>.85,"Complete Close waveform missing at legacy receiver");
+    int closeStarts=0;
+    for(int i=0;i<effects.size();++i) {
+        if(i) QVERIFY(effects[i].frame>effects[i-1].frame);
+        if(effects[i].last) ++closeStarts;
+        if(i) QCOMPARE(effects[i].frame,effects[i-1].frame+2);
+    }
+    QCOMPARE(closeStarts,1);
+    for(std::size_t i=0;i<close.size();++i) {
+        QCOMPARE(effects[first+int(i)].last,i+1==close.size());
+    }
+    QVERIFY(from(receiver.audio(100),receiver.session).isEmpty());
+    f.server.stop();
+    QCOMPARE(f.count("released",timeout?"timeout_suspected":"marker_confirmed"),1);
+    qInfo("Private stream received: intermediate_end=0 final_close_packets=%d stream_ends=%d",int(close.size()),closeStarts);
 }
 void TestNoiseIntegration::lifecycle_data() {
     QTest::addColumn<int>("change"); for(int c=0;c<5;++c) QTest::newRow(qPrintable(QString::number(c))) << c;

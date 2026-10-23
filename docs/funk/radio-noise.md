@@ -36,25 +36,44 @@ einem 20-ms-Raster gewählt. Separate Encoder erlauben unabhängige Unterbrechun
 je Empfänger. Am WAV-Ende folgt samplegenau Sample 0, ohne Crossfade, zusätzliche
 Nullen oder Encoderreset. Nach Busy wird die bisherige PCM-Position fortgesetzt.
 
-Busy hat höchste Priorität. Open geht vor Rauschen; Close beendet es. Bestätigtes
-Ende und Simplex-Timeout stoppen Rauschen; Timeout-Close folgt nur bei aktiviertem
-bestehendem Fallback. Ein Timeout beweist kein physisches Loslassen von PTT.
-Rauschen funktioniert auch bei bewusst ausgeschaltetem Squelch.
+Mit aktiviertem Rauschen bilden **Squelch Open → Rauschen → Squelch Close einen
+zusammenhängenden privaten Effektstream pro Empfänger**. Ein einziger Opus-Encoder
+bleibt über alle drei Phasen aktiv; Sequenzen steigen durchgehend um 2 pro
+20-ms-Paket. Erst das letzte Close-Paket trägt eine Ende-Markierung. Zwischen den
+Phasen gibt es keine künstliche Stille oder 60-ms-Pause. Open und Noise können
+innerhalb eines Frames unmittelbar aufeinander folgen; es wird nichts gemischt.
+Alle WAV-Dateien und die getrennte normale Sprachweiterleitung bleiben unverändert.
 
-Maximal 16 vorbereitete Produzenten pro Prozess, je drei gepufferte Pakete,
-verwenden einen gemeinsamen PCM-Puffer. Erzeugung und Thread-Joins liegen beim
-Start beziehungsweise Herunterfahren, nach dem Stoppen des Sprachthreads.
-Während der Zustellung werden nur nicht wartende Produzentenzugriffe verwendet.
-Bei Überlast oder TCP-Stau kann optionales Rauschen entfallen. Der Scheduler
-vergibt die ausgehenden Sequenzen, Ende-Markierungen und Abstände zentral.
+Busy behält höchste Priorität, seinen bisherigen Clip und Cooldown. Ein Reserve-
+paket beendet den unterbrochenen Effekt; Busy bleibt ein unabhängiger Stream.
+Danach kann Noise bei weiter laufender Übertragung mit frischem Encodersegment
+an der nächsten PCM-Position fortsetzen, ohne Open zu wiederholen. Kurze PTT-
+Betätigungen können Open bereits am nächsten Frame in Close überführen.
+
+Bestätigtes Ende und Simplex-Timeout stoppen Rauschen; Timeout-Close folgt nur
+bei aktiviertem bestehendem Fallback. Ein Timeout beweist kein physisches
+Loslassen von PTT. Deaktiviertes Open/Close wird ausgelassen; ohne Close wird der
+Stream regulär beendet. Ohne Rauschen bleibt die bisherige Squelch-Zustellung
+bestehen. Rauschen funktioniert auch bei bewusst ausgeschaltetem Squelch.
+
+Maximal 16 vorbereitete Produzenten, je drei gepufferte Pakete plus ein bereits
+codiertes ungesendetes Reservepaket pro aktivem Empfänger, verwenden gemeinsame
+unveränderliche PCM-Puffer. Erzeugung und Thread-Joins liegen beim Start/Stop.
+Zugriffe auf Produzenten während der Zustellung warten nicht auf deren Mutex.
+Die bisherigen 1024-Byte-/64-KiB-TCP-Grenzen und die 300-ms-Close-Frist bleiben
+bestehen. Kurzzeitiger TCP-Stau invalidiert nicht mehr die Übertragung; bei
+anhaltendem Stau oder Produzentenfehler darf optionaler Effekt entfallen.
+Eine Ende-Markierung kann bei dauerhaft unbeschreibbarem Transport nicht
+zugesichert werden. Es wird niemals eine unbegrenzte Warteschlange aufgebaut.
 
 Empfänger werden am Übertragungsbeginn erfasst. Neue Empfänger erhalten Effekte
-ab der nächsten Übertragung. Identität, Kanal und Übertragungsgeneration werden
-vor der Zustellung geprüft; Kanalwechsel, Disconnect und Berechtigungsverlust
-invalidieren die zugehörigen Effekte. Bereits übertragene/clientseitig gepufferte
-Pakete können nicht zurückgerufen werden. Die bestehende 60-ms-Auslaufpause ist
-keine Garantie für einen Decoderreset in jedem Client. Gemeinsame TCP-Verbindungen
-und Netzwerkengpässe bleiben insbesondere praktisch zu prüfen.
+ab der nächsten Übertragung. Identität, Kanal und Generation werden erneut
+geprüft; Kanalwechsel, Disconnect und Berechtigungsverlust verwerfen alte Close-
+Anforderungen. Session-Reuse übernimmt keine alten Audiodaten. Bereits beim
+Client gepufferte Pakete können nicht zurückgerufen werden. Der 60-ms-Abstand
+zwischen unabhängigen Streams, etwa bei Busy, ist weiterhin keine Garantie für
+einen Decoderreset auf jedem Client. Details und Grenzen:
+[Squelch-Close-Analyse](SQUELCH-CLOSE-ANALYSIS.md).
 
 ## Lokale Prüfungen
 
@@ -367,32 +386,27 @@ vollständige systemd-/Proxmox-VM-Praxistests. Solche Ergebnisse liefert erst de
 Betreiber. Installation, Verwaltung und Veröffentlichung des offiziellen
 Rausch-Assets sowie Docker-Erweiterungen bleiben späteren Phasen vorbehalten.
 
-## Korrektur: Close nach langer Rauschübertragung
+## Korrekturen: Close nach kurzer und langer Rauschübertragung
 
-Ein gezielter Scheduler-Test reproduzierte nach 62 Sekunden Rauschen einen
-serverseitigen Sequenzfehler: Direkt nach dem letzten Rauschpaket wurde der
-Wiedergabezustand wegen seines alten Startzeitpunkts gelöscht. Close wurde dadurch
-mit Sequenz 0 statt fortlaufender Nummer und bereits nach 20 statt mindestens
-60 ms zur Zustellung angeboten. Der noch laufende Client-Jitterbuffer kann solche
-zurückspringenden Zeitstempel als veraltet verwerfen; gültige Opus-Daten allein
-garantieren deshalb keine Wiedergabe.
+Der in `dc74ff8` behobene Sequenzrücksprung nach 60 Sekunden bleibt verhindert:
+Aktive Effektstreams verlieren ihre Sequenzhistorie nicht durch Idle-Bereinigung.
+Zusätzlich meldete der Betreiber fehlenden Close auf Mumla bereits bei 2–10
+Sekunden langen Windows-Übertragungen. Sein A/B-Hörtest mit 200 ms diagnostisch
+vorangestellter Stille stützt ein Problem beim Wechsel der Empfangspuffer.
 
-Aktives Rauschen hält nun den vorhandenen Sequenzzustand aktuell. Die Bereinigung
-inaktiver Zustände bleibt begrenzt, ebenso die Anzahl der Empfänger. Die
-60-ms-Auslaufpause, die 300-ms-Close-Frist, `finishEarly`, Ende-Markierungen,
-Simplex und Sprachpakete bleiben unverändert. Der Scheduler-Regressionsfall prüft
-die vollständigen Close-Pakete, strikt steigende Sequenzen, die Auslaufpause und
-die bestehende Close-Frist. Ein zusätzlicher echter Server-Test überträgt parallel
-über TCP und verschlüsseltes UDP in getrennten Kanälen für mehr als 60 Sekunden
-und prüft die empfangenen Close- und Sprachpakete sowie die Opus-Dekodierung.
-Der Langtest sendet wie normale Clients Kontroll-Pings; der bestehende
-30-Sekunden-Verbindungstimeout wird nicht erhöht. Scheduler-Regressionsfall,
-Netzwerk-Langtest und die betroffenen bisherigen Audio-/Simplex-Prüfungen waren
-lokal erfolgreich.
+Die aktuelle Korrektur vermeidet diesen Wechsel innerhalb der Übertragung:
+Open, Rauschen und Close haben einen gemeinsamen Encoder- und Sequenzzustand
+und genau eine abschließende Ende-Markierung. Keine WAV wurde dafür verändert.
+Eine pauschale zusätzliche Pause oder Verlängerung der 300-ms-Frist wird nicht
+verwendet. Auch die zuvor nachgewiesenen Abbrüche ohne Noise-Ende bei TCP-Stau,
+Produzentenknappheit und verzögertem Scheduler haben gezielte Regressionstests.
+Siehe [Analyse und Tests](SQUELCH-CLOSE-ANALYSIS.md).
 
-Den praktischen Hörtest nach dem Update mit kurzen **und mindestens 62 Sekunden
-langen** Windows-Übertragungen wiederholen; auch Mumla mit Timeout-Close prüfen.
-Der nachgewiesene Fehler betrifft das Überschreiten der 60-Sekunden-Grenze. Sollte
-Close schon bei kürzeren Übertragungen fehlen, bleiben weitere Ursachen zu prüfen.
-Eine konkrete Wiedergabe in Windows-Mumble oder Mumla wurde durch diese
-automatisierten Prüfungen nicht als erfolgreich nachgewiesen.
+**Erneuter Geräte-Hörtest erforderlich:** Auf der separaten Snapshot-Test-VM mit
+der ursprünglichen Close-WAV testen, nicht mit einer um Stille verlängerten Kopie.
+Windows → Mumla für 2, 10 und mindestens 62 Sekunden, Noise an/aus; anschließend
+Mumla → Windows mit Timeout-Fallback, sehr kurzes PTT während Open, schnelle
+Wechsel und Busy prüfen. Erste/letzte Sprachsilben vollständig, Close genau einmal,
+keine hängenbleibenden Effekte. Automatisierte Server-, Opus- und Puffermodelltests
+bestätigen keine tatsächliche Wiedergabe auf dem Android-Gerät. Bis zum erneuten
+Hörtest bleibt die Version experimentell.

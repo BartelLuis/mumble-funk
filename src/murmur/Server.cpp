@@ -2126,10 +2126,14 @@ void Server::deliverAudioFeedback() {
 		const auto *receiver = qhUsers.value(cue.recipient.session);
         // Continuous optional traffic must not build a long TCP backlog. Keep
         // the previous Busy/Squelch budget when radio noise is disabled.
-        const auto budget = (cue.kind == SquelchPlan::Kind::Noise || cue.kind == SquelchPlan::Kind::NoiseEnd) ? 1024 : 65536;
 		if (source->bMute || source->bSuppress || source->bSelfMute || receiver->bDeaf || receiver->bSelfDeaf
-			|| !receiver->bOpus || !receiver->feedbackWritable(budget)) return false;
+			|| !receiver->bOpus || !receiver->feedbackWritable()) return false;
 		return starting ? m_squelchPlan->consume(cue, cue.sender, cue.recipient, true) : m_squelchPlan->current(cue);
+	}, [this](const AudioFeedback::Recipient &recipient, bool continuous) {
+		const auto *receiver = qhUsers.value(recipient.session);
+		return receiver && receiver->diagnosticConnection == recipient.connection && receiver->cChannel
+			&& static_cast<unsigned int>(receiver->cChannel->iId) == recipient.channel
+			&& receiver->feedbackWritable(continuous ? 1024 : 65536);
 	});
 }
 

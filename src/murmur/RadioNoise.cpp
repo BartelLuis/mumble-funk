@@ -15,9 +15,16 @@ std::size_t RadioNoise::chooseStart(std::size_t samples, std::mt19937 &random) {
     if (!samples) throw std::invalid_argument("Empty noise recording");
     return std::uniform_int_distribution<std::size_t>(0, (samples - 1) / FrameSamples)(random) * FrameSamples;
 }
-RadioNoise::RadioNoise(PCM pcm, int volume, std::size_t start, bool paused) : m_pcm(std::move(pcm)), m_cursor(start), m_taken(start) {
+RadioNoise::RadioNoise(PCM pcm, int volume, std::size_t start, bool paused, PCM open, PCM close)
+    : m_pcm(std::move(pcm)), m_open(std::move(open)), m_close(std::move(close)), m_cursor(start), m_taken(start) {
     if (!m_pcm || m_pcm->size() < FrameSamples || m_pcm->size() > 48000 * 60 || start >= m_pcm->size()
         || volume < 0 || volume > 100) throw std::invalid_argument("Invalid noise recording/start/volume");
+    for (const auto &signal : {m_open, m_close}) {
+        if (!signal) continue;
+        if (signal->empty() || signal->size() > 48000) throw std::invalid_argument("Invalid stream signal length");
+        for (float sample : *signal) if (!std::isfinite(sample) || std::abs(sample) > 1)
+            throw std::invalid_argument("Invalid stream signal level");
+    }
     float peak = 0;
     for (float sample : *m_pcm) {
         if (!std::isfinite(sample) || std::abs(sample) > 1) throw std::invalid_argument("Invalid noise level");
@@ -42,7 +49,7 @@ bool RadioNoise::take(Packet &packet) {
     std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
     if (!lock || !m_active || m_packets.empty()) return false;
     packet = std::move(m_packets.front()); m_packets.pop_front();
-    m_taken = (packet.firstSample + FrameSamples) % m_pcm->size();
+    m_taken = packet.nextSample;
     m_ready.notify_one(); return true;
 }
 bool RadioNoise::tryPause() {
@@ -51,11 +58,18 @@ bool RadioNoise::tryPause() {
     if (m_active) { m_active = false; ++m_epoch; m_packets.clear(); m_cursor = m_taken; }
     return true;
 }
-bool RadioNoise::tryRestart(std::size_t start) {
+bool RadioNoise::tryRestart(std::size_t start, bool withOpen) {
     std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
     if (!lock || !m_worker.joinable() || !m_error.isEmpty() || start >= m_pcm->size()) return false;
     ++m_epoch; m_packets.clear(); m_cursor = m_taken = start; m_frame += 100;
+    m_withOpen = withOpen; m_finish = m_withClose = m_producedEnd = false;
     m_active = true; m_ready.notify_one(); return true;
+}
+bool RadioNoise::tryFinish(bool withClose) {
+    std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
+    if (!lock || !m_active) return false;
+    if (!m_finish) { m_finish = true; m_withClose = withClose; }
+    m_ready.notify_one(); return true;
 }
 void RadioNoise::pause() {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -66,7 +80,7 @@ void RadioNoise::pause() {
 void RadioNoise::resume() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_active || !m_worker.joinable() || !m_error.isEmpty()) return;
-    ++m_epoch; m_frame += 100; m_active = true; m_ready.notify_one();
+    ++m_epoch; m_frame += 100; m_active = true; m_finish = m_withClose = m_producedEnd = false; m_withOpen = false; m_ready.notify_one();
 }
 bool RadioNoise::current(std::uint64_t epoch) const {
     std::unique_lock<std::mutex> lock(m_mutex, std::try_to_lock);
@@ -86,28 +100,55 @@ void RadioNoise::run() noexcept {
         if (!encoder || status || opus_encoder_ctl(encoder.get(), OPUS_SET_BITRATE(24000)) != OPUS_OK)
             throw std::runtime_error("Cannot create noise encoder");
         std::uint64_t encoderEpoch = 0;
+        Segment segment = Segment::Noise;
+        std::size_t signalCursor = 0;
+        int lookahead = 0;
+        if (opus_encoder_ctl(encoder.get(), OPUS_GET_LOOKAHEAD(&lookahead)) != OPUS_OK || lookahead < 0 || lookahead > 960)
+            throw std::runtime_error("Unexpected stream encoder lookahead");
         std::unique_lock<std::mutex> lock(m_mutex);
         while (true) {
-            m_ready.wait(lock, [&] { return m_stop || (m_active && m_packets.size() < QueueLimit); });
+            m_ready.wait(lock, [&] { return m_stop || (m_active && !m_producedEnd && m_packets.size() < QueueLimit); });
             if (m_stop) break;
             const auto epoch = m_epoch;
             const auto cursor = m_cursor;
+            const bool withOpen = m_withOpen, finish = m_finish, withClose = m_withClose;
             lock.unlock(); // Encoding never holds the control/consumer mutex.
             if (encoderEpoch != epoch) {
                 if (opus_encoder_ctl(encoder.get(), OPUS_RESET_STATE) != OPUS_OK)
                     throw std::runtime_error("Cannot reset noise encoder");
                 encoderEpoch = epoch;
+                segment = withOpen && m_open && !m_open->empty() ? Segment::Open : Segment::Noise;
+                signalCursor = 0;
             }
-            std::array<float, FrameSamples> frame;
-            for (std::size_t i = 0; i < frame.size(); ++i)
-                frame[i] = (*m_pcm)[(cursor + i) % m_pcm->size()] * m_gain;
+            if (finish && segment != Segment::Close && segment != Segment::End
+                && !(segment == Segment::Open && signalCursor == 0)) {
+                segment = withClose && m_close && !m_close->empty() ? Segment::Close : Segment::End;
+                signalCursor = 0;
+            }
+            const auto packetSegment = segment;
+            std::size_t nextCursor = cursor;
+            std::array<float, FrameSamples> frame{};
+            bool last = false;
+            for (std::size_t i = 0; i < frame.size(); ++i) {
+                if (segment == Segment::Open) {
+                    frame[i] = (*m_open)[signalCursor++];
+                    if (signalCursor == m_open->size()) { segment = Segment::Noise; signalCursor = 0; }
+                } else if (segment == Segment::Noise) {
+                    frame[i] = (*m_pcm)[nextCursor] * m_gain;
+                    nextCursor = (nextCursor + 1) % m_pcm->size();
+                } else {
+                    const std::size_t count = segment == Segment::Close ? m_close->size() : 0;
+                    if (signalCursor < count) frame[i] = (*m_close)[signalCursor];
+                    if (++signalCursor >= count + std::size_t(lookahead)) { last = true; break; }
+                }
+            }
             std::array<unsigned char, 512> bytes;
             const int size = opus_encode_float(encoder.get(), frame.data(), FrameSamples, bytes.data(), bytes.size());
             if (size < 0) throw std::runtime_error("Cannot encode noise frame");
             lock.lock();
             if (!m_active || epoch != m_epoch || m_stop) continue; // Old work cannot cross Busy/stop.
-            m_packets.push_back({QByteArray(reinterpret_cast<const char *>(bytes.data()), size), epoch, m_frame, cursor});
-            m_cursor = (cursor + FrameSamples) % m_pcm->size(); m_frame += 2;
+            m_packets.push_back({QByteArray(reinterpret_cast<const char *>(bytes.data()), size), epoch, m_frame, cursor, packetSegment, last, nextCursor});
+            m_cursor = nextCursor; m_frame += 2; m_producedEnd = last;
         }
     } catch (const std::exception &error) {
         std::lock_guard<std::mutex> lock(m_mutex);

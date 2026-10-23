@@ -12,7 +12,19 @@
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (false)
 using Plan = SquelchPlan;
 static QString asset(const char *name) { return QStringLiteral(AUDIO_ASSET_DIR) + '/' + name; }
-struct Heard { AudioFeedback::Recipient recipient; QByteArray bytes; std::uint64_t frame; bool last; std::int64_t time; };
+struct Heard { AudioFeedback::Recipient recipient; QByteArray bytes; std::uint64_t frame; bool last; std::int64_t time; RadioNoise::Segment segment; };
+struct AudioFeedbackTestAccess {
+    static std::vector<std::unique_lock<std::mutex>> holdProducers(AudioFeedback &feedback) {
+        std::vector<std::unique_lock<std::mutex>> held;
+        for (auto &slot : feedback.m_noiseSlots) if (slot.producer) held.emplace_back(slot.producer->m_mutex);
+        return held; // Block only test producers/try-locks; do not reset codec epochs.
+    }
+    static std::size_t streams(const AudioFeedback &feedback) { return feedback.m_noise.size(); }
+    static RadioNoise::Segment segment(AudioFeedback &feedback, std::uint64_t connection) {
+        auto state=feedback.m_noise.find(connection);
+        return state==feedback.m_noise.end()?RadioNoise::Segment::End:state->second.reserve.segment;
+    }
+};
 struct Rig {
     std::int64_t now = 0;
     Plan plan{true, [this] { return now; }};
@@ -21,8 +33,9 @@ struct Rig {
     Plan::Identity source{1, 11, 0};
     std::vector<Plan::Identity> receivers{{2, 12, 0}, {3, 13, 0}};
     std::vector<Heard> heard;
-    bool open;
-    Rig(bool squelch = true, int count = 2) : open(squelch) {
+    bool open, openEnabled, closeEnabled;
+    int bufferedBytes = 0;
+    Rig(bool squelch = true, int count = 2, bool withOpen = true, bool withClose = true) : open(squelch), openEnabled(withOpen), closeEnabled(withClose) {
         QByteArray wav(44 + 1007 * 2, 0);
         auto w16 = [&](int at, quint16 x) { qToLittleEndian(x, wav.data() + at); };
         auto w32 = [&](int at, quint32 x) { qToLittleEndian(x, wav.data() + at); };
@@ -31,14 +44,15 @@ struct Rig {
         w32(24, 48000); w32(28, 96000); w16(32, 2); w16(34, 16); w32(40, 2014);
         for (int i = 0; i < 1007; ++i) w16(44 + 2 * i, quint16(i * 19 % 5000));
         QFile f(dir.path() + "/noise.wav"); CHECK(f.open(QIODevice::WriteOnly)); CHECK(f.write(wav) == wav.size()); f.close();
+        if (open) feedback.configureSquelch(asset("squelch-open.wav"), asset("squelch-close.wav"), 50, 50, withOpen, withClose);
         CHECK(feedback.configureNoise(f.fileName(), 20));
-        if (open) feedback.configureSquelch(asset("squelch-open.wav"), asset("squelch-close.wav"), 50, 50);
         receivers.clear(); for (int i = 0; i < count; ++i) receivers.push_back({std::uint64_t(i + 2), unsigned(i + 12), 0});
     }
     void queue(const std::vector<Plan::Cue> &cues) {
         for (const auto &cue : cues) {
             if (cue.kind == Plan::Kind::Open) CHECK(feedback.requestNoise(cue));
-            if (open) CHECK(feedback.requestSquelch(cue));
+            if (open && ((cue.kind == Plan::Kind::Open && openEnabled) || (cue.kind == Plan::Kind::Close && closeEnabled)))
+                CHECK(feedback.requestSquelch(cue));
             else if (cue.kind == Plan::Kind::Open) CHECK(plan.consume(cue, cue.sender, cue.recipient, true));
         }
     }
@@ -48,14 +62,17 @@ struct Rig {
         for (int i = 0; i < count; ++i) {
             const auto before = heard.size();
             feedback.tick(now, [&](const AudioFeedback::Recipient &r, const QByteArray &p, std::uint64_t frame, bool last) {
+                if(std::none_of(receivers.begin(),receivers.end(),[&](const Plan::Identity &id){return id.connection==r.connection && id.session==r.session && id.channel==r.channel;}))return false;
                 for (auto it = heard.rbegin(); it != heard.rend(); ++it) if (it->recipient.connection == r.connection) {
                     if (frame <= it->frame)
                         std::cerr << "Effect sequence reset at " << now << " us: " << it->frame << " -> " << frame << '\n';
                     CHECK(frame > it->frame); break;
                 }
-                heard.push_back({r, p, frame, last, now}); return true;
+                heard.push_back({r, p, frame, last, now, AudioFeedbackTestAccess::segment(feedback,r.connection)}); return true;
             }, [&](const Plan::Cue &cue, bool starting) {
                 return starting ? plan.consume(cue, cue.sender, cue.recipient, true) : plan.current(cue);
+            }, [&](const AudioFeedback::Recipient &, bool continuous) {
+                return bufferedBytes < (continuous?1024:65536);
             });
             int noisePackets = 0;
             for (std::size_t j = before; j < heard.size(); ++j) {
@@ -85,25 +102,120 @@ struct Rig {
         for (auto &entry : decoders) if (entry.second) opus_decoder_destroy(entry.second);
     }
 };
-int main() {
-    try {
-        {
-            // A confirmed marker after >60 s must retire Noise before sending
-            // one complete Close in the SAME recipient sequence space.
-            Rig r(true, 1); r.start(); r.tick(3100);
-            std::cout << "Long confirmed end at " << r.now << " us\n";
-            r.end(); r.tick(20);
+static int shortCloseProbe() {
+    int failed = 0;
+    for (bool timeoutEnd : {false, true}) for (int mode = 0; mode < 6; ++mode) {
+        // All transmissions are two seconds long. Only the final transition is disturbed.
+        const char *names[] = {"confirmed", "timeout", "tcp-1024", "producer-80ms", "producer-140ms", "dispatch-120ms"};
+        try {
+            Rig r(true, 1); r.start(); r.tick(100);
+            if (timeoutEnd || mode == 1) r.queue(r.plan.timeout(r.source, 0)); else r.end();
+            if (mode == 2) { r.bufferedBytes = 1024; r.tick(); r.bufferedBytes = 0; }
+            if (mode == 3 || mode == 4) {
+                auto held=AudioFeedbackTestAccess::holdProducers(r.feedback);
+                r.tick(mode == 3 ? 4 : 7);
+            }
+            if (mode == 5) r.now += 120000;
+            r.tick(20);
             const auto packets = r.forUser(2);
             const auto close = r.feedback.clip(AudioFeedback::Signal::SquelchClose);
-            auto first = std::find_if(packets.begin(), packets.end(), [&](const Heard &h) { return h.bytes == close[0]; });
+            auto first = std::find_if(packets.begin(), packets.end(), [&](const Heard &h) { return h.segment == RadioNoise::Segment::Close; });
             CHECK(first != packets.end() && first != packets.begin());
-            CHECK((first - 1)->last);
-            CHECK(first->time - (first - 1)->time >= 60000);
-            CHECK(first->time <= 62000000 + Plan::MaxCloseCueAgeUs);
-            CHECK(first->frame == (first - 1)->frame + 102);
             CHECK(std::size_t(packets.end() - first) == close.size());
             for (std::size_t i = 0; i < close.size(); ++i) {
-                CHECK((first + std::ptrdiff_t(i))->bytes == close[i]);
+                CHECK((first + std::ptrdiff_t(i))->segment == RadioNoise::Segment::Close);
+                CHECK((first + std::ptrdiff_t(i))->last == (i + 1 == close.size()));
+            }
+            std::cout << names[mode] << " timeout=" << (timeoutEnd || mode == 1) << ": close_packets=" << close.size()
+                      << " noise_last=" << (first - 1)->last << " gap_us=" << first->time - (first - 1)->time
+                      << " close_seq=" << first->frame << " prior_seq=" << (first - 1)->frame << '\n';
+            r.decode();
+            CHECK(!(first - 1)->last);
+            CHECK(first->time - (first - 1)->time == 20000);
+        } catch (const std::exception &e) { ++failed; std::cerr << names[mode] << ": " << e.what() << '\n'; }
+    }
+    return failed ? 1 : 0;
+}
+static void lifecycleRegressions() {
+    for(bool open:{false,true})for(bool close:{false,true})for(bool timeout:{false,true}) {
+        Rig r(true,1,open,close);r.start();r.tick(5);
+        if(timeout)r.queue(r.plan.timeout(r.source,0));else r.end();
+        r.tick(20);const auto h=r.forUser(2);CHECK(!h.empty() && h.back().last);
+        CHECK(std::count_if(h.begin(),h.end(),[](const Heard &p){return p.last;})==1);
+        CHECK(std::count_if(h.begin(),h.end(),[](const Heard &p){return p.segment==RadioNoise::Segment::Open;})==(open?1:0));
+        CHECK(std::count_if(h.begin(),h.end(),[](const Heard &p){return p.segment==RadioNoise::Segment::Close;})==(close?4:0));
+        for(std::size_t i=1;i<h.size();++i)CHECK(h[i].frame==h[i-1].frame+2);
+        r.decode();
+    }
+    for(bool ended:{false,true}) {
+        Rig r(true,1);r.start();r.tick(10);if(ended)r.end();
+        {auto held=AudioFeedbackTestAccess::holdProducers(r.feedback);r.tick(22);}
+        r.tick(8);const auto h=r.forUser(2);CHECK(h.back().last);
+        CHECK(std::none_of(h.begin(),h.end(),[](const Heard &p){return p.segment==RadioNoise::Segment::Close;}));
+        const auto size=h.size();r.tick(8);CHECK(r.forUser(2).size()==size);r.decode();
+    }
+    {
+        Rig r(true,1);r.start();r.tick(8);r.now+=120000;r.tick(5);
+        auto h=r.forUser(2);CHECK(h.back().last);CHECK(r.forUser(2).size()==h.size());r.decode();
+    }
+    {
+        Rig r(true,1);r.start();r.tick(8);r.end();r.start();r.tick(12);r.end();r.tick(16);
+        const auto h=r.forUser(2);CHECK(h.back().last);
+        CHECK(std::count_if(h.begin(),h.end(),[](const Heard &p){return p.last;})==2);
+        CHECK(std::count_if(h.begin(),h.end(),[](const Heard &p){return p.segment==RadioNoise::Segment::Close;})==4);
+        r.decode(); // Old Close was invalidated, new generation has exactly one complete Close.
+    }
+    for(int change:{0,1,2}) {
+        Rig r(true,1);r.start();r.tick(8);r.end();
+        if(change==0) {r.plan.invalidate(1);r.feedback.cancel(1);} // Sender disconnect: end, never Close.
+        if(change==1) {r.plan.invalidate(2);r.feedback.cancel(2);r.receivers[0].channel=1;}
+        if(change==2) {r.plan.invalidate(2);r.feedback.cancel(2);r.receivers[0].connection=9;} // Reused session.
+        r.tick(10);const auto h=r.forUser(2);
+        CHECK(std::none_of(h.begin(),h.end(),[](const Heard &p){return p.segment==RadioNoise::Segment::Close;}));
+        CHECK(r.forUser(9).empty());
+    }
+    {
+        Rig r(true,1);r.start();r.tick(10);r.end();
+        for(int i=0;i<12;++i) {
+            r.tick();auto h=r.forUser(2);
+            if(!h.empty() && h.back().segment==RadioNoise::Segment::Close)break;
+        }
+        {auto held=AudioFeedbackTestAccess::holdProducers(r.feedback);r.tick(15);}
+        r.tick(8);CHECK(AudioFeedbackTestAccess::streams(r.feedback)==0);
+        CHECK(r.forUser(2).back().last);r.decode();
+    }
+    {
+        Rig r(true,1);r.start();r.tick(8);r.end();r.bufferedBytes=65536;r.tick(20);
+        CHECK(AudioFeedbackTestAccess::streams(r.feedback)==0);
+        auto size=r.heard.size();r.bufferedBytes=0;r.tick(10);CHECK(r.heard.size()==size);
+        // A permanently blocked transport cannot receive an end packet. Abort
+        // boundedly, without relaxing either TCP budget or playing stale Close.
+    }
+    std::cout<<"Unified lifecycle: disabled phases, confirmed/timeout, >300ms starvation, delayed tick, rapid PTT, disconnect/channel/reuse: OK\n";
+}
+int main(int argc, char **argv) {
+    if (argc == 2 && std::string(argv[1]) == "--short-close-probe") return shortCloseProbe();
+    try {
+        CHECK(shortCloseProbe()==0);
+        lifecycleRegressions();
+        for (bool timeoutEnd : {false, true}) {
+            // Both end reasons after >60 s retain ONE encoder/sequence stream,
+            // no intermediate end marker and one complete, timely Close.
+            Rig r(true, 1); r.start(); r.tick(3100);
+            std::cout << "Long end at " << r.now << " us, timeout=" << timeoutEnd << "\n";
+            if (timeoutEnd) r.queue(r.plan.timeout(r.source, 0)); else r.end();
+            r.tick(20);
+            const auto packets = r.forUser(2);
+            const auto close = r.feedback.clip(AudioFeedback::Signal::SquelchClose);
+            auto first = std::find_if(packets.begin(), packets.end(), [&](const Heard &h) { return h.segment == RadioNoise::Segment::Close; });
+            CHECK(first != packets.end() && first != packets.begin());
+            CHECK(!(first - 1)->last);
+            CHECK(first->time - (first - 1)->time == 20000);
+            CHECK(first->time <= 62000000 + Plan::MaxCloseCueAgeUs);
+            CHECK(first->frame == (first - 1)->frame + 2);
+            CHECK(std::size_t(packets.end() - first) == close.size());
+            for (std::size_t i = 0; i < close.size(); ++i) {
+                CHECK((first + std::ptrdiff_t(i))->segment == RadioNoise::Segment::Close);
                 CHECK((first + std::ptrdiff_t(i))->last == (i + 1 == close.size()));
             }
             r.decode();
@@ -114,11 +226,12 @@ int main() {
             const auto a = r.forUser(2), b = r.forUser(3); CHECK(a.size() > 5 && b.size() > 5);
             CHECK(a[2].bytes == b[2].bytes); // Shared ORIGINAL random start, separate encoders.
             const auto open = r.feedback.clip(AudioFeedback::Signal::SquelchOpen);
-            CHECK(a[0].bytes == open[0] && a[1].bytes == open[1] && a[1].last);
+            CHECK(a[0].segment == RadioNoise::Segment::Open && !a[0].last);
+            CHECK(a[1].segment == RadioNoise::Segment::Noise && !a[1].last);
             r.end(); r.tick(15); const auto ended = r.forUser(2);
             const auto close = r.feedback.clip(AudioFeedback::Signal::SquelchClose);
             CHECK(ended.size() >= close.size());
-            for (std::size_t i = 0; i < close.size(); ++i) CHECK(ended[ended.size() - close.size() + i].bytes == close[i]);
+            for (std::size_t i = 0; i < close.size(); ++i) CHECK(ended[ended.size() - close.size() + i].segment == RadioNoise::Segment::Close);
             CHECK(ended.back().last); const auto size = r.heard.size(); r.tick(10); CHECK(r.heard.size() == size); r.decode();
         }
         {
@@ -137,11 +250,13 @@ int main() {
             CHECK(r.plan.timeout(r.source, 0).empty()); r.tick(15);
             auto a = r.forUser(2); CHECK(a.back().last);
             const auto close = r.feedback.clip(AudioFeedback::Signal::SquelchClose);
-            CHECK(std::count_if(a.begin(), a.end(), [&](const Heard &h) { return h.bytes == close[0]; }) == 1);
+            CHECK(std::count_if(a.begin(), a.end(), [&](const Heard &h) { return h.segment == RadioNoise::Segment::Close; }) == int(close.size()));
         }
         {
             Rig r; r.start(true); r.tick(20); const auto a = r.forUser(2);
-            CHECK(a.size() == 6 && a.back().last); // Open + Close only, no noise for ended short burst.
+            CHECK(a.size() >= 5 && a.back().last);
+            CHECK(a.front().segment == RadioNoise::Segment::Open);
+            CHECK(std::count_if(a.begin(),a.end(),[](const Heard &h){return h.last;})==1); // One complete stream even for one speech packet.
         }
         {
             Rig r(false); r.start(); r.tick(7); r.plan.invalidate(2); r.feedback.cancel(2); r.tick(3);
@@ -162,7 +277,11 @@ int main() {
             int noisy = 0; for (const auto &who : r.receivers) if (r.forUser(who.connection).size() > 2) ++noisy;
             CHECK(noisy > 0); // Optional underruns may rotate slots; per-tick cap is asserted above.
             r.end(); r.tick(18);
-            for (const auto &who : r.receivers) { auto h = r.forUser(who.connection); CHECK(h.size() >= 6 && h.back().last); }
+            int omitted=0;
+            for (const auto &who : r.receivers) { auto h = r.forUser(who.connection);
+                if(h.empty()) ++omitted; else CHECK(h.size() >= 5 && h.back().last);
+            }
+            CHECK(omitted >= 1); // Fixed 16-worker cap: omit optional effects, never spawn a 17th encoder.
         }
         std::cout << "Noise scheduler: accepted/denied, shared start, Open/Close, Busy/resume, timeout, short bursts, lifecycle, 16-slot cap: OK\n";
     } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }
