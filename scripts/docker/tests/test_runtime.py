@@ -41,7 +41,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(values['squelchopen'],'true');self.assertEqual(values['squelchclose'],'true')
         self.assertEqual(values['squelchclosetimeoutfallback'],'true')
         self.assertEqual(values['feedbackboostdb'],'8')
-        self.assertEqual((values['radionoise'],values['radionoisefile'],values['radionoisevolume']),('false','','20'))
+        self.assertEqual((values['radionoise'],values['radionoisefile'],values['radionoisevolume']),('true','/usr/local/share/mumble-funk/audio/radio-noise.wav','20'))
         self.assertEqual(values['busytonefile'],'/usr/local/share/mumble-funk/audio/busy-tone.wav')
         self.assertEqual(values['squelchopenfile'],'/usr/local/share/mumble-funk/audio/squelch-open.wav')
         self.assertEqual(len(values['serverpassword']),48);self.assertNotIn('serverpassword=',str(self.calls))
@@ -92,7 +92,7 @@ class RuntimeTests(unittest.TestCase):
         original=self.runtime.CONFIG.read_bytes()
         backup=self.runtime.CONFIG.with_name('server.ini.before-audio-change')
         backup.write_bytes(original)
-        self.runtime.CONFIG.write_bytes(original.replace(b'radionoise=false',b'radionoise=true'))
+        self.runtime.CONFIG.write_bytes(original.replace(b'radionoise=true',b'radionoise=false'))
         revision=hashlib.sha256(self.runtime.CONFIG.read_bytes()).hexdigest()
         with self.runtime.instance_lock():
             with self.assertRaises(RuntimeError):self.runtime.rollback_audio(revision)
@@ -111,7 +111,8 @@ class RuntimeTests(unittest.TestCase):
         with wave.open(str(path),'wb') as wav:
             wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(48000)
             wav.writeframes(b'\x00\x01'*96000)
-        for selection in (b'radionoise=true\nradionoisefile=/var/lib/mumble-funk/audio/radio-noise.wav\nradionoisevolume=37\n',b''):
+        for selection in (b'radionoise=true\nradionoisefile=/var/lib/mumble-funk/audio/radio-noise.wav\nradionoisevolume=37\n',
+                          b'radionoise=false\nradionoisefile=/var/lib/mumble-funk/audio/radio-noise.wav\nradionoisevolume=0\n', b''):
             lines=self.runtime.CONFIG.read_bytes().splitlines(keepends=True)
             text=b''.join(line for line in lines if not line.startswith((b'radionoise=',b'radionoisefile=',b'radionoisevolume=')))+selection
             self.runtime.CONFIG.write_bytes(text);audio=path.read_bytes()

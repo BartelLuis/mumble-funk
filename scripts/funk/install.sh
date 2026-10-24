@@ -52,16 +52,20 @@ version=$("$binary" --version 2>&1)
 for asset in squelch-open.wav squelch-close.wav; do
     "$binary" --validate-squelch-wav "$repo/assets/audio/$asset" >/dev/null
 done
-# This filename is newly packaged. Do not overwrite an operator's older file
-# that happens to use the same path, including a symlink to a custom recording.
-standard_busy="$root/usr/local/share/mumble-funk/audio/busy-tone.wav"
-if [[ -e $standard_busy || -L $standard_busy ]]; then
-    if [[ ! -f $standard_busy || -L $standard_busy ]] || \
-       [[ $(sha256sum -- "$standard_busy" | cut -d ' ' -f 1) != $(sha256sum -- "$repo/assets/audio/busy-tone.wav" | cut -d ' ' -f 1) ]]; then
-        echo 'Vorhandene abweichende Standardpfad-Datei busy-tone.wav bleibt erhalten. Bitte vor dem Update separat sichern/importieren und den Pfad freigeben.' >&2
-        exit 1
+# Validate the long recording with its own bounds, not the short-cue parser.
+"$binary" --validate-radio-noise-wav "$repo/assets/audio/radio-noise.wav" >/dev/null
+# Never overwrite an operator recording at a newly packaged standard path.
+# Reject conflicts before writing deployment files or changing a service.
+for asset in busy-tone.wav radio-noise.wav; do
+    standard="$root/usr/local/share/mumble-funk/audio/$asset"
+    if [[ -e $standard || -L $standard ]]; then
+        if [[ ! -f $standard || -L $standard ]] || \
+           [[ $(sha256sum -- "$standard" | cut -d ' ' -f 1) != $(sha256sum -- "$repo/assets/audio/$asset" | cut -d ' ' -f 1) ]]; then
+            echo "Vorhandene abweichende Standardpfad-Datei $asset bleibt erhalten. Bitte vor dem Update separat sichern/importieren und den Pfad freigeben." >&2
+            exit 1
+        fi
     fi
-fi
+done
 release=$(sha256sum -- "$binary" | cut -d ' ' -f 1)
 base="$root/opt/mumble-funk"
 if [[ -z $root ]]; then
@@ -81,7 +85,7 @@ fi
 # Public standards and helper library are separate from user WAVs/configuration.
 install -d -m 0755 "$root/usr/local/share/mumble-funk/audio" "$root/usr/local/lib/mumble-funk"
 install -m 0644 "$repo/assets/audio/busy-tone.wav" "$repo/assets/audio/squelch-open.wav" "$repo/assets/audio/squelch-close.wav" \
-    "$repo/assets/audio/LICENSE.md" "$root/usr/local/share/mumble-funk/audio/"
+    "$repo/assets/audio/radio-noise.wav" "$repo/assets/audio/LICENSE.md" "$root/usr/local/share/mumble-funk/audio/"
 install -m 0644 "$repo/scripts/funk/audio-preview/audio_control.py" "$root/usr/local/lib/mumble-funk/audio_control.py"
 branch=$(git -C "$repo" branch --show-current)
 revision=$(git -C "$repo" rev-parse HEAD)

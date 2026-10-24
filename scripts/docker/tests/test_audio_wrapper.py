@@ -54,7 +54,7 @@ class AudioWrapperTests(unittest.TestCase):
         self.assertIn(['compose', 'stop', '--timeout', '30', 'mumble-funk'], calls)
         self.assertIn(['compose', 'start', 'mumble-funk'], calls)
         self.assertEqual(calls[-1], ['compose', 'exec', '-T', 'mumble-funk', 'funk-container', 'health'])
-        for command in ('enable-timeout-close', 'disable-timeout-close', 'use-standard-busy-tone', 'reset-busy-tone', 'enable-radio-noise', 'disable-radio-noise'):
+        for command in ('enable-timeout-close', 'disable-timeout-close', 'use-standard-busy-tone', 'reset-busy-tone', 'enable-radio-noise', 'disable-radio-noise', 'use-standard-radio-noise'):
             self.calls_file.unlink()
             calls = self.run_command(command)
             self.assertIn(['compose', 'run', '--rm', '--no-deps', '-T', 'mumble-funk', 'audio', command], calls)

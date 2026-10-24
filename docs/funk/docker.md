@@ -9,7 +9,9 @@ Dieser Feature-Stand **`feature/radio-noise`** enthält die gemeinsame Audio-Eng
 und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
 Stable-Freigabe. Neue Konfigurationen aktivieren Simplex, Busy, Squelch Open/Close
 bei 50 % und +8 dB; Mumla-Timeout-Close ist ebenfalls aktiv. Vorhandene INIs bleiben unverändert.
-Funkrauschen bleibt **standardmäßig aus** und benötigt eine eigene WAV-Datei.
+Funkrauschen ist bei **neuen INIs eingeschaltet**, mit der mitgelieferten
+CC0-Aufnahme `/usr/local/share/mumble-funk/audio/radio-noise.wav` bei Lautstärke 20.
+Bestehende Einstellungen und auch fehlende Rauschschlüssel werden nicht migriert.
 Die vorhandene Open/Noise/Close-Engine wird unverändert auch in Docker verwendet.
 Details und Bestandsschutz: [Standard-Audioeinstellungen](audio-defaults.md).
 Die Anleitung für Aktivierung, eigene WAVs und getrennte Open-/Close-Einstellungen
@@ -581,8 +583,13 @@ arbeiten. Die Befehle verwenden den bestehenden Compose-Dienst und dessen Volume
 Sie ändern weder `.env` noch Projektname oder Ports: Host **64740 TCP/UDP**, innen
 **64739 TCP/UDP**, sofern du selbst keinen anderen Host-Port festgelegt hast.
 
-Es wird **keine Rauschaufnahme mitgeliefert** und keine in das Image eingebaut.
-Verwende nur eine eigene Datei mit geklärten Nutzungsrechten. Lege die private
+Die vom Betreiber erstellte und ausdrücklich unter CC0 1.0 Universal freigegebene
+Standardaufnahme ist bytegenau im Image enthalten: siehe
+[Herkunft, Lizenz und SHA-256](../../assets/audio/LICENSE.md). UID 10001 kann sie
+auch mit read-only Root-Dateisystem lesen. Bei frischen INIs ist sie bei
+Lautstärke 20 aktiv; ein Update ändert vorhandene INIs nicht.
+
+Zusätzlich kannst du eine eigene Datei mit geklärten Nutzungsrechten verwenden. Lege die private
 Quelldatei außerhalb des Git-Verzeichnisses ab, beispielsweise unter
 `~/mumble-funk-private/radio-noise.wav`. Nicht committen oder hochladen.
 
@@ -603,20 +610,29 @@ bash scripts/docker/audio.sh status
 
 Simplex und Audio-Feedback müssen bereits aktiviert sein. Der Rauschbefehl schaltet
 sie nicht heimlich ein. Bei Bedarf erst `bash scripts/docker/audio.sh enable`
-verwenden; Simplex gemäß Abschnitt 6 prüfen. **Import allein aktiviert Rauschen
-nicht.** Lautstärke 0–100, 0 bleibt stumm. Rauschen hat eine unabhängige Lautstärke;
+verwenden; Simplex gemäß Abschnitt 6 prüfen. **Import verändert den Aktivierungszustand nicht.** Lautstärke 0–100, 0 bleibt stumm. Rauschen hat eine unabhängige Lautstärke;
 der globale Audio-Boost gilt weiterhin für Busy/Open/Close, nicht für Rauschen. Für Open und Close müssen die jeweiligen Squelch-Schalter aktiv sein.
 
 Die geprüfte Datei wird unverändert unter
 `/var/lib/mumble-funk/audio/radio-noise-<SHA256>.wav` im vorhandenen State-Volume
 abgelegt. Der Prüfsummenname statt eines überschriebenen `radio-noise.wav` bewahrt
 frühere Dateien für Rollbacks. Die genaue Auswahl steht vollständig in `status`.
-Rechte: UID/GID **10001:10001**, Modus **0640**; der Server kann sie lesen.
+Rechte eigener Importe: UID/GID **10001:10001**, Modus **0640**; der Server kann sie lesen.
+Der Standard liegt in Ubuntu und Docker unter
+`/usr/local/share/mumble-funk/audio/radio-noise.wav` (0644), unabhängig von eigenen WAVs.
 Die Quelldatei auf dem Host bleibt unverändert. Kein neuer Build ist nötig.
+
+Zurück zur mitgelieferten Aufnahme (nur Dateiauswahl, Lautstärke und Ein/Aus
+bleiben erhalten; alte importierte Dateien werden nicht gelöscht):
+
+```bash
+bash scripts/docker/audio.sh use-standard-radio-noise
+bash scripts/docker/audio.sh enable-radio-noise
+```
 
 | Installation | Eigene Rauschdatei |
 | --- | --- |
-| Ubuntu nativ | `/etc/mumble-funk/sounds/radio-noise.wav`, siehe [Funkrauschen](radio-noise.md) |
+| Ubuntu nativ | `/etc/mumble-funk/sounds/radio-noise-<SHA256>.wav`, siehe [Funkrauschen](radio-noise.md) |
 | Docker | `/var/lib/mumble-funk/audio/radio-noise-<SHA256>.wav`, eigenes State-Volume |
 
 Zum Ausschalten, ohne Datei, Lautstärke oder andere Effekte zu ändern:
@@ -686,7 +702,7 @@ Konfiguration verwenden. Niemals `down -v` beim Update/Rollback verwenden.
    vorher sichern. Ergebnis und installierte Git-Revision notieren.
 
 Die Docker-CI führt mit `--radio-noise` ausschließlich temporäre Testprojekte und
-eine programmatisch erzeugte WAV aus: Import/Rechte, Ein-/Ausschalten, Lautstärke,
+die mitgelieferte CC0-Aufnahme sowie eine programmatisch erzeugte eigene WAV aus: Import/Rechte, Ein-/Ausschalten, Lautstärke,
 kurze/lange TCP-/verschlüsselte UDP-Streams, decodiertes Close, Busy-Priorität,
 Sprachbytes, Sicherung/Restore und Neuerstellen. Ein optionales `--previous-image`
 prüft zusätzlich einen echten Wechsel zwischen zwei lokalen Images samt Rollback.

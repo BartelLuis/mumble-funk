@@ -14,10 +14,11 @@ exakten lokalen/gecacheten/veröffentlichten Commit, Herkunft, Mumble-Basis und
 unveröffentlichte Dateien. Orchestrierungstests prüfen die Weitergabe des Schalters
 über Setup, Build und Install sowie Bestandsschutz; apt/systemd/Build sind dabei
 Mocks. Der neue Staging-Test verwendet das echte vorhandene Serverbinary: frische
-Installation ohne Rausch-WAV und ohne Aktivierung, danach manuelles WAV-Laden mit
-20 % und Wiederholung unter Erhalt von INI, SQLite-Daten und WAV. Er verändert
-keinen echten Dienst. Optional `MUMBLE_FUNK_NOISE_WAV=/absoluter/pfad/static.wav`
-voranstellen; ohne private Aufnahme verwendet er die öffentliche Busy-Testdatei.
+Installation mit bytegenauer CC0-Standardaufnahme und automatisch aktiviertem
+Rauschen bei 20 %, danach Erhalt bestehender INIs (aktiv/deaktiviert/fehlende
+Schlüssel), SQLite und eigener WAVs. Konflikte am neuen Paketpfad einschließlich
+symbolischer Links werden vor dem Überschreiben abgewiesen. Es wird kein echter
+Dienst verändert.
 Der normale Server-CI-Workflow führt ihn ebenfalls aus. Das ersetzt weder eine
 vollständige Ubuntu-VM-Installation noch Hörtests; Anleitung: [radio-noise.md](../../docs/funk/radio-noise.md).
 
@@ -86,3 +87,13 @@ Cloud-Umgebung diese benötigt. Niemals auf einer produktiven VM verwenden.
 
 Die tatsächlich ausgeführten Ubuntu-Prüfungen werden in
 [SETUP-STATUS.md](../../docs/funk/SETUP-STATUS.md) festgehalten.
+
+## Codec-Version bei externen Docker-Proben
+
+Die Protokollprobe vergleicht unter anderem kodierte Busy-Paketbytes. Dafür müssen
+Probe und Testimage dieselbe Opus-Version verwenden. Der native Cloud-Build kann
+eine andere Bibliothek laden als das Ubuntu-24.04-Image (beispielsweise 1.5.2
+gegenüber 1.4); deren Bitströme müssen nicht bytegleich sein. In der GitHub-CI
+werden beide auf Ubuntu 24.04 gebaut. Bei lokalen Docker-Prüfungen außerhalb
+dieser Umgebung die Probe mit der zum Image passenden Bibliothek ausführen.
+Die Paketvergleiche bleiben aktiv; weder Serververhalten noch Grenzwerte ändern.

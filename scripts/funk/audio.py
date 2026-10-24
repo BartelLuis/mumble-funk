@@ -16,6 +16,7 @@ import sys
 INSTANCE = 'mumble-funk'
 STANDARD_DIR = '/usr/local/share/mumble-funk/audio'
 BUSY_STANDARD = STANDARD_DIR+'/busy-tone.wav'
+NOISE_STANDARD = STANDARD_DIR+'/radio-noise.wav'
 DEFAULTS = {
     'feedbackboostdb': '0', 'audiofeedback': 'false', 'busytone': 'true', 'busytonefile': '', 'busytonevolume': '50',
     'squelch': 'false', 'squelchopen': 'true', 'squelchclose': 'true',
@@ -72,9 +73,9 @@ def main(argv=None, container=False):
                 'enable-squelch', 'disable-squelch', 'enable-open', 'disable-open',
                 'enable-close', 'disable-close', 'open-volume', 'close-volume',
                 'enable-timeout-close', 'disable-timeout-close',
-                'set-open', 'set-close', 'reset-open', 'reset-close']
-    if container:
-        commands += ['set-radio-noise', 'enable-radio-noise', 'disable-radio-noise', 'radio-noise-volume']
+                'set-open', 'set-close', 'reset-open', 'reset-close',
+                'set-radio-noise', 'enable-radio-noise', 'disable-radio-noise', 'radio-noise-volume',
+                'use-standard-radio-noise']
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=commands, nargs='?', default='status')
     parser.add_argument('value', nargs='?')
@@ -132,6 +133,9 @@ def main(argv=None, container=False):
             elif args.command == 'use-standard-busy-tone':
                 COMMON.checked([str(binary), '--validate-feedback-wav', str(root/BUSY_STANDARD.lstrip('/'))])
                 updates = {'busytonefile': BUSY_STANDARD}
+            elif args.command == 'use-standard-radio-noise':
+                COMMON.checked([str(binary), '--validate-radio-noise-wav', str(root/NOISE_STANDARD.lstrip('/'))])
+                updates = {'radionoisefile': NOISE_STANDARD}
             elif args.command in ('reset-open', 'reset-close', 'reset-busy-tone'):
                 signal = {'reset-open': 'open', 'reset-close': 'close', 'reset-busy-tone': 'busy'}[args.command]
                 key = 'busytonefile' if signal == 'busy' else 'squelch'+signal+'file'
@@ -153,7 +157,7 @@ def main(argv=None, container=False):
                     raise RuntimeError('Rauschen benötigt bereits aktiviertes Simplex und Audio-Feedback.')
                 selected = configured.get('radionoisefile', '')
                 if not selected or not Path(selected).is_absolute():
-                    raise RuntimeError('Zuerst eine eigene Rausch-WAV importieren.')
+                    raise RuntimeError('Zuerst eine Rausch-WAV importieren oder use-standard-radio-noise verwenden.')
                 COMMON.checked([str(binary), '--validate-radio-noise-wav', str(root/selected.lstrip('/'))])
                 updates = {'radionoise': 'true'}
             elif args.command == 'disable-radio-noise':

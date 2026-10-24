@@ -50,7 +50,7 @@ RUN set -eu; export DEBIAN_FRONTEND=noninteractive; \
 COPY --from=build /out/mumble-server /usr/local/bin/mumble-server
 COPY scripts/docker/runtime.py /usr/local/bin/funk-container
 COPY --chmod=0644 scripts/funk/audio.py scripts/funk/audio-preview/audio_control.py /usr/local/lib/mumble-funk/
-COPY --chmod=0644 assets/audio/busy-tone.wav assets/audio/squelch-open.wav assets/audio/squelch-close.wav assets/audio/LICENSE.md /usr/local/share/mumble-funk/audio/
+COPY --chmod=0644 assets/audio/busy-tone.wav assets/audio/squelch-open.wav assets/audio/squelch-close.wav assets/audio/radio-noise.wav assets/audio/LICENSE.md /usr/local/share/mumble-funk/audio/
 COPY --chmod=0644 LICENSE /usr/share/doc/mumble-funk/LICENSE
 COPY 3rdPartyLicenses /usr/share/doc/mumble-funk/third-party
 COPY --from=build /src/3rdparty/speexdsp/COPYING /usr/share/doc/mumble-funk/SpeexDSP-COPYING

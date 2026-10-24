@@ -21,6 +21,8 @@ EXPECTED = {
     'busytonevolume': '50', 'squelch': 'true', 'squelchopen': 'true',
     'squelchclose': 'true', 'squelchopenvolume': '50', 'squelchclosevolume': '50',
     'feedbackboostdb': '8', 'squelchclosetimeoutfallback': 'true',
+    'radionoise': 'true', 'radionoisefile': '/usr/local/share/mumble-funk/audio/radio-noise.wav',
+    'radionoisevolume': '20',
 }
 
 
@@ -97,12 +99,14 @@ class AudioDefaults(unittest.TestCase):
         self.assertEqual((status['audiofeedback'], status['squelch'], status['feedbackboostdb'], status['busytonefile']),
                          ('false', 'false', '0', ''))
         self.assertEqual(status['squelchclosetimeoutfallback'], 'false')
+        self.assertEqual((status['radionoise'], status['radionoisefile'], status['radionoisevolume']),
+                         ('false', '', '20'))
         self.assertEqual(config.read_bytes(), before)
 
     def test_actual_fresh_audio_and_volume_zero_native_and_docker(self):
         configs = [self.native('live')[1], self.docker()]
         for original in configs:
-            for muted in (False, True):
+            for muted in (None, False, True):
                 with self.subTest(source=original, muted=muted):
                     with socket.socket() as reserve:
                         reserve.bind(('127.0.0.1', 0))
@@ -113,6 +117,10 @@ class AudioDefaults(unittest.TestCase):
                     text = text.replace('/var/lib/mumble-funk', str(self.root/'state'))
                     text = text.replace('/var/log/mumble-funk', str(self.root/'logs'))
                     text = text.replace('/usr/local/share/mumble-funk/audio', str(REPO/'assets/audio'))
+                    # Exercise the untouched new config first, then retain the
+                    # existing independent Busy/Squelch byte/mute regressions.
+                    if muted is not None:
+                        text = text.replace('radionoise=true', 'radionoise=false')
                     if muted:
                         for key in ('busytonevolume', 'squelchopenvolume', 'squelchclosevolume'):
                             text = text.replace(key+'=50', key+'=0')
@@ -133,11 +141,14 @@ class AudioDefaults(unittest.TestCase):
                         self.assertIn(b'Experimental audio feedback enabled:', startup)
                         self.assertIn(b'Experimental Squelch', startup)
                         password = values(text)['serverpassword']
-                        mode = '--audio-defaults-muted' if muted else '--audio-defaults'
+                        mode = '--radio-noise' if muted is None else '--audio-defaults-muted' if muted else '--audio-defaults'
                         result = subprocess.run([str(PROBE), str(port), mode], input=password+'\n',
-                                                capture_output=True, text=True, timeout=20)
+                                                # The radio probe includes a 62-second transmission;
+                                                # retain the 20-second bound for legacy probes.
+                                                capture_output=True, text=True, timeout=100 if muted is None else 20)
                         self.assertEqual(result.returncode, 0, result.stderr)
-                        self.assertIn('Installed audio defaults verified', result.stdout)
+                        self.assertIn('Container Open/Noise/Close verified' if muted is None else
+                                      'Installed audio defaults verified', result.stdout)
                     finally:
                         server.terminate()
                         try:

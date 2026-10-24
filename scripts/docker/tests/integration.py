@@ -191,17 +191,32 @@ def main():
             for key in ('busytonevolume','squelchopenvolume','squelchclosevolume'): assert values[key]=='50'
             # COPY must normalize public permissions even from a 0077 checkout.
             # Git records executable bits, not group/other read permissions.
-            readable="import os,stat;from pathlib import Path;paths=[Path('/usr/local/share/mumble-funk/audio')/name for name in ('busy-tone.wav','squelch-open.wav','squelch-close.wav','LICENSE.md')]+[Path('/usr/local/lib/mumble-funk')/name for name in ('audio.py','audio_control.py')];assert os.getuid()==10001;assert all(os.access(p,os.R_OK) and stat.S_IMODE(p.stat().st_mode)==0o644 for p in paths)"
+            readable="import os,stat;from pathlib import Path;paths=[Path('/usr/local/share/mumble-funk/audio')/name for name in ('busy-tone.wav','squelch-open.wav','squelch-close.wav','radio-noise.wav','LICENSE.md')]+[Path('/usr/local/lib/mumble-funk')/name for name in ('audio.py','audio_control.py')];assert os.getuid()==10001;assert all(os.access(p,os.R_OK) and stat.S_IMODE(p.stat().st_mode)==0o644 for p in paths)"
             compose('exec','-T','mumble-funk','python3','-c',readable)
+            initial=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+            assert (initial['radionoise'],initial['radionoisefile'],initial['radionoisevolume'])==('true','/usr/local/share/mumble-funk/audio/radio-noise.wav','20')
+            digest=compose('exec','-T','mumble-funk','sha256sum',initial['radionoisefile']).stdout.split()[0]
+            assert digest==b'dc0a1c97115eb797f261af52631288b868a648d0d9310fff0a431e8163536312'
+            if args.radio_noise:
+                fresh=command([str(args.probe),str(port),'--radio-noise'],input=(values['serverpassword']+'\n').encode())
+                assert b'Container Open/Noise/Close verified' in fresh.stdout
+            # Retain the independent historical Busy/Squelch packet-byte tests.
+            command(['bash','scripts/docker/audio.sh','disable-radio-noise']);healthy()
             fresh=command([str(args.probe),str(port),'--audio-defaults'],input=(values['serverpassword']+'\n').encode())
             assert b'Installed audio defaults verified' in fresh.stdout
             noise_file=None;noise_bytes=None
             if args.radio_noise:
-                initial=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
-                assert (initial['radionoise'],initial['radionoisefile'],initial['radionoisevolume'])==('false','','20')
+                # Missing legacy selection is still refused; packaged defaults do not migrate it.
                 original_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                compose('stop','mumble-funk')
+                clear="from pathlib import Path;p=Path('/etc/mumble-funk/server.ini');p.write_bytes(p.read_bytes().replace(b'radionoisefile=/usr/local/share/mumble-funk/audio/radio-noise.wav',b'radionoisefile='))"
+                compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',clear)
+                compose('start','mumble-funk');healthy()
+                legacy_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
                 assert command(['bash','scripts/docker/audio.sh','enable-radio-noise'],check=False).returncode!=0
                 healthy()
+                assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==legacy_config
+                command(['bash','scripts/docker/audio.sh','use-standard-radio-noise']);healthy()
                 assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==original_config
                 # Programmatically generated fixture; never use an operator recording.
                 source=directory/'synthetic-noise.wav'
@@ -268,7 +283,7 @@ def main():
                 compose('up','-d','--no-build','--force-recreate');healthy()
                 assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==prior
                 assert compose('exec','-T','mumble-funk','cat',noise_file).stdout==noise_bytes
-                print('PASS: noise default off, validated >128KiB import, UID10001:640, on/off/volume, failed import and recreation preserve INI/WAV')
+                print('PASS: packaged noise default on, explicit disable, validated >128KiB import, UID10001:640, on/off/volume, failed import and recreation preserve INI/WAV')
             # Preserve the complete existing explicit-off/legacy regression fixture.
             # Fresh automatic audio was exercised above against the actual container.
             for action in (('disable-squelch',),('disable',),('boost','0'),('disable-timeout-close',)):

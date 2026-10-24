@@ -20,6 +20,7 @@ output
 !assets/audio/squelch-open.wav
 !assets/audio/squelch-close.wav
 !assets/audio/busy-tone.wav
+!assets/audio/radio-noise.wav
 backups
 *.tar
 *.tar.gz

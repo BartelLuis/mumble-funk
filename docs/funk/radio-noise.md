@@ -16,17 +16,20 @@ mit/ohne Passwort, Audio-Status, Dienststatus, installierten Commit und Serverlo
 
 ## Konfiguration
 
-Neue Serveroptionen (Standardwerte):
+**Neuinstallationen dieses Feature-Branches** erhalten in Ubuntu und Docker:
 
 ```ini
-radionoise=false
-radionoisefile=
+radionoise=true
+radionoisefile=/usr/local/share/mumble-funk/audio/radio-noise.wav
 radionoisevolume=20
 ```
 
 Nur bei aktiviertem Simplex und `audiofeedback=true` kann eine ausdrücklich
-aktivierte Rauschfunktion arbeiten. Für eine eigene lokale Testkonfiguration
-`radionoise=true` und einen absoluten Pfad zu einer eigenen WAV-Datei setzen.
+aktivierte Rauschfunktion arbeiten. Die Standardaufnahme wird automatisch installiert.
+Sie stammt vom Projektbetreiber und ist ausdrücklich unter CC0 1.0 Universal
+freigegeben; siehe [Herkunft, Lizenz und SHA-256](../../assets/audio/LICENSE.md).
+Die Originaldatei wird bytegenau übernommen, ohne Umkodierung oder neue Stille.
+Für eine eigene lokale Testkonfiguration kann ein anderer absoluter WAV-Pfad gewählt werden.
 Der Server muss die Datei lesen können. Das wird beim Start geladen; Änderungen
 benötigen einen Neustart der eigenen Testinstanz.
 
@@ -38,6 +41,12 @@ das optionale Rauschen. Fehler werden im Serverlog gemeldet.
 Die Lautstärke ist unabhängig, erlaubt 0..100 und verwendet keinen globalen
 `feedbackboostdb`. Volume 0 erzeugt keine Rauschpakete oder Rausch-Worker.
 Bestehende INI-Dateien und Audio-Standardeinstellungen werden nicht migriert.
+Fehlende Rauschschlüssel in alten INIs bedeuten weiterhin `false`, leere Dateiauswahl
+und Lautstärke `20`. Ein Update schaltet Rauschen somit nicht unbemerkt ein.
+Eine eigene Datei am neuen Standardpfad wird nicht überschrieben: Der native
+Installer bricht bei abweichendem Inhalt oder einem symbolischen Link vor der
+Installation ab. Eigene Dateien zuerst sichern und bewusst über die Verwaltung
+importieren, bevor der Paketpfad freigegeben wird.
 
 ## Zustellung und Grenzen
 
@@ -105,25 +114,20 @@ Der normale Server-Build registriert `TestRadioNoise`, `TestNoiseScheduler` und
 `TestNoiseIntegration` verwendet temporäre Server mit Loopback-Adressen und
 prüft TCP, verschlüsseltes UDP, unveränderte Sprache und den Übertragungslebenszyklus.
 
-Optional kann die private Testaufnahme außerhalb des Repositorys verwendet werden:
+Die mitgelieferte CC0-Aufnahme kann zusätzlich mit dem echten Parser geprüft werden:
 
 ```bash
-MUMBLE_FUNK_NOISE_WAV=/absoluter/pfad/static.wav \
+build/funk/mumble-server --validate-radio-noise-wav assets/audio/radio-noise.wav
+MUMBLE_FUNK_NOISE_WAV="$PWD/assets/audio/radio-noise.wav" \
   ctest --test-dir build/funk --output-on-failure
-
-build/funk/tests/TestRadioNoise /absoluter/pfad/static.wav
 ```
 
-Der zusätzliche Dateitest erwartet die für B2a/B2b bekannte Aufnahme und ihre
-Prüfsumme. Ohne diese Datei verwenden die Tests vorhandene öffentliche Kurzsignale
-beziehungsweise programmgenerierte Test-WAVs. Die private Aufnahme ist kein
-Repository-Asset und wird nicht heruntergeladen oder veröffentlicht.
-
-B2b ergänzte zunächst keine Audioverwaltung oder neuen Ports. B2c-1 ergänzt
-nachfolgend die ausdrückliche Ubuntu-Testinstallation. Die inzwischen ergänzte
-[Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) verwendet
-das bestehende State-Volume einschließlich Backup/Restore; native Dateipfade
-und die nachfolgende Ubuntu-Anleitung bleiben davon unabhängig.
+Die Installationstests prüfen die vollständige SHA-256, Dateirechte, frische
+Standardkonfiguration und den Bestandsschutz. Die Docker-Integration prüft sowohl
+die mitgelieferte Aufnahme als auch eine synthetische eigene WAV einschließlich
+Backup/Restore und Update/Rollback. Native Verwaltung und
+[Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) verwenden
+weiterhin dieselbe Audio-Engine.
 
 ## B2c-1: Ubuntu-Snapshot-VM für den ersten Hörtest
 
@@ -143,7 +147,8 @@ anhalten. Das Setup installiert bzw. aktualisiert den **normalen** Dienst
 | Programm | `/opt/mumble-funk/current/mumble-server` |
 | INI | `/etc/mumble-funk/server.ini` |
 | Datenbank / Zertifikate | `/var/lib/mumble-funk/` |
-| Private Testaufnahme | `/etc/mumble-funk/sounds/radio-noise.wav` |
+| Mitgelieferte CC0-Aufnahme | `/usr/local/share/mumble-funk/audio/radio-noise.wav` |
+| Eigene WAVs | `/etc/mumble-funk/sounds/radio-noise-<SHA256>.wav` |
 
 Docker bleibt außerhalb dieser Testinstallation: Host **64740**, Container
 **64739**, jeweils TCP/UDP, unverändert. Keine weiteren Ports und kein Port 64742.
@@ -170,7 +175,8 @@ Das Setup installiert die übrigen Build-Abhängigkeiten, kompiliert, testet und
 installiert erst nach Erfolg. `BUILD-INFO` muss `branch=feature/radio-noise` und
 `experimental=true` nennen. Keine Stable-Freigabe. Falls Ubuntu-Pakete nicht
 gefunden werden, die `universe`-Hinweise in [installation-ubuntu.md](installation-ubuntu.md)
-beachten. **Rauschen bleibt ausgeschaltet**, auch ohne veröffentlichte Rauschdatei.
+beachten. **Neue INIs aktivieren Rauschen mit der mitgelieferten Aufnahme bei Lautstärke 20.**
+Vorhandene INIs werden nicht geändert.
 Die übrigen aktuellen Audio-Defaults für Neuinstallationen bleiben erhalten:
 Simplex, AudioFeedback, Busy, Open, Close und Timeout-Close aktiv, Effektlautstärken
 50 %, Audio-Boost +8 dB. Der Boost gilt nicht für Rauschen.
@@ -234,139 +240,73 @@ Diese lokalen Sicherungen enthalten Geheimnisse; privat aufbewahren. Sie ersetze
 keinen extern aufbewahrten Snapshot bzw. keine externe Sicherung. Rückkehr zum bisherigen Programm:
 [Setup-Update/Rollback](setup.md#updates).
 
-### C. Private Aufnahme vom eigenen Computer übertragen
+### C. Standardaufnahme und Status prüfen
 
-Auf dem **eigenen Computer**, in dem Ordner mit `static.wav` (PowerShell unter
-Windows mit OpenSSH oder ein Linux-/macOS-Terminal): Benutzer und VM-IP ersetzen.
-Für SCP muss der SSH-Dienst der VM erreichbar sein.
-
-```bash
-scp static.wav BENUTZER@VM-IP:radio-noise.wav
-```
-
-Alternativ mit einem SFTP-Programm nach `/home/BENUTZER/radio-noise.wav` kopieren.
-Nicht nach GitHub oder ins Git-Verzeichnis übertragen. Das Original auf dem
-Computer bleibt erhalten. Danach auf der **Ubuntu-VM**:
+Bei einer frischen Installation ist keine Dateiübertragung und keine manuelle
+INI-Bearbeitung nötig. Prüfen:
 
 ```bash
-sudo install -d -o root -g mumble-funk -m 0750 /etc/mumble-funk/sounds
-sudo install -o root -g mumble-funk -m 0640 \
-  "$HOME/radio-noise.wav" /etc/mumble-funk/sounds/radio-noise.wav
-```
-
-Vergleich und Leserechte prüfen:
-
-```bash
-sudo cmp "$HOME/radio-noise.wav" /etc/mumble-funk/sounds/radio-noise.wav
-sudo -u mumble-funk test -r /etc/mumble-funk/sounds/radio-noise.wav
-sudo stat -c '%U:%G %a %n' /etc/mumble-funk/sounds /etc/mumble-funk/sounds/radio-noise.wav
-```
-
-Erwartet: Verzeichnis `root:mumble-funk 750`, Datei `root:mumble-funk 640`.
-`cmp` und `test` bleiben bei Erfolg still. Die Datei wird bytegleich kopiert, nicht
-resampelt, normalisiert oder umkodiert. Der Dienst erhält Leserecht, kein Schreibrecht.
-Der Pfad liegt außerhalb von `ProtectHome` und ist unter `ProtectSystem=strict`
-lesbar. Keine Rauschaufnahme wird durch den Installer geliefert oder ersetzt.
-
-### D. Bewusst einschalten und Konfiguration prüfen
-
-Zunächst nur die INI sichern und öffnen:
-
-```bash
-sudo cp -a /etc/mumble-funk/server.ini "/etc/mumble-funk/server.ini.before-noise-$(date -u +%Y%m%dT%H%M%S)"
-sudo nano /etc/mumble-funk/server.ini
-```
-
-Diese drei Schlüssel **jeweils genau einmal** setzen:
-
-```ini
-radionoise=true
-radionoisefile=/etc/mumble-funk/sounds/radio-noise.wav
-radionoisevolume=20
-```
-
-Vorhandene aktive Einträge ersetzen, nicht nochmals anhängen. Fehlende Schlüssel
-im allgemeinen Bereich **vor der ersten `[Abschnitt]`-Zeile** einfügen, oder in
-einem bereits vorhandenen `[General]`-Abschnitt. Keinen `[server]`-Abschnitt und
-keinen zweiten `[General]`-Abschnitt erfinden. Andere Optionen, insbesondere
-Passwort, Datenbank und bestehende Audioeinstellungen, nicht ändern. Mit Strg+O,
-Enter speichern und mit Strg+X schließen.
-
-Dieser nur lesende Check prüft die drei Werte und Doppelungen im allgemeinen
-INI-Bereich, ohne Passwörter auszugeben:
-
-```bash
-sudo python3 - <<'PY'
-from pathlib import Path
-wanted = {'radionoise': 'true',
-          'radionoisefile': '/etc/mumble-funk/sounds/radio-noise.wav',
-          'radionoisevolume': '20'}
-found = {key: [] for key in wanted}
-section = 'General'
-for line in Path('/etc/mumble-funk/server.ini').read_text(encoding='utf-8-sig').splitlines():
-    line = line.strip()
-    if not line or line.startswith(('#', ';')):
-        continue
-    if line.startswith('['):
-        section = line
-        if line == '[General]':
-            section = 'General'
-        continue
-    if section == 'General' and '=' in line:
-        key, value = (part.strip() for part in line.split('=', 1))
-        if key in found:
-            found[key].append(value)
-for key, expected in wanted.items():
-    if found[key] != [expected]:
-        raise SystemExit(f'{key}: fehlt, doppelt oder falscher Wert; INI prüfen, noch nicht neu starten.')
-    print(f'{key}={expected}')
-print('INI-Prüfung erfolgreich.')
-PY
 sudo mumble-funk-audio status
-```
-
-`status` enthält neben den bisherigen Audioeinstellungen nun auch `radionoise`,
-`radionoisefile` und `radionoisevolume`, einschließlich der vollständigen
-konfigurierten Dateiangabe. Fehlende Werte werden als `false`, leerer Pfad und
-`20` dargestellt. Dies liest nur die INI und bestätigt keinen erfolgreichen
-WAV-Ladevorgang; Dienststatus, Startlog und Hörtest bleiben erforderlich.
-Die obige gezielte INI-Prüfung kontrolliert zusätzlich doppelte/falsch platzierte
-Einträge. Die Statusabfrage selbst startet keinen Dienst neu und gibt keine
-Passwörter aus; Details stehen in der [Befehlsübersicht](ubuntu-commands.md).
-Falls in einer älteren Installation Effekte deaktiviert
-sind, bleiben sie so; für den gewünschten Hörtest die vorhandenen Verwaltungs-
-befehle aus [squelch-ubuntu.md](squelch-ubuntu.md) und [audio-volume.md](audio-volume.md)
-verwenden. Keine pauschale Migration. Falls die Datenbank verwaltete Einstellungen
-überlagert, bei abweichendem Verhalten erst deren Herkunft klären, nicht die
-Datenbank direkt verändern.
-
-Nach erfolgreicher Prüfung nur diesen Dienst neu starten:
-
-```bash
-sudo systemctl restart mumble-funk
-sudo systemctl --no-pager --full status mumble-funk
+sudo -u mumble-funk test -r /usr/local/share/mumble-funk/audio/radio-noise.wav
+sha256sum /usr/local/share/mumble-funk/audio/radio-noise.wav
 sudo tail -n 60 /var/log/mumble-funk/server.log
 ```
 
-Erwartet wird im **neuen Startabschnitt** `Experimental radio noise enabled:`.
-`Radio noise disabled:` weist auf ungültige Lautstärke/Datei oder einen Ladefehler
-hin. Pfad, Format und Leserechte prüfen; andere Audioeffekte sollen weiterlaufen.
-Bei Volume 0 wird Rauschen bewusst deaktiviert. Ein Neustart ist nach Änderungen
-an Datei, Pfad oder Lautstärke erforderlich.
+Erwartet: `radionoise=true`, der mitgelieferte Pfad, Lautstärke `20` und SHA-256
+`dc0a1c97115eb797f261af52631288b868a648d0d9310fff0a431e8163536312`.
+Im aktuellen Startabschnitt steht `Experimental radio noise enabled:`.
+Die Standarddatei hat Modus 0644 und ihr Verzeichnis 0755; der Server kann sie lesen.
+`status` zeigt ausschließlich gespeicherte Audioeinstellungen, keine Passwörter
+und keinen Nachweis einer erfolgreich geladenen Datei oder hörbarer Wiedergabe.
+Die Statusabfrage startet keinen Dienst neu. Weitere Befehle:
+[Ubuntu-Befehlsübersicht](ubuntu-commands.md).
 
-### E. Wieder deaktivieren
+### D. Eigene Aufnahme und Rückkehr zum Standard
+
+Eine eigene WAV mit geklärten Rechten vom Computer ins eigene Home-Verzeichnis
+übertragen, z. B. mit SFTP nach `/home/BENUTZER/radio-noise.wav`. Dann auf der VM:
 
 ```bash
-sudo nano /etc/mumble-funk/server.ini
+sudo mumble-funk-audio set-radio-noise "$HOME/radio-noise.wav"
+sudo mumble-funk-audio radio-noise-volume 20
+sudo mumble-funk-audio enable-radio-noise
+sudo mumble-funk-audio status
 ```
 
-Den vorhandenen allgemeinen Eintrag auf `radionoise=false` ändern, nur einmal.
-Pfad, Lautstärke, WAV und andere Audiooptionen stehen lassen. Danach:
+Die Verwaltung prüft mit dem Servervalidator und kopiert die Datei bytegleich nach
+`/etc/mumble-funk/sounds/radio-noise-<SHA256>.wav`, Modus 0640, lesbar für die
+Dienstgruppe. Import verändert nur die Dateiauswahl, nicht den Ein/Aus-Schalter.
+Alte eigene Dateien bleiben für eine Rückkehr erhalten. Keine Neukompilierung nötig.
+Zum Wechsel auf die mitgelieferte Aufnahme:
 
 ```bash
-sudo systemctl restart mumble-funk
-sudo systemctl --no-pager --full status mumble-funk
+sudo mumble-funk-audio use-standard-radio-noise
+sudo mumble-funk-audio enable-radio-noise
 ```
+
+Der erste Befehl ändert ausschließlich den Pfad nach erfolgreicher Validierung,
+behält Lautstärke und Aktivierungszustand bei und löscht keine eigenen WAVs.
+`enable-radio-noise` setzt bereits aktiviertes Simplex und Audio-Feedback voraus;
+es schaltet diese nicht selbst ein. Volume 0 bleibt stumm. Die Rauschlautstärke ist
+unabhängig vom Boost für Busy/Open/Close.
+
+### E. Ausschalten und Bestandsschutz
+
+```bash
+sudo mumble-funk-audio disable-radio-noise
+sudo mumble-funk-audio status
+```
+
+Pfad, Lautstärke und eigene Dateien bleiben erhalten. Ändernde Befehle starten nur
+`mumble-funk` kurz neu; Verbindungen können dabei getrennt werden. Vorher sichern
+(siehe Abschnitt B). Fehlerhafte Importe lassen die INI unverändert; bei einem
+fehlgeschlagenen Dienstneustart versucht die Verwaltung, die vorige INI und den
+vorigen Betrieb wiederherzustellen. Bei weiterhin auftretenden Fehlern Log prüfen.
+Keine parallelen Verwaltungsbefehle ausführen.
+
+Updates ergänzen auch fehlende INI-Einträge nicht. Ausgeschaltetes Rauschen und
+individuelle WAVs bleiben damit erhalten. Eine bestehende Installation übernimmt
+die neuen Vorgaben nur auf ausdrücklichen Wunsch über die obigen Befehle.
 
 ### F. Verbindung und Hörtest
 
@@ -415,10 +355,10 @@ privaten Empfänger-Effektstreams wird zusätzlich automatisiert geprüft.
 Die ursprüngliche B2c-1-Anleitung war allein kein Nachweis erfolgreicher
 Geräte-Hörtests. Den inzwischen gemeldeten Ubuntu-Betreiber-Hörtest beschreibt
 der Anfang dieses Dokuments; Docker-Hörtests bleiben separat erforderlich.
-Bereitstellung und Veröffentlichung eines offiziellen
-Rausch-Assets bleiben späteren Phasen vorbehalten. Die private
-[Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) ist auf
-diesem Feature-Branch ergänzt; sie veröffentlicht keine Aufnahme.
+Die mitgelieferte CC0-Standardaufnahme ist jetzt auf diesem Feature-Branch
+enthalten. Persönliche Zusatzaufnahmen werden durch die
+[Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) nur in
+das eigene persistente Volume importiert und nicht veröffentlicht.
 
 ## Korrekturen: Close nach kurzer und langer Rauschübertragung
 

@@ -4,6 +4,13 @@ Arbeitsbranch **`feature/audio-defaults`**, aus `dev`
 `35f83e9315945c50cbc3c0dc60c0b6f89ca83bb1`. Squelch, Audio Boost und der neue
 CC0-Busy-Tone sind bereits enthalten. Keine Stable-Freigabe, kein neuer Release.
 
+**Ergänzung auf `feature/radio-noise`:** Neue Ubuntu- und Docker-INIs erhalten
+zusätzlich `radionoise=true`,
+`radionoisefile=/usr/local/share/mumble-funk/audio/radio-noise.wav` und
+`radionoisevolume=20`. Die CC0-Aufnahme wird mitgeliefert. Bestehende INIs, auch
+fehlende Rauschschlüssel und eigene Dateien, bleiben unverändert.
+[Installation, Dateiauswahl und Ausschalten](radio-noise.md).
+
 Neue Ubuntu- und Docker-Konfigurationen starten mit:
 
 ```ini

@@ -348,10 +348,14 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIn('branch=feature/radio-noise\n', info)
         self.assertIn('experimental=true\n', info)
         config = root / 'etc/mumble-funk/server.ini'
-        self.assertNotIn('radionoise=true', config.read_text())
+        self.assertIn('radionoise=true\n', config.read_text())
+        self.assertEqual((root/'usr/local/share/mumble-funk/audio/radio-noise.wav').read_bytes(),
+                         (REPO/'assets/audio/radio-noise.wav').read_bytes())
         config.write_text(config.read_text().replace('audiofeedback=true', 'audiofeedback=false')
-                          + '\nradionoise=true\nradionoisefile=/etc/mumble-funk/sounds/radio-noise.wav\n'
-                          'radionoisevolume=10\n')
+                          .replace('radionoise=true', 'radionoise=false')
+                          .replace('radionoisefile=/usr/local/share/mumble-funk/audio/radio-noise.wav',
+                                   'radionoisefile=/etc/mumble-funk/sounds/radio-noise.wav')
+                          .replace('radionoisevolume=20', 'radionoisevolume=10'))
         database = root / 'var/lib/mumble-funk/server.sqlite'
         with contextlib.closing(sqlite3.connect(database)) as db:
             db.execute('CREATE TABLE config (server_id INTEGER, key TEXT, value TEXT)')

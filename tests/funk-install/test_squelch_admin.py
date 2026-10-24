@@ -48,7 +48,7 @@ class SquelchAdminTests(unittest.TestCase):
         self.assertEqual(state['squelchopen'], 'true')
         self.assertEqual(state['squelchclose'], 'true')
         self.assertEqual(state['squelchclosetimeoutfallback'], 'true')
-        for name in ('busy-tone.wav', 'squelch-open.wav', 'squelch-close.wav', 'LICENSE.md'):
+        for name in ('busy-tone.wav', 'squelch-open.wav', 'squelch-close.wav', 'radio-noise.wav', 'LICENSE.md'):
             path = self.sound/name
             self.assertEqual(path.read_bytes(), (REPO/'assets/audio'/name).read_bytes())
             self.assertEqual(path.stat().st_mode & 0o777, 0o644)
@@ -142,6 +142,7 @@ class SquelchAdminTests(unittest.TestCase):
         with wave.open(str(source),'wb') as wav:
             wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(48000)
             wav.writeframes(b'\x00\x01'*96000)  # 2s / 192044 bytes, above old 128 KiB limit.
+        self.container_command('disable-radio-noise')
         before=self.status()
         self.container_command('set-radio-noise',str(source))
         state=self.status();selected=state['radionoisefile']
@@ -169,6 +170,9 @@ class SquelchAdminTests(unittest.TestCase):
 
     def test_container_noise_invalid_files_values_and_enable_do_not_change_settings(self):
         import wave
+        # Legacy INI with no file must still refuse enable, despite new-install defaults.
+        self.config.write_bytes(AUDIO.COMMON.update_ini(self.config.read_text(),
+                               {'radionoise': 'false', 'radionoisefile': ''}).encode())
         original=self.config.read_bytes()
         self.container_command('enable-radio-noise',ok=False)
         for name,channels,rate,frames in [('stereo',2,48000,960),('rate',1,44100,960),('short',1,48000,959),('long',1,48000,2880001)]:
@@ -187,10 +191,39 @@ class SquelchAdminTests(unittest.TestCase):
         self.assertEqual(self.config.read_bytes(),original)
         self.container_command('set-radio-noise',str(REPO/'assets/audio/squelch-close.wav'))
         self.config.write_text(self.config.read_text().replace('audiofeedback=true','audiofeedback=false'))
+        # Legacy INI with no file must still refuse enable, despite new-install defaults.
+        self.config.write_bytes(AUDIO.COMMON.update_ini(self.config.read_text(),
+                               {'radionoise': 'false', 'radionoisefile': ''}).encode())
         original=self.config.read_bytes()
         self.container_command('enable-radio-noise',ok=False)
         self.assertEqual(self.config.read_bytes(),original)
 
+
+    def test_standard_noise_selection_native_container_and_preservation(self):
+        for container in (False, True):
+            with self.subTest(container=container):
+                run = self.container_command if container else self.command
+                run('disable-radio-noise')
+                run('set-radio-noise', str(REPO/'assets/audio/radio-noise.wav'))
+                selected = self.status()['radionoisefile']
+                custom = self.root/selected.lstrip('/')
+                saved = custom.read_bytes()
+                run('radio-noise-volume', '0')
+                before = self.status()
+                run('use-standard-radio-noise')
+                self.assertEqual(self.status(), dict(before, radionoisefile=AUDIO.NOISE_STANDARD))
+                self.assertEqual(custom.read_bytes(), saved)
+                run('enable-radio-noise')
+                self.assertEqual(self.status()['radionoise'], 'true')
+                self.assertEqual(self.status()['radionoisevolume'], '0')
+                # A missing/damaged package must not replace a valid selection.
+                asset = self.sound/'radio-noise.wav'
+                original_asset = asset.read_bytes()
+                asset.write_bytes(b'invalid')
+                original = self.config.read_bytes()
+                run('use-standard-radio-noise', ok=False)
+                self.assertEqual(self.config.read_bytes(), original)
+                asset.write_bytes(original_asset)
 
     def test_master_and_independent_switches_keep_busy_settings(self):
         self.command('enable-squelch')

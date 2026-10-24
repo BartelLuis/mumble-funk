@@ -65,6 +65,10 @@ Die bestehenden Verwaltungsbefehle bleiben unverändert:
 - [Funkrauschen konfigurieren und testen](radio-noise.md).
 
 Anders als `status` können ändernde Audio-Verwaltungsbefehle den eigenen Dienst
-neu starten. Für Funkrauschen ergänzt diese Änderung nur die Statusanzeige;
-sie fügt keine neuen Änderungsbefehle hinzu. Eigene WAV-Dateien und bestehende
-Konfigurationen werden durch die Abfragen nicht verändert.
+neu starten. Für Funkrauschen stehen `set-radio-noise DATEI`,
+`use-standard-radio-noise`, `enable-radio-noise`, `disable-radio-noise` und
+`radio-noise-volume WERT` zur Verfügung; Schritte und Bestandsschutz siehe
+[Funkrauschverwaltung](radio-noise.md#d-eigene-aufnahme-und-rückkehr-zum-standard).
+Neue INIs verwenden die mitgelieferte CC0-Aufnahme bei Lautstärke 20; fehlende
+Schlüssel in bestehenden INIs behalten dagegen die oben genannten Laufzeitwerte.
+Eigene WAV-Dateien und bestehende Konfigurationen werden durch Abfragen nicht verändert.

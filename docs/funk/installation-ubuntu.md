@@ -1,3 +1,8 @@
+> **Experimentelles Funkrauschen (`feature/radio-noise`):**
+> [Ubuntu-Testinstallation und Audioverwaltung](radio-noise.md). Neue INIs
+> verwenden die mitgelieferte CC0-Aufnahme bei Lautstärke 20; bestehende INIs
+> und eigene WAVs bleiben unverändert. Keine Stable-Freigabe.
+
 > **Aktuellen `dev` auf einer Test-VM installieren:** [Experimentelle Dev-Anleitung](install-dev.md).
 > Die Stable-Befehle unten behalten ihr bisheriges Verhalten.
 

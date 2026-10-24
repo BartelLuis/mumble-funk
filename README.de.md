@@ -2,16 +2,13 @@
 
 **Serverseitige Simplex-Funkkommunikation für Mumble**
 
-**Dieser Branch: experimentelle Audio-Defaults (`feature/audio-defaults`).**
-Neue Ubuntu- und Docker-Konfigurationen aktivieren Simplex, den mitgelieferten
-CC0-Busy-Tone und Squelch Open/Close bei **50 % und +8 dB Boost**. Timeout-Close
-ist bei Neuinstallationen eingeschaltet. Updates erhalten bestehende Einstellungen und eigene WAVs, auch
-fehlende INI-Einträge und ausgeschaltete Effekte. Sprache, Simplex-Regeln und
-Audioarchitektur bleiben unverändert. Native Installation nur ausdrücklich mit
-`--experimental-audio-defaults`.
-[Installation, Update und Test](docs/funk/audio-defaults.md) ·
-[Busy-Tone und Fallback](docs/funk/busy-tone.md) ·
-[Squelch-Verhalten](docs/funk/squelch-preview.md).
+**Dieser Branch: experimentelles Funkrauschen (`feature/radio-noise`).**
+Neue Ubuntu- und Docker-INIs aktivieren Simplex, Busy und Squelch Open/Close
+bei 50 % und +8 dB sowie die mitgelieferte CC0-Rauschaufnahme bei Lautstärke 20.
+Timeout-Close bleibt für Neuinstallationen aktiv. Bestehende INIs und eigene WAVs
+werden nicht migriert. Native Installation: `--experimental-radio-noise`.
+[Installation, Update und Audioverwaltung](docs/funk/radio-noise.md) ·
+[Docker](docs/funk/docker.md) · [Audio-Lizenzen](assets/audio/LICENSE.md).
 
 Neue Docker-Installationen dieses Entwicklungsstands verwenden **Host 64740
 TCP/UDP → Container 64739 TCP/UDP**. Ubuntu nativ bleibt auf **64739 TCP/UDP**.
