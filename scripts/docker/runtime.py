@@ -3,6 +3,8 @@
 import contextlib
 import fcntl
 import getpass
+import hashlib
+import re
 import importlib.util
 import json
 import os
@@ -97,6 +99,9 @@ ice=
 bonjour=false
 logfile=
 logdays=-1
+radionoise=true
+radionoisefile=/usr/local/share/mumble-funk/audio/radio-noise.wav
+radionoisevolume=20
 simplex=true
 simplextimeout=500
 simplexretrytimeout=500
@@ -296,6 +301,22 @@ def admin_password():
         print('SuperUser-Passwort gesetzt. Es wurde nicht in Konfiguration oder Logs geschrieben.')
 
 
+def rollback_audio(expected_revision):
+    """Restore only our last audio change, never a concurrently changed INI."""
+    if not re.fullmatch(r'[0-9a-f]{64}', expected_revision):
+        raise RuntimeError('Ungültige Audio-Konfigurationsrevision.')
+    with instance_lock():
+        settings()
+        if hashlib.sha256(CONFIG.read_bytes()).hexdigest() != expected_revision:
+            raise RuntimeError('Konfiguration inzwischen verändert; automatische Wiederherstellung abgelehnt.')
+        previous = CONFIG.with_name('server.ini.before-audio-change')
+        if previous.is_symlink() or not previous.is_file():
+            raise RuntimeError('Keine sichere vorige Audio-Konfiguration vorhanden.')
+        settings(previous)
+        write_private(CONFIG, previous.read_bytes())
+    print('Vorige Audio-Konfiguration wiederhergestellt.')
+
+
 def main():
     os.umask(0o077)
     command = sys.argv[1] if len(sys.argv)>1 else 'serve'
@@ -315,6 +336,8 @@ def main():
             restore()
         elif command == 'admin-password':
             admin_password()
+        elif command == 'audio-rollback' and len(sys.argv) == 3:
+            rollback_audio(sys.argv[2])
         elif command == 'audio':
             settings()  # Validate this container's own configuration without rewriting it.
             spec = importlib.util.spec_from_file_location('funk_audio', '/usr/local/lib/mumble-funk/audio.py')
@@ -325,7 +348,10 @@ def main():
                 return module.main(arguments, container=True)
             # Mutations are offline; the host wrapper stops only this Compose service.
             with instance_lock():
-                return module.main(arguments, container=True)
+                result = module.main(arguments, container=True)
+                if result == 0:
+                    print('AUDIO-REVISION='+hashlib.sha256(CONFIG.read_bytes()).hexdigest())
+                return result
         elif command == 'set' and len(sys.argv) == 4:
             configure(sys.argv[2],sys.argv[3])
         else:

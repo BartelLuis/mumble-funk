@@ -1,5 +1,6 @@
 """Unit checks for Docker-only lifecycle logic, with temporary directories."""
 import contextlib
+import hashlib
 import json
 import importlib.util
 import io
@@ -40,6 +41,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(values['squelchopen'],'true');self.assertEqual(values['squelchclose'],'true')
         self.assertEqual(values['squelchclosetimeoutfallback'],'true')
         self.assertEqual(values['feedbackboostdb'],'8')
+        self.assertEqual((values['radionoise'],values['radionoisefile'],values['radionoisevolume']),('true','/usr/local/share/mumble-funk/audio/radio-noise.wav','20'))
         self.assertEqual(values['busytonefile'],'/usr/local/share/mumble-funk/audio/busy-tone.wav')
         self.assertEqual(values['squelchopenfile'],'/usr/local/share/mumble-funk/audio/squelch-open.wav')
         self.assertEqual(len(values['serverpassword']),48);self.assertNotIn('serverpassword=',str(self.calls))
@@ -84,6 +86,44 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual((target.DIRECTORIES['state']/'audio/own.wav').read_bytes(),audio)
             import shutil
             shutil.rmtree(self.root/'restored')
+
+    def test_audio_rollback_revision_guard_lock_and_exact_bytes(self):
+        self.runtime.initialize()
+        original=self.runtime.CONFIG.read_bytes()
+        backup=self.runtime.CONFIG.with_name('server.ini.before-audio-change')
+        backup.write_bytes(original)
+        self.runtime.CONFIG.write_bytes(original.replace(b'radionoise=true',b'radionoise=false'))
+        revision=hashlib.sha256(self.runtime.CONFIG.read_bytes()).hexdigest()
+        with self.runtime.instance_lock():
+            with self.assertRaises(RuntimeError):self.runtime.rollback_audio(revision)
+        with self.assertRaises(RuntimeError):self.runtime.rollback_audio('f'*64)
+        with self.assertRaises(RuntimeError):self.runtime.rollback_audio('../unsafe')
+        self.runtime.rollback_audio(revision)
+        self.assertEqual(self.runtime.CONFIG.read_bytes(),original)
+        self.assertEqual(self.runtime.CONFIG.stat().st_mode & 0o777,0o600)
+        backup.unlink();backup.symlink_to(self.runtime.CONFIG)
+        with self.assertRaises(RuntimeError):self.runtime.rollback_audio(hashlib.sha256(original).hexdigest())
+
+    def test_noise_backup_restore_and_existing_missing_settings_preserved(self):
+        import wave
+        self.runtime.initialize()
+        path=self.runtime.DIRECTORIES['state']/'audio/radio-noise.wav'
+        with wave.open(str(path),'wb') as wav:
+            wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(48000)
+            wav.writeframes(b'\x00\x01'*96000)
+        for selection in (b'radionoise=true\nradionoisefile=/var/lib/mumble-funk/audio/radio-noise.wav\nradionoisevolume=37\n',
+                          b'radionoise=false\nradionoisefile=/var/lib/mumble-funk/audio/radio-noise.wav\nradionoisevolume=0\n', b''):
+            lines=self.runtime.CONFIG.read_bytes().splitlines(keepends=True)
+            text=b''.join(line for line in lines if not line.startswith((b'radionoise=',b'radionoisefile=',b'radionoisevolume=')))+selection
+            self.runtime.CONFIG.write_bytes(text);audio=path.read_bytes()
+            self.runtime.initialize();self.assertEqual(self.runtime.CONFIG.read_bytes(),text)
+            target=self.empty_target()
+            with patch.object(target.sys,'stdin',types.SimpleNamespace(buffer=io.BytesIO(self.capture_backup()))):target.restore()
+            self.assertEqual(target.CONFIG.read_bytes(),text)
+            self.assertEqual((target.DIRECTORIES['state']/'audio/radio-noise.wav').read_bytes(),audio)
+            import shutil
+            shutil.rmtree(self.root/'restored')
+
 
     def test_missing_config_never_resets_existing_database(self):
         self.runtime.DATABASE.write_bytes(b'protected')

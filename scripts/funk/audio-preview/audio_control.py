@@ -64,15 +64,16 @@ def atomic_config(path, content):
 
 
 def managed_copy(source, sounds, binary, production, instance=INSTANCE,
-                 validator="--validate-feedback-wav", prefix="busy"):
+                 validator="--validate-feedback-wav", prefix="busy", max_bytes=131072):
     # Limit before reading, including special files and accidental huge recordings.
     descriptor = os.open(source, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
     try:
         info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_size > 131072:
-            raise RuntimeError("Nur normale WAV-Dateien bis 128 KiB erlaubt (keine symbolischen Links).")
-        data = os.read(descriptor, 131073)
-        if len(data) > 131072:
+        if not stat.S_ISREG(info.st_mode) or info.st_size > max_bytes:
+            raise RuntimeError("Nur normale WAV-Dateien innerhalb der Größenbegrenzung erlaubt (keine symbolischen Links).")
+        with os.fdopen(os.dup(descriptor), "rb") as source_file:
+            data = source_file.read(max_bytes + 1)
+        if len(data) > max_bytes:
             raise RuntimeError("WAV-Datei zu groß.")
     finally:
         os.close(descriptor)
@@ -91,7 +92,20 @@ def managed_copy(source, sounds, binary, production, instance=INSTANCE,
         # Exactly the same C++ parser and Opus encoder as the running server.
         checked([str(binary), validator, temporary])
         target = sounds / (prefix + '-' + hashlib.sha256(data).hexdigest() + '.wav')
-        os.replace(temporary, target)
+        # Content-addressed assets are immutable: never replace an operator file.
+        # Publishing a hard link is atomic and refuses an existing destination.
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            existing = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                if not stat.S_ISREG(os.fstat(existing).st_mode):
+                    raise RuntimeError("Vorhandene Signaldatei ist keine normale Datei.")
+                with os.fdopen(os.dup(existing), 'rb') as saved:
+                    if saved.read(max_bytes + 1) != data:
+                        raise RuntimeError("Vorhandene Signaldatei weicht von ihrer Prüfsumme ab; keine Änderung.")
+            finally:
+                os.close(existing)
         return target.name
     finally:
         with contextlib.suppress(FileNotFoundError):

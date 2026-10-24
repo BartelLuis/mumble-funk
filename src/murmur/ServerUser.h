@@ -152,8 +152,8 @@ public:
 	QList< int > qlCodecs;
 	bool bOpus;
 	// Only called on the Qt main thread, like Connection::sendMessage.
-	bool feedbackWritable() const {
-		return qtsSocket->bytesToWrite() < 65536 && qtsSocket->encryptedBytesToWrite() < 65536;
+	bool feedbackWritable(qint64 limit = 65536) const {
+		return qtsSocket->bytesToWrite() < limit && qtsSocket->encryptedBytesToWrite() < limit;
 	}
 
 	QStringList qslAccessTokens;

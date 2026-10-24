@@ -1,14 +1,18 @@
 # Mumble-Funk mit Docker — experimentell
 
-Der neue [Standard-Busy-Tone](busy-tone.md) enthält Squelch und **Audio Boost
-(0–12 dB)** aus den vorherigen Entwicklungsphasen. Bestehende Einstellungen und
+Dieser Stand enthält den [Standard-Busy-Tone](busy-tone.md), Squelch und
+**Audio Boost (0–12 dB)** aus den vorherigen Entwicklungsphasen. Bestehende Einstellungen und
 eigene WAVs werden bei Updates nicht automatisch geändert.
 
 
-Dieser Feature-Stand **`feature/audio-defaults`** enthält die gemeinsame Audio-Engine
+Dieser Feature-Stand **`feature/radio-noise`** enthält die gemeinsame Audio-Engine
 und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
 Stable-Freigabe. Neue Konfigurationen aktivieren Simplex, Busy, Squelch Open/Close
 bei 50 % und +8 dB; Mumla-Timeout-Close ist ebenfalls aktiv. Vorhandene INIs bleiben unverändert.
+Funkrauschen ist bei **neuen INIs eingeschaltet**, mit der mitgelieferten
+CC0-Aufnahme `/usr/local/share/mumble-funk/audio/radio-noise.wav` bei Lautstärke 20.
+Bestehende Einstellungen und auch fehlende Rauschschlüssel werden nicht migriert.
+Die vorhandene Open/Noise/Close-Engine wird unverändert auch in Docker verwendet.
 Details und Bestandsschutz: [Standard-Audioeinstellungen](audio-defaults.md).
 Die Anleitung für Aktivierung, eigene WAVs und getrennte Open-/Close-Einstellungen
 steht in [squelch-preview.md](squelch-preview.md#docker-assets-and-management).
@@ -65,7 +69,7 @@ installiert oder verändert Docker selbst nicht.
 
 | Eigenschaft | Ubuntu-Schnellinstallation | Docker-Installation |
 | --- | --- | --- |
-| Start | `scripts/funk/setup.sh --experimental-audio-defaults` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
+| Start | `scripts/funk/setup.sh --experimental-radio-noise` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
 | Betrieb | Eigener systemd-Dienst | Eigener Container mit Neustartrichtlinie |
 | Dateien | Eigene Verzeichnisse direkt auf Ubuntu | Eigene benannte Docker-Volumes |
 | Port (TCP/UDP) | Standardmäßig 64739 | Hier Host-Standard 64740, frei wählbar; intern immer 64739 |
@@ -82,7 +86,7 @@ Benutze ein neues Quellverzeichnis, damit vorhandene v0.2-/v0.3-Quellen erhalten
 bleiben:
 
 ```bash
-git clone --branch feature/audio-defaults \
+git clone --branch feature/radio-noise \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-docker
 cd mumble-funk-docker
 ```
@@ -403,7 +407,7 @@ löscht die persistenten Volumes und gehört nicht zum Update-Verfahren.
 | Containerpfad | Benanntes Volume bei Standard-Projektname | Inhalt |
 | --- | --- | --- |
 | `/etc/mumble-funk` | `mumble-funk-docker_funk_config` | Konfiguration und Zugangspasswort |
-| `/var/lib/mumble-funk` | `mumble-funk-docker_funk_state` | SQLite, Zertifikat, Konten, Kanäle, Rechte; künftiges `audio/` |
+| `/var/lib/mumble-funk` | `mumble-funk-docker_funk_state` | SQLite, Zertifikat, Konten, Kanäle, Rechte und eigene WAV-Dateien in `audio/` |
 | `/var/log/mumble-funk` | `mumble-funk-docker_funk_logs` | Paket-/Simplex-Diagnose |
 
 Anzeigen:
@@ -513,8 +517,9 @@ Hörtest über deinen konkreten Docker-Host, Router und die Proxmox-Firewall.
 
 ## 15. Automatisierte Prüfung und bekannte Grenzen
 
-Die ausgeführten Prüfungen und Commits stehen im [Docker-Prüfbericht](DOCKER-STATUS.md).
-Die Multi-Stage-Builds führen alle **27** CTest-Prüfungen (25 Testprogramme) einschließlich Audio und Squelch aus.
+Die aktuellen Rauschprüfungen stehen im [Docker-Rausch-Prüfbericht](DOCKER-RADIO-NOISE-STATUS.md).
+Der [ursprüngliche Docker-Prüfbericht](DOCKER-STATUS.md) dokumentiert die damaligen Commits.
+Die Multi-Stage-Builds führen alle **33** CTest-Prüfungen einschließlich Audio und Squelch aus.
 Zusätzlich gibt es Docker-spezifische Tests für Initialisierung, sichere Rechte,
 Sperren, Konfiguration und Archivprüfung sowie echte Compose-Integrationstests.
 
@@ -523,8 +528,9 @@ Pakete mit überprüften Testnutzdaten durch den veröffentlichten Host-Port. Si
 prüft die Weiterleitungs-/Simplex-Entscheidungen. Im Audio-Modus prüft sie zusätzlich
 die exakte Busy-Paketanzahl, Sequenzen, Ende-Markierung und tatsächliche
 Opus-Dekodierbarkeit ohne digitale Übersteuerung. Die Audio-/Squelch-Servertests
-prüfen weitere Decoder- und Routingfälle. Ein Hörtest auf echten Geräten des
-neuen Feature-Commits bleibt offen.
+prüfen weitere Decoder- und Routingfälle. Der native Betreiber-Hörtest mit Windows-Mumble und Android-Mumla war für den
+bisherigen Testumfang erfolgreich. Er ersetzt keinen Docker-Hörtest. Dieser bleibt
+für den neuen Docker-Verwaltungsstand offen; keine allgemeine Stable-Freigabe.
 
 Die Simplex-Regeln bleiben unverändert. Der gemeinsame Integrationsstand behebt
 gezielt den UDP-Nonce-/Versionsfehler, nachdem ein deterministischer Test ihn am
@@ -568,3 +574,136 @@ Befehle. Bei Änderungen wird nur der eigene Compose-Dienst kurz gestoppt und,
 wenn vorher aktiv, wieder gestartet. Keine zusätzlichen Audioports oder Volumes.
 Eigene WAVs benötigen keinen neuen Build und sind Teil der vorhandenen Sicherung.
 Compiler, Git, CMake, Testprogramme und Quellbäume bleiben außerhalb des Laufzeit-Images.
+
+
+## 17. Eigenes Funkrauschen einrichten
+
+Nur auf deiner freigegebenen **Docker-Testinstanz** im vorhandenen Projektverzeichnis
+arbeiten. Die Befehle verwenden den bestehenden Compose-Dienst und dessen Volumes.
+Sie ändern weder `.env` noch Projektname oder Ports: Host **64740 TCP/UDP**, innen
+**64739 TCP/UDP**, sofern du selbst keinen anderen Host-Port festgelegt hast.
+
+Die vom Betreiber erstellte und ausdrücklich unter CC0 1.0 Universal freigegebene
+Standardaufnahme ist bytegenau im Image enthalten: siehe
+[Herkunft, Lizenz und SHA-256](../../assets/audio/LICENSE.md). UID 10001 kann sie
+auch mit read-only Root-Dateisystem lesen. Bei frischen INIs ist sie bei
+Lautstärke 20 aktiv; ein Update ändert vorhandene INIs nicht.
+
+Zusätzlich kannst du eine eigene Datei mit geklärten Nutzungsrechten verwenden. Lege die private
+Quelldatei außerhalb des Git-Verzeichnisses ab, beispielsweise unter
+`~/mumble-funk-private/radio-noise.wav`. Nicht committen oder hochladen.
+
+Unterstützt wird RIFF/WAV mit PCM, **mono, 16 Bit signed little endian, 48000 Hz**,
+20 ms bis 60 Sekunden, höchstens **8 MiB** Gesamtdateigröße. Der Server prüft das
+Format mit seinem vorhandenen Rausch-WAV-Parser; es findet keine Konvertierung statt.
+Für Busy/Open/Close gelten weiterhin deren kürzere Grenzen und höchstens 128 KiB.
+
+### Import, Lautstärke und Aktivierung
+
+```bash
+bash scripts/docker/audio.sh status
+bash scripts/docker/audio.sh set-radio-noise "$HOME/mumble-funk-private/radio-noise.wav"
+bash scripts/docker/audio.sh radio-noise-volume 20
+bash scripts/docker/audio.sh enable-radio-noise
+bash scripts/docker/audio.sh status
+```
+
+Simplex und Audio-Feedback müssen bereits aktiviert sein. Der Rauschbefehl schaltet
+sie nicht heimlich ein. Bei Bedarf erst `bash scripts/docker/audio.sh enable`
+verwenden; Simplex gemäß Abschnitt 6 prüfen. **Import verändert den Aktivierungszustand nicht.** Lautstärke 0–100, 0 bleibt stumm. Rauschen hat eine unabhängige Lautstärke;
+der globale Audio-Boost gilt weiterhin für Busy/Open/Close, nicht für Rauschen. Für Open und Close müssen die jeweiligen Squelch-Schalter aktiv sein.
+
+Die geprüfte Datei wird unverändert unter
+`/var/lib/mumble-funk/audio/radio-noise-<SHA256>.wav` im vorhandenen State-Volume
+abgelegt. Der Prüfsummenname statt eines überschriebenen `radio-noise.wav` bewahrt
+frühere Dateien für Rollbacks. Die genaue Auswahl steht vollständig in `status`.
+Rechte eigener Importe: UID/GID **10001:10001**, Modus **0640**; der Server kann sie lesen.
+Der Standard liegt in Ubuntu und Docker unter
+`/usr/local/share/mumble-funk/audio/radio-noise.wav` (0644), unabhängig von eigenen WAVs.
+Die Quelldatei auf dem Host bleibt unverändert. Kein neuer Build ist nötig.
+
+Zurück zur mitgelieferten Aufnahme (nur Dateiauswahl, Lautstärke und Ein/Aus
+bleiben erhalten; alte importierte Dateien werden nicht gelöscht):
+
+```bash
+bash scripts/docker/audio.sh use-standard-radio-noise
+bash scripts/docker/audio.sh enable-radio-noise
+```
+
+| Installation | Eigene Rauschdatei |
+| --- | --- |
+| Ubuntu nativ | `/etc/mumble-funk/sounds/radio-noise-<SHA256>.wav`, siehe [Funkrauschen](radio-noise.md) |
+| Docker | `/var/lib/mumble-funk/audio/radio-noise-<SHA256>.wav`, eigenes State-Volume |
+
+Zum Ausschalten, ohne Datei, Lautstärke oder andere Effekte zu ändern:
+
+```bash
+bash scripts/docker/audio.sh disable-radio-noise
+```
+
+Der JSON-Status enthält neben allen bisherigen Audiofeldern `radionoise`,
+`radionoisefile` und `radionoisevolume`. Fehlende Einträge bedeuten `false`, leere
+Dateiauswahl und `20`. Der Status zeigt **die gespeicherte Konfiguration**, keinen
+Nachweis einer erfolgreich geladenen Datei oder hörbarer Wiedergabe. Er gibt keine
+Passwörter aus und stoppt/startet keinen Server.
+
+### Fehler, Sicherung und Updates
+
+Vor Änderungen sichern, wie in Abschnitt 11 beschrieben:
+
+```bash
+mkdir -p backups
+bash scripts/docker/manage.sh backup "$(pwd)/backups/vor-rauschen-$(date +%Y%m%d-%H%M%S).tar.gz"
+```
+
+Ändernde Audio-Befehle stoppen ausschließlich den eigenen Compose-Dienst kurz und
+starten ihn nur, wenn er zuvor lief. Verbindungen können dabei getrennt werden.
+Eine lokale, begrenzte Momentaufnahme wird read-only eingebunden, mit dem Server
+validiert und anschließend atomar samt neuer INI-Auswahl veröffentlicht. Falsche
+Formate, Links und zu große Dateien werden abgewiesen; die vorige INI und bisherige
+WAV-Dateien bleiben erhalten. Frühere importierte Dateien werden nicht gelöscht.
+Scheitert der anschließende Neustart/Healthcheck, versucht die Verwaltung die
+vorige INI wiederherzustellen und erneut zu starten. Eine inzwischen anderweitig
+veränderte INI wird aus Sicherheitsgründen nicht zurückgesetzt. Bei einer weiterhin
+fehlgeschlagenen Wiederherstellung erscheint eine Fehlermeldung: Containerlog
+prüfen und keine weiteren parallelen Verwaltungsbefehle ausführen.
+
+Die vorhandene Sicherung enthält INI, SQLite, Zertifikate und das gesamte
+`audio/`-Verzeichnis einschließlich eigener Rauschdateien. Backups können
+Passwörter und private Aufnahmen enthalten: nur privat aufbewahren. Restore gemäß
+Abschnitt 12 ausschließlich in **leere** Zielvolumes; nie bestehende Daten löschen,
+um einen Restore zu erzwingen.
+
+Beim Update Abschnitt 9 einschließlich Image-/Konfigurationssicherung befolgen.
+Derselbe Projektname, dieselben Volumes und die vorhandene `.env` bleiben erhalten.
+Das Image ersetzt keine importierten WAVs, aktiviert Rauschen nicht automatisch und
+migriert keine vorhandenen Einstellungen. Ein Rollback auf ein Image vor der
+Rauschfunktion kann die Datei behalten, unterstützt aber nicht zwingend deren
+Wiedergabe oder Verwaltungsbefehle; dafür die zu diesem Image gesicherte
+Konfiguration verwenden. Niemals `down -v` beim Update/Rollback verwenden.
+
+### Hörtest mit Windows-Mumble und Android-Mumla
+
+1. Mit beiden unveränderten Clients den bisherigen Host-Port (normal 64740)
+   und denselben Funkkanal verwenden.
+2. Erst `status` prüfen. Rauschen einschalten, Open und Close aktiviert lassen.
+3. Windows sendet 2–10 Sekunden, Mumla empfängt: Open → Rauschen während Sprache →
+   Close hören; dann in umgekehrter Richtung testen.
+4. Über 60 Sekunden senden und erneut auf lückenloses Rauschen und Close achten.
+   Den synthetischen automatisierten Test nicht als echten Hörtest werten.
+5. Gleichzeitig PTT drücken: nur der angenommene Sender ist im Kanal hörbar,
+   der abgewiesene bekommt Busy. Schnelle Wechsel und Kanalwechsel ausprobieren.
+6. Bei Mumla ohne Ende-Markierung kommt Close erst nach dem konfigurierten
+   Timeout, sofern der Timeout-Fallback aktiv ist. Ein Timeout beweist kein
+   tatsächliches Loslassen der PTT-Taste.
+7. Rauschen ausschalten und vergleichen: Sprache, Busy und normale Squelch-Töne
+   müssen weiter funktionieren. Lautstärke 0 und einen eigenen Wert testen.
+8. Nach bewusstem Container-Neuerstellen Einstellungen und Datei erneut prüfen;
+   vorher sichern. Ergebnis und installierte Git-Revision notieren.
+
+Die Docker-CI führt mit `--radio-noise` ausschließlich temporäre Testprojekte und
+die mitgelieferte CC0-Aufnahme sowie eine programmatisch erzeugte eigene WAV aus: Import/Rechte, Ein-/Ausschalten, Lautstärke,
+kurze/lange TCP-/verschlüsselte UDP-Streams, decodiertes Close, Busy-Priorität,
+Sprachbytes, Sicherung/Restore und Neuerstellen. Ein optionales `--previous-image`
+prüft zusätzlich einen echten Wechsel zwischen zwei lokalen Images samt Rollback.
+Client-Jitterbuffer und tatsächlicher Klang bleiben Gegenstand der Hörtests.

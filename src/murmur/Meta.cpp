@@ -311,6 +311,9 @@ void MetaParams::read(QString fname) {
 	voiceDiagnosticsFile = typeCheckedFromSettings("voicediagnosticsfile", voiceDiagnosticsFile);
 	voiceDiagnosticsTimeout    = typeCheckedFromSettings("voicediagnosticstimeout", voiceDiagnosticsTimeout);
 	voiceDiagnosticsMaxSize    = typeCheckedFromSettings("voicediagnosticsmaxsize", voiceDiagnosticsMaxSize);
+	radioNoise = typeCheckedFromSettings("radionoise", radioNoise);
+	radioNoiseFile = typeCheckedFromSettings("radionoisefile", radioNoiseFile);
+	radioNoiseVolume = typeCheckedFromSettings("radionoisevolume", radioNoiseVolume);
 	audioFeedback              = typeCheckedFromSettings("audiofeedback", audioFeedback);
 	busyTone                   = typeCheckedFromSettings("busytone", busyTone);
 	squelch = typeCheckedFromSettings("squelch", squelch);
@@ -470,6 +473,9 @@ void MetaParams::read(QString fname) {
 	qmConfig.insert(QStringLiteral("voicediagnosticsfile"), voiceDiagnosticsFile);
 	qmConfig.insert(QStringLiteral("voicediagnosticstimeout"), QString::number(voiceDiagnosticsTimeout));
 	qmConfig.insert(QStringLiteral("voicediagnosticsmaxsize"), QString::number(voiceDiagnosticsMaxSize));
+	qmConfig.insert(QStringLiteral("radionoise"), radioNoise ? QStringLiteral("true") : QStringLiteral("false"));
+	qmConfig.insert(QStringLiteral("radionoisefile"), radioNoiseFile);
+	qmConfig.insert(QStringLiteral("radionoisevolume"), QString::number(radioNoiseVolume));
 	qmConfig.insert(QStringLiteral("audiofeedback"), audioFeedback ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("busytone"), busyTone ? QStringLiteral("true") : QStringLiteral("false"));
 	qmConfig.insert(QStringLiteral("busytonefile"), busyToneFile);

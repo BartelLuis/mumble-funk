@@ -6,8 +6,12 @@ import hashlib
 import io
 import json
 import os
+import random
+import struct
+import wave
 from pathlib import Path
 import socket
+import shutil
 import sqlite3
 import ssl
 import subprocess
@@ -94,6 +98,7 @@ def main():
     parser.add_argument('--host-port',type=int,help='Explicit free TCP/UDP host port, e.g. 64740')
     parser.add_argument('--ports-only',action='store_true',help='Only published-port and optional private-audio checks')
     parser.add_argument('--audio-feedback',action='store_true',help='Also check private feedback in the isolated project')
+    parser.add_argument('--radio-noise',action='store_true',help='Import synthetic persistent noise and verify shared effect stream')
     parser.add_argument('--image',default='mumble-funk-docker:local')
     parser.add_argument('--runtime-file',type=Path,help='Development-only read-only helper mount; omit for final image verification')
     parser.add_argument('--previous-image',help='Optional older local image for a real image-update retention test')
@@ -103,9 +108,13 @@ def main():
     restored=project+'-restored'
     upgrade=project+'-upgrade'
     env=os.environ.copy()
-    for key in ('DOCKER_CONTEXT','DOCKER_TLS','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH'):
+    for key in ('DOCKER_CONTEXT','DOCKER_TLS','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH',
+                'COMPOSE_FILE','COMPOSE_ENV_FILES','COMPOSE_PATH_SEPARATOR','COMPOSE_PROFILES'):
         env.pop(key,None)
     env['DOCKER_HOST']='unix:///var/run/docker.sock'
+    # Never inherit an operator's alternate services, bind mounts or .env.
+    env['COMPOSE_FILE']=str(REPO/'compose.yaml')
+    env['COMPOSE_DISABLE_ENV_FILE']='1'
     def command(argv,check=True,input=None,project_name=project):
         current=env.copy();current['COMPOSE_PROJECT_NAME']=project_name
         current['FUNK_HOST_PORT']=str(port)
@@ -180,8 +189,101 @@ def main():
                 assert values[key]=='true', 'Fresh installation must enable '+key
             assert values['feedbackboostdb']=='8' and values['squelchclosetimeoutfallback']=='true'
             for key in ('busytonevolume','squelchopenvolume','squelchclosevolume'): assert values[key]=='50'
+            # COPY must normalize public permissions even from a 0077 checkout.
+            # Git records executable bits, not group/other read permissions.
+            readable="import os,stat;from pathlib import Path;paths=[Path('/usr/local/share/mumble-funk/audio')/name for name in ('busy-tone.wav','squelch-open.wav','squelch-close.wav','radio-noise.wav','LICENSE.md')]+[Path('/usr/local/lib/mumble-funk')/name for name in ('audio.py','audio_control.py')];assert os.getuid()==10001;assert all(os.access(p,os.R_OK) and stat.S_IMODE(p.stat().st_mode)==0o644 for p in paths)"
+            compose('exec','-T','mumble-funk','python3','-c',readable)
+            initial=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+            assert (initial['radionoise'],initial['radionoisefile'],initial['radionoisevolume'])==('true','/usr/local/share/mumble-funk/audio/radio-noise.wav','20')
+            digest=compose('exec','-T','mumble-funk','sha256sum',initial['radionoisefile']).stdout.split()[0]
+            assert digest==b'dc0a1c97115eb797f261af52631288b868a648d0d9310fff0a431e8163536312'
+            if args.radio_noise:
+                fresh=command([str(args.probe),str(port),'--radio-noise'],input=(values['serverpassword']+'\n').encode())
+                assert b'Container Open/Noise/Close verified' in fresh.stdout
+            # Retain the independent historical Busy/Squelch packet-byte tests.
+            command(['bash','scripts/docker/audio.sh','disable-radio-noise']);healthy()
             fresh=command([str(args.probe),str(port),'--audio-defaults'],input=(values['serverpassword']+'\n').encode())
             assert b'Installed audio defaults verified' in fresh.stdout
+            noise_file=None;noise_bytes=None
+            if args.radio_noise:
+                # Missing legacy selection is still refused; packaged defaults do not migrate it.
+                original_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                compose('stop','mumble-funk')
+                clear="from pathlib import Path;p=Path('/etc/mumble-funk/server.ini');p.write_bytes(p.read_bytes().replace(b'radionoisefile=/usr/local/share/mumble-funk/audio/radio-noise.wav',b'radionoisefile='))"
+                compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',clear)
+                compose('start','mumble-funk');healthy()
+                legacy_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                assert command(['bash','scripts/docker/audio.sh','enable-radio-noise'],check=False).returncode!=0
+                healthy()
+                assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==legacy_config
+                command(['bash','scripts/docker/audio.sh','use-standard-radio-noise']);healthy()
+                assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==original_config
+                # Programmatically generated fixture; never use an operator recording.
+                source=directory/'synthetic-noise.wav'
+                rng=random.Random(2718)
+                with wave.open(str(source),'wb') as wav:
+                    wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(48000)
+                    wav.writeframes(struct.pack('<96000h',*(rng.randint(-4000,4000) for _ in range(96000))))
+                noise_bytes=source.read_bytes()
+                assert len(noise_bytes)>131072
+                command(['bash','scripts/docker/audio.sh','set-radio-noise',str(source)]);healthy()
+                state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+                noise_file=state['radionoisefile']
+                assert noise_file=='/var/lib/mumble-funk/audio/radio-noise-'+hashlib.sha256(noise_bytes).hexdigest()+'.wav'
+                assert state['radionoise']=='false'
+                assert compose('exec','-T','mumble-funk','cat',noise_file).stdout==noise_bytes
+                assert compose('exec','-T','mumble-funk','stat','-c','%u:%g:%a',noise_file).stdout.strip()==b'10001:10001:640'
+                # Failed parsing must retain the previous INI and imported bytes.
+                previous=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                invalid=directory/'invalid.wav';invalid.write_bytes(b'not a WAV')
+                assert command(['bash','scripts/docker/audio.sh','set-radio-noise',str(invalid)],check=False).returncode!=0
+                healthy();assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==previous
+                assert compose('exec','-T','mumble-funk','cat',noise_file).stdout==noise_bytes
+                # Inject failed health checks only for THIS disposable project.
+                # The real manager/runtime must restore byte-exact INI and restart.
+                real_docker=shutil.which('docker',path=env['PATH'])
+                shim=directory/'health-fault';shim.mkdir()
+                counter=shim/'remaining';counter.write_text('30')
+                delegate=shim/'docker'
+                delegate.write_text('#!/usr/bin/env python3\nimport os,sys\nfrom pathlib import Path\n'
+                    +'p=Path('+repr(str(counter))+')\na=sys.argv[1:]\n'
+                    +"if 'exec' in a and a[-1:] == ['health']:\n n=int(p.read_text())\n if n>0: p.write_text(str(n-1));sys.exit(1)\n"
+                    +'os.execv('+repr(real_docker)+',['+repr(real_docker)+']+a)\n')
+                delegate.chmod(0o755)
+                saved_path=env['PATH'];env['PATH']=str(shim)+os.pathsep+saved_path
+                try:
+                    failed=command(['bash','scripts/docker/audio.sh','radio-noise-volume','21'],check=False)
+                    assert failed.returncode!=0 and b'Konfiguration wiederhergestellt' in failed.stderr
+                finally:env['PATH']=saved_path
+                healthy()
+                assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==previous
+                assert compose('exec','-T','mumble-funk','cat',noise_file).stdout==noise_bytes
+                print('PASS: injected restart-health failure rolls back exact previous INI, preserves WAV and restarts own service')
+                for volume in ('0','20','100'):
+                    command(['bash','scripts/docker/audio.sh','radio-noise-volume',volume]);healthy()
+                    assert json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)['radionoisevolume']==volume
+                assert command(['bash','scripts/docker/audio.sh','radio-noise-volume','101'],check=False).returncode!=0
+                command(['bash','scripts/docker/audio.sh','radio-noise-volume','20']);healthy()
+                command(['bash','scripts/docker/audio.sh','enable-radio-noise']);healthy()
+                result=command([str(args.probe),str(port),'--radio-noise'],input=(values['serverpassword']+'\n').encode())
+                assert b'Container Open/Noise/Close verified' in result.stdout
+                print(result.stdout.decode(),end='')
+                enabled_config=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                compose('up','-d','--no-build','--force-recreate');healthy()
+                assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==enabled_config
+                assert json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)['radionoise']=='true'
+                assert b'Experimental radio noise enabled:' in compose('logs').stdout
+                command(['bash','scripts/docker/audio.sh','disable-radio-noise']);healthy()
+                command(['bash','scripts/docker/audio.sh','radio-noise-volume','37']);healthy()
+                state=json.loads(command(['bash','scripts/docker/audio.sh','status']).stdout)
+                assert state['radionoise']=='false' and state['radionoisefile']==noise_file
+                assert values['serverpassword'] not in json.dumps(state)
+                # Recreate/update and image rollback on precisely the same volumes.
+                prior=compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout
+                compose('up','-d','--no-build','--force-recreate');healthy()
+                assert compose('exec','-T','mumble-funk','cat','/etc/mumble-funk/server.ini').stdout==prior
+                assert compose('exec','-T','mumble-funk','cat',noise_file).stdout==noise_bytes
+                print('PASS: packaged noise default on, explicit disable, validated >128KiB import, UID10001:640, on/off/volume, failed import and recreation preserve INI/WAV')
             # Preserve the complete existing explicit-off/legacy regression fixture.
             # Fresh automatic audio was exercised above against the actual container.
             for action in (('disable-squelch',),('disable',),('boost','0'),('disable-timeout-close',)):
@@ -299,6 +401,10 @@ def main():
             healthy();assert backup_path.stat().st_mode & 0o777==0o600
             with tarfile.open(backup_path) as archive:
                 names=archive.getnames();assert 'config/server.ini' in names and 'state/server.sqlite' in names and 'state/audio/future.txt' in names
+                if args.radio_noise:
+                    assert archive.extractfile('state/audio/'+Path(noise_file).name).read()==noise_bytes
+                    config_bytes=archive.extractfile('config/server.ini').read()
+                    assert b'radionoise=false\n' in config_bytes and b'radionoisevolume=37\n' in config_bytes
                 if args.audio_feedback:
                     assert b'feedbackboostdb=9\n' in archive.extractfile('config/server.ini').read()
                     assert archive.extractfile('state/audio/'+Path(custom_busy).name).read()==(REPO/'assets/audio/busy-tone.wav').read_bytes()
@@ -314,6 +420,11 @@ def main():
             restored_code="import sqlite3,hashlib;db=sqlite3.connect('/var/lib/mumble-funk/server.sqlite');tables=[(name,db.execute('SELECT * FROM \"'+name+'\" ORDER BY rowid').fetchall()) for (name,) in db.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='slog' ORDER BY name\")];print(hashlib.sha256(repr(tables).encode()).hexdigest())"
             restored_hash=compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',restored_code,project_name=restored).stdout.strip()
             assert restored_hash==before_restore
+            if args.radio_noise:
+                assert compose('run','--rm','--no-deps','-T','--entrypoint','cat','mumble-funk',noise_file,project_name=restored).stdout==noise_bytes
+                state=json.loads(compose('run','--rm','--no-deps','-T','mumble-funk','audio','status',project_name=restored).stdout)
+                assert (state['radionoise'],state['radionoisefile'],state['radionoisevolume'])==('false',noise_file,'37')
+                print('PASS: private synthetic noise WAV/settings restored byte-exactly into empty volumes')
             if args.audio_feedback:
                 assert json.loads(compose('run','--rm','--no-deps','-T','mumble-funk','audio','status',project_name=restored).stdout)['feedbackboostdb']=='9'
                 assert compose('run','--rm','--no-deps','-T','--entrypoint','cat','mumble-funk',custom_busy,project_name=restored).stdout==(REPO/'assets/audio/busy-tone.wav').read_bytes()
@@ -348,6 +459,11 @@ def main():
             if args.previous_image:
                 docker('tag',args.previous_image,upgrade+':local')
                 compose('up','-d','--no-build',project_name=upgrade);healthy(upgrade)
+                if args.radio_noise:
+                    compose('stop',project_name=upgrade)
+                    save="import sys;from pathlib import Path;p=Path('/var/lib/mumble-funk/audio/radio-noise.wav');p.parent.mkdir(exist_ok=True);p.write_bytes(sys.stdin.buffer.read());p.chmod(0o640);c=Path('/etc/mumble-funk/server.ini');t=c.read_text();t='\\n'.join(l for l in t.splitlines() if not l.startswith(('radionoise=','radionoisefile=','radionoisevolume=','audiofeedback=','squelch=','feedbackboostdb=','squelchclosetimeoutfallback=')));c.write_text(t+'\\nradionoise=false\\nradionoisefile=/var/lib/mumble-funk/audio/radio-noise.wav\\nradionoisevolume=37\\naudiofeedback=false\\nsquelch=false\\nfeedbackboostdb=0\\nsquelchclosetimeoutfallback=false\\n')"
+                    compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',save,input=noise_bytes,project_name=upgrade)
+                    compose('up','-d','--no-build',project_name=upgrade);healthy(upgrade)
                 old=information(upgrade);old_certificate=certificate()
                 old_id=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
                 old_image=json.loads(docker('inspect',old_id).stdout)[0]['Image']
@@ -360,6 +476,8 @@ def main():
                 new_id=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
                 assert old_image!=json.loads(docker('inspect',new_id).stdout)[0]['Image']
                 assert information(upgrade)==old and certificate()==old_certificate
+                if args.radio_noise:
+                    assert compose('exec','-T','mumble-funk','cat','/var/lib/mumble-funk/audio/radio-noise.wav',project_name=upgrade).stdout==noise_bytes
                 probe(old['serverpassword'])
                 compose('stop',project_name=upgrade)
                 assert fingerprint(upgrade)==old_state
@@ -368,10 +486,20 @@ def main():
                 docker('tag',args.previous_image,upgrade+':local')
                 compose('up','-d','--no-build','--force-recreate',project_name=upgrade);healthy(upgrade)
                 assert information(upgrade)==old and certificate()==old_certificate
+                if args.radio_noise:
+                    assert compose('exec','-T','mumble-funk','cat','/var/lib/mumble-funk/audio/radio-noise.wav',project_name=upgrade).stdout==noise_bytes
                 compose('stop',project_name=upgrade)
                 assert fingerprint(upgrade)==old_state
                 print('PASS: real image update AND rollback preserve full SQLite state, password, configuration and certificate')
             print('PASS: image startup, rootless isolation, published TCP/encrypted UDP, simplex, diagnostics off, restart/recreate, port conflicts, native parallel operation, consistent backup/restore, clean shutdown')
+        except Exception:
+            hidden=[v.get('serverpassword','') for v in (locals().get('values',{}),locals().get('old',{}))]
+            for name in owned_projects:
+                logs=compose('logs','--tail','60',project_name=name,check=False).stdout.decode(errors='replace')
+                for password in hidden:
+                    if password:logs=logs.replace(password,'<redacted>')
+                print('Disposable project failure log '+name+':\n'+logs,flush=True)
+            raise
         finally:
             if native:
                 native.terminate()

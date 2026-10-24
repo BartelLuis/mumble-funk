@@ -129,14 +129,15 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 													  if (m_simplexLogger)
 														  m_simplexLogger->submit(event);
 													  if (m_squelchPlan && event.event == "released" && event.reason != "marker_confirmed") {
-														  if (event.reason == "timeout_suspected" && m_squelchTimeoutCloseEnabled
-															  && m_squelchCloseEnabled && m_audioFeedback) {
+														  if (event.reason == "timeout_suspected" && (m_noiseEnabled || m_squelchTimeoutCloseEnabled)
+															  && (m_noiseEnabled || m_squelchCloseEnabled) && m_audioFeedback) {
 															  // The controller lock serializes this release against the next
 															  // accepted start. Snapshot only existing validated recipients;
 															  // queueing is bounded/try-lock, with no voice lock or IO here.
 															  const auto cues = m_squelchPlan->timeout({event.context.connection,
 																  event.context.session, event.context.channel}, event.frame);
-															  for (const auto &cue : cues) m_audioFeedback->requestSquelch(cue);
+															  if (m_squelchTimeoutCloseEnabled && m_squelchCloseEnabled)
+                                                          for (const auto &cue : cues) m_audioFeedback->requestSquelch(cue);
 														  } else {
 															  m_squelchPlan->invalidate(event.context.connection);
 														  }
@@ -153,9 +154,10 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 	}
 	m_busyEnabled = getConf("busytone", Meta::mp.busyTone).toBool()
 		&& getConf("busytonevolume", Meta::mp.busyToneVolume).toInt() > 0;
+	const bool noiseRequested = getConf("radionoise", Meta::mp.radioNoise).toBool();
 	const bool squelchRequested = getConf("squelch", Meta::mp.squelch).toBool();
 	if (m_simplex && getConf("audiofeedback", Meta::mp.audioFeedback).toBool()
-		&& (m_busyEnabled || squelchRequested)) {
+		&& (m_busyEnabled || squelchRequested || noiseRequested)) {
 		try {
 			const QString boostText = getConf("feedbackboostdb", Meta::mp.feedbackBoostDb).toString();
 			if (!QRegExp(QStringLiteral("^(0|[1-9]|1[0-2])$")).exactMatch(boostText))
@@ -186,6 +188,24 @@ Server::Server(int snum, QObject *p) : QThread(p) {
 					log(QStringLiteral("Squelch disabled: %1").arg(QString::fromUtf8(error.what())));
 				}
 			}
+            if (noiseRequested) {
+                try {
+                    const QString volume = getConf("radionoisevolume", Meta::mp.radioNoiseVolume).toString();
+                    if (!QRegExp(QStringLiteral("^(0|[1-9][0-9]?|100)$")).exactMatch(volume))
+                        throw std::runtime_error("radionoisevolume must be 0..100");
+                    m_noiseEnabled = m_audioFeedback->configureNoise(
+                        getConf("radionoisefile", Meta::mp.radioNoiseFile).toString(), volume.toInt());
+                    if (m_noiseEnabled) {
+                        if (!m_squelchPlan) {
+                            m_squelchPlan = std::make_unique<SquelchPlan>(true);
+                            m_squelchOpenEnabled = m_squelchCloseEnabled = m_squelchTimeoutCloseEnabled = false;
+                        }
+                        log(QStringLiteral("Experimental radio noise enabled: private feedback, independent gain, max 16 producers"));
+                    } else log(QStringLiteral("Radio noise disabled: empty file or zero volume"));
+                } catch (const std::exception &error) {
+                    log(QStringLiteral("Radio noise disabled: %1").arg(QString::fromUtf8(error.what())));
+                }
+            }
 			m_audioFeedbackTimer = new QTimer(this);
 			m_audioFeedbackTimer->setTimerType(Qt::PreciseTimer);
 			connect(m_audioFeedbackTimer, &QTimer::timeout, this, &Server::deliverAudioFeedback);
@@ -1589,6 +1609,7 @@ void Server::processMsg(ServerUser *u, Mumble::Protocol::AudioData audioData, Au
 			static_cast<unsigned int>(u->cChannel->iId)}, true, audioData.frameNumber, payload,
 			audioData.isLastFrame, valid, recipients);
 		for (const auto &cue : cues) {
+			if (m_noiseEnabled && cue.kind == SquelchPlan::Kind::Open) m_audioFeedback->requestNoise(cue);
 			if (cue.kind == SquelchPlan::Kind::Open && !m_squelchOpenEnabled) {
 				// Acknowledge the accepted start/recipient in Close-only mode,
 				// without sending Open. Denied starts never reach this path.
@@ -2066,7 +2087,13 @@ void Server::checkTimeout() {
 void Server::deliverAudioFeedback() {
 	// Optional playback yields to current voice processing. The write lock makes
 	// cue validation + delivery atomic against UDP lifecycle/recipient updates.
-	if (m_squelchPlan && !qrwlVoiceThread.tryLockForWrite()) return;
+	if (m_squelchPlan && !qrwlVoiceThread.tryLockForWrite()) {
+		// Yield to speech without losing a whole 20-ms output opportunity.
+		// Restart this same timer; retries cannot accumulate queued callbacks.
+		if (m_audioFeedback->nextTickDelayMs(SimplexController::monotonicUs()))
+			m_audioFeedbackTimer->start(AudioFeedback::RetryIntervalMs);
+		return;
+	}
 	struct Unlock { QReadWriteLock *lock; ~Unlock() { if (lock) lock->unlock(); } } unlock{m_squelchPlan ? &qrwlVoiceThread : nullptr};
 	// Main-thread only. No raw user pointer survives this callback. TCP tunneling
 	// uses the normal client decoder even for clients sending encrypted UDP audio.
@@ -2103,10 +2130,19 @@ void Server::deliverAudioFeedback() {
 		if (!matches(cue.sender) || !matches(cue.recipient)) return false;
 		const auto *source = qhUsers.value(cue.sender.session);
 		const auto *receiver = qhUsers.value(cue.recipient.session);
+        // Continuous optional traffic must not build a long TCP backlog. Keep
+        // the previous Busy/Squelch budget when radio noise is disabled.
 		if (source->bMute || source->bSuppress || source->bSelfMute || receiver->bDeaf || receiver->bSelfDeaf
 			|| !receiver->bOpus || !receiver->feedbackWritable()) return false;
 		return starting ? m_squelchPlan->consume(cue, cue.sender, cue.recipient, true) : m_squelchPlan->current(cue);
+	}, [this](const AudioFeedback::Recipient &recipient, bool continuous) {
+		const auto *receiver = qhUsers.value(recipient.session);
+		return receiver && receiver->diagnosticConnection == recipient.connection && receiver->cChannel
+			&& static_cast<unsigned int>(receiver->cChannel->iId) == recipient.channel
+			&& receiver->feedbackWritable(continuous ? 1024 : 65536);
 	});
+	const int delay = m_audioFeedback->nextTickDelayMs(SimplexController::monotonicUs());
+	if (delay) m_audioFeedbackTimer->start(delay);
 }
 
 void Server::tcpTransmitData(QByteArray a, unsigned int id) {

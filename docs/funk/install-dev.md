@@ -1,9 +1,9 @@
 # Experimentellen Dev-Stand unter Ubuntu testen
 
 `dev` ist eine **experimentelle Entwicklungsversion**, keine Stable-Freigabe.
-Diese Installationsmöglichkeit steht erst zur Verfügung, sobald die Änderung mit
-`--experimental-dev` nach `dev` übernommen wurde. Der Feature-Branch dieser
-Änderung selbst ist keine freigegebene Installationsquelle.
+Diese Anleitung verwendet den veröffentlichten `origin/dev` mit dem ausdrücklichen
+Schalter `--experimental-dev`. Feature-Branches benötigen ihre jeweils eigene
+Installationsfreigabe und Anleitung, beispielsweise für [Funkrauschen](radio-noise.md).
 
 Verwende eine eigene Ubuntu-24.04- oder Ubuntu-26.04-LTS-Test-VM mit systemd und
 einem normalen Benutzer mit sudo-Rechten. Empfohlen: 4 GiB RAM, 2 CPU-Kerne,
@@ -110,11 +110,16 @@ Simplex-Regel wird durch diesen Schalter geändert.
 
 ## Prüfung nach der Installation
 
-```bash
-sudo systemctl --no-pager --full status mumble-funk
-cat /opt/mumble-funk/current/BUILD-INFO
-sudo journalctl -u mumble-funk -b --no-pager -n 50
-```
+Die gemeinsame [Übersicht der Status- und Verwaltungsbefehle](ubuntu-commands.md)
+erklärt Verbindungsinformationen mit/ohne Passwort, Audio-Konfiguration, Dienst,
+installierten Git-Stand und Serverlog. Sie gilt auch für die normale Installation
+auf der Snapshot-Test-VM. `sudo mumble-funk-info` zeigt das Zugangspasswort;
+für eine Ausgabe ohne Passwort `sudo mumble-funk-info --hide-password` verwenden.
+
+Diese Anleitung installiert weiterhin `dev`. Die aktuelle experimentelle
+Funkrauschfunktion auf `feature/radio-noise` wird nach der eigenen
+[Feature-Installationsanleitung](radio-noise.md) eingerichtet, nicht durch einen
+automatischen Wechsel dieser Dev-Installation.
 
 Mit Windows-Mumble und Android-Mumla Sprache, Simplex, Busy Tone und Squelch testen.
 Automatisierte Installer-Prüfungen ersetzen diese Geräte-Hörtests nicht.

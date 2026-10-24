@@ -21,6 +21,26 @@ Die vollständigen ursprünglichen Commit-IDs und Integrationsergebnisse stehen 
 Versionstags bleiben erhalten, insbesondere `funk-v0.2.0` auf
 `95ac344838c1535f943dccc7d134a280aac6a340` (noch ohne Docker).
 
+## Ubuntu-Testinstallation und Statusbefehle
+
+Für die normale Ubuntu-Testinstallation beschreibt die gemeinsame
+[Befehlsübersicht](ubuntu-commands.md) Serverinformationen, Audio-Status,
+Dienststatus, installierten Git-Commit und Serverlog. Sie kennzeichnet die
+Passwortausgabe von `mumble-funk-info` und erklärt `--hide-password`.
+
+Die aktuelle experimentelle Funkrauschentwicklung wird auf
+[`feature/radio-noise`](radio-noise.md) dokumentiert. Dort zeigt
+`mumble-funk-audio status` zusätzlich `radionoise`, `radionoisefile` und
+`radionoisevolume`; dies bestätigt die Konfiguration, nicht den WAV-Ladezustand.
+Der Betreiber hat den gemeinsamen Open-/Noise-/Close-Stream und die Behebung der
+kurzen Aussetzer auf seiner Ubuntu-Test-VM erfolgreich gehört. Diese Aussage gilt
+für den bisherigen Testumfang, **nicht als allgemeine Stable-Freigabe**. Die oben
+und unten beschriebene Integrationshistorie wird dadurch nicht nachträglich geändert.
+
+Der checkoutabhängige CI-Fehler im Push-Lauf von `6f976a2` und seine Korrektur
+sind im [CI-Bericht vom 23. Oktober 2026](CI-STATUS-2026-10-23.md) erklärt.
+Ein grüner PR-Lauf ersetzt nicht die Prüfung der Push-Variante mit Branchnamen.
+
 ## Änderungen und Tests
 
 Neue Funktionen auf `feature/<thema>` aus aktuellem `dev` entwickeln, mit Tests und

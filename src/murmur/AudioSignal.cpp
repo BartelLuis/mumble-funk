@@ -12,17 +12,20 @@
 #include <stdexcept>
 
 std::vector< float > AudioSignal::loadWav(const QString &path, LengthPolicy policy) {
-	const auto fail = [policy] {
+	const bool noise = policy == LengthPolicy::RadioNoise;
+	const int fileLimit = noise ? 8 * 1024 * 1024 : 131072;
+	const auto fail = [policy, noise] {
+		if (noise) throw std::runtime_error("Expected radio noise PCM WAV: mono, 16-bit LE, 48000 Hz, 20 ms..60 s, <=8 MiB");
 		throw std::runtime_error(
 			policy == LengthPolicy::Busy
 				? "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 20-1250 ms, at most 128 KiB"
 				: "Expected PCM WAV: mono, signed 16-bit LE, 8000/16000/24000/48000 Hz, 1-1000 ms, at most 128 KiB");
 	};
 	QFile file(path);
-	if (!QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly) || file.size() > 131072)
+	if (!QFileInfo(path).isFile() || !file.open(QIODevice::ReadOnly) || file.size() > fileLimit)
 		fail();
-	const QByteArray bytes = file.read(131073);
-	if (bytes.size() < 44 || bytes.size() > 131072 || bytes.mid(0, 4) != "RIFF" || bytes.mid(8, 4) != "WAVE")
+	const QByteArray bytes = file.read(fileLimit + 1);
+	if (bytes.size() < 44 || bytes.size() > fileLimit || bytes.mid(0, 4) != "RIFF" || bytes.mid(8, 4) != "WAVE")
 		fail();
 	auto u32 = [&](int pos) { return qFromLittleEndian< quint32 >(bytes.constData() + pos); };
 	auto u16 = [&](int pos) { return qFromLittleEndian< quint16 >(bytes.constData() + pos); };
@@ -59,12 +62,13 @@ std::vector< float > AudioSignal::loadWav(const QString &path, LengthPolicy poli
 	const auto rate = u32(fmt + 4);
 	if ((rate != 8000 && rate != 16000 && rate != 24000 && rate != 48000) || u32(fmt + 8) != rate * 2)
 		fail();
-	const auto maxFrames = policy == LengthPolicy::Busy ? rate * 5 / 4 : rate;
-	if (size < rate / (policy == LengthPolicy::Busy ? 50 : 1000) * 2 || size > maxFrames * 2)
+	if (noise && rate != 48000) fail();
+	const auto maxFrames = noise ? rate * 60 : (policy == LengthPolicy::Busy ? rate * 5 / 4 : rate);
+	if (size < rate / (policy == LengthPolicy::ShortSignal ? 1000 : 50) * 2 || size > maxFrames * 2)
 		fail();
 	const auto frames = size / 2;
 	const auto output = static_cast< std::size_t >(frames) * 48000 / rate;
-	std::vector< float > pcm(output + 960, 0); // One silent 20 ms tail for the Opus lookahead.
+	std::vector< float > pcm(output + (noise ? 0 : 960), 0); // Loops must not acquire a silent tail.
 	for (std::size_t i = 0; i < output; ++i) {
 		const double source = static_cast< double >(i) * rate / 48000.0;
 		const auto first    = static_cast< quint32 >(source);
@@ -97,7 +101,7 @@ std::vector< float > AudioSignal::syntheticBusy() {
 	return pcm;
 }
 
-static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail, int boostDb) {
+static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int volume, bool signalTail, int boostDb, float *preparedGain = nullptr) {
 	if (boostDb < 0 || boostDb > 12)
 		throw std::runtime_error("Feedback boost must be an integer from 0 to 12 dB");
 	// Busy: at most 60000 source samples (1250 ms at 48 kHz) + 960 tail.
@@ -150,7 +154,7 @@ static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int 
 			if (size < 0) throw std::runtime_error("Cannot encode feedback Opus audio");
 			result.emplace_back(reinterpret_cast<const char *>(bytes.data()), size);
 		}
-		if (boostDb == 0) return result;
+		if (boostDb == 0) { if (preparedGain) *preparedGain = gain; return result; }
 		std::unique_ptr<OpusDecoder, decltype(&opus_decoder_destroy)> decoder(
 			opus_decoder_create(48000, 1, &error), opus_decoder_destroy);
 		if (!decoder || error != OPUS_OK) throw std::runtime_error("Cannot verify feedback Opus audio");
@@ -165,7 +169,7 @@ static std::vector< QByteArray > encodePCM(const std::vector< float > &pcm, int 
 				decodedPeak = std::max(decodedPeak, std::abs(sample));
 			}
 		}
-		if (decodedPeak <= 0.98f) return result;
+		if (decodedPeak <= 0.98f) { if (preparedGain) *preparedGain = gain; return result; }
 		gain *= 0.95f / decodedPeak;
 	}
 	throw std::runtime_error("Cannot encode feedback within safe decoded level");
@@ -176,4 +180,12 @@ std::vector<QByteArray> AudioSignal::encode(const std::vector<float> &pcm, int v
 }
 std::vector<QByteArray> AudioSignal::encodeWavSignal(const QString &path, int volume, int boostDb) {
 	return encodePCM(loadWav(path, LengthPolicy::ShortSignal), volume, true, boostDb);
+}
+std::vector<float> AudioSignal::streamWavSignal(const QString &path, int volume, int boostDb) {
+	auto pcm = loadWav(path, LengthPolicy::ShortSignal);
+	float gain = 0;
+	encodePCM(pcm, volume, true, boostDb, &gain); // Same bounded startup level verification.
+	pcm.resize(pcm.size() - 960);
+	for (auto &sample : pcm) sample *= gain;
+	return pcm;
 }

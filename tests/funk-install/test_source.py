@@ -39,10 +39,10 @@ class SourceTests(unittest.TestCase):
     def git(self, *args):
         return self.run_git(*args)
 
-    def guard(self, allowed, experimental=False):
+    def guard(self, allowed, experimental=False, repo=None):
         result = subprocess.run(["bash", "-eu", "-c",
                                  'source "$1"; funk_require_supported_source "$2" "$3"', "source-test",
-                                 str(REPO / "scripts/funk/source.sh"), str(self.repo), ("--experimental-squelch" if experimental is True else experimental) if experimental else ""],
+                                 str(REPO / "scripts/funk/source.sh"), str(repo or self.repo), ("--experimental-squelch" if experimental is True else experimental) if experimental else ""],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode == 0, allowed, result.stdout + result.stderr)
         if allowed:
@@ -122,6 +122,94 @@ class SourceTests(unittest.TestCase):
         self.git("checkout", "-B", "feature/squelch-audio", self.head)
         self.git("update-ref", "refs/remotes/origin/feature/squelch-audio", self.head)
         self.git("push", str(self.remote), "HEAD:refs/heads/feature/squelch-audio")
+
+    def radio_noise(self):
+        branch = "feature/radio-noise"
+        self.git("checkout", "-B", branch, self.head)
+        self.git("update-ref", f"refs/remotes/origin/{branch}", self.head)
+        self.git("push", str(self.remote), f"HEAD:refs/heads/{branch}")
+
+    def test_radio_noise_requires_own_flag(self):
+        self.radio_noise()
+        for option in (False, "--experimental-dev", "--experimental-squelch",
+                       "--experimental-audio-volume", "--experimental-busy-tone",
+                       "--experimental-audio-defaults"):
+            self.guard(False, experimental=option)
+        self.guard(True, experimental="--experimental-radio-noise")
+        self.git("checkout", "-B", "feature/unknown-audio", self.head)
+        self.guard(False, experimental="--experimental-radio-noise")
+
+    def test_radio_noise_documented_switch_from_older_single_branch_clone(self):
+        self.radio_noise()
+        checkout = self.root / "older-single-branch"
+        self.run_git("clone", "--shared", "--single-branch", "--branch", "stable",
+                     str(self.repo), str(checkout), cwd=self.root)
+        self.run_git("-C", str(checkout), "remote", "set-url", "origin", OFFICIAL)
+        self.run_git("-C", str(checkout), "config", f"url.{self.remote}.insteadOf", OFFICIAL)
+        self.run_git("-C", str(checkout), "fetch", "origin",
+                     "refs/heads/feature/radio-noise:refs/remotes/origin/feature/radio-noise")
+        self.run_git("-C", str(checkout), "switch", "--no-track", "-c", "feature/radio-noise",
+                     "refs/remotes/origin/feature/radio-noise")
+        self.run_git("-C", str(checkout), "merge", "--ff-only", "origin/feature/radio-noise")
+        self.guard(True, experimental="--experimental-radio-noise", repo=checkout)
+
+    def test_radio_noise_requires_exact_cached_and_live_commit(self):
+        self.radio_noise()
+        option = "--experimental-radio-noise"
+        ref = "refs/remotes/origin/feature/radio-noise"
+        live = "refs/heads/feature/radio-noise"
+        base = "dfbac8d3d9c967003e74b4ffc5610f7d45e8f666"
+        self.git("update-ref", "-d", ref)
+        self.guard(False, experimental=option)
+        self.git("update-ref", ref, base)
+        self.guard(False, experimental=option)
+        self.git("update-ref", ref, self.head)
+        self.run_git("--git-dir", str(self.remote), "update-ref", live, base)
+        self.guard(False, experimental=option)
+        self.run_git("--git-dir", str(self.remote), "update-ref", "-d", live)
+        self.guard(False, experimental=option)
+        self.git("push", str(self.remote), f"HEAD:{live}")
+        self.git("commit", "--allow-empty", "-m", "Unpublished radio source")
+        self.guard(False, experimental=option)
+        self.git("update-ref", ref, "HEAD")
+        self.guard(False, experimental=option)
+        self.git("push", str(self.remote), f"HEAD:{live}")
+        self.git("checkout", "-B", "feature/radio-noise", self.head)
+        self.git("update-ref", ref, self.head)
+        self.guard(False, experimental=option)
+
+    def test_radio_noise_rejects_dirty_source_foreign_origin_and_network_failure(self):
+        self.radio_noise()
+        option = "--experimental-radio-noise"
+        readme = self.repo / "README.md"
+        original = readme.read_bytes()
+        readme.write_bytes(original + b"\nUncommitted change\n")
+        self.guard(False, experimental=option)
+        self.git("add", "README.md")
+        self.guard(False, experimental=option)
+        readme.write_bytes(original)
+        self.git("add", "README.md")
+        untracked = self.repo / "unpublished-source.cpp"
+        untracked.write_text("// Not published\n")
+        self.guard(False, experimental=option)
+        untracked.unlink()
+        (self.repo / "build").mkdir()
+        (self.repo / "build" / "ignored-output").touch()
+        self.guard(True, experimental=option)
+        self.git("remote", "set-url", "origin", str(self.remote))
+        self.guard(False, experimental=option)
+        self.git("remote", "set-url", "origin", OFFICIAL)
+        self.git("config", "--unset", f"url.{self.remote}.insteadOf")
+        self.git("config", f"url.{self.root / 'missing.git'}.insteadOf", OFFICIAL)
+        self.guard(False, experimental=option)
+
+    def test_radio_noise_rejects_unrelated_mumble_base(self):
+        self.git("checkout", "--orphan", "unrelated")
+        self.git("commit", "--allow-empty", "-m", "Unrelated source")
+        self.git("branch", "-M", "feature/radio-noise")
+        self.git("update-ref", "refs/remotes/origin/feature/radio-noise", "HEAD")
+        self.git("push", str(self.remote), "HEAD:refs/heads/feature/radio-noise")
+        self.guard(False, experimental="--experimental-radio-noise")
 
     def test_experimental_branch_requires_explicit_opt_in(self):
         self.feature()

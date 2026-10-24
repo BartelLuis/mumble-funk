@@ -24,7 +24,7 @@ public:
 			return connection == other.connection && session == other.session && channel == other.channel;
 		}
 	};
-	enum class Kind { Open, Close };
+	enum class Kind { Open, Close, Noise, NoiseEnd };
 	struct Cue {
 		Kind kind;
 		Identity sender;

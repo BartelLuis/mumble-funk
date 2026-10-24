@@ -1,6 +1,8 @@
 """Native staged installation and shared native/container audio administration."""
 import hashlib
+import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 BINARY = Path(sys.argv.pop(1)).resolve()
 REPO = Path(__file__).resolve().parents[2]
@@ -45,7 +48,7 @@ class SquelchAdminTests(unittest.TestCase):
         self.assertEqual(state['squelchopen'], 'true')
         self.assertEqual(state['squelchclose'], 'true')
         self.assertEqual(state['squelchclosetimeoutfallback'], 'true')
-        for name in ('busy-tone.wav', 'squelch-open.wav', 'squelch-close.wav', 'LICENSE.md'):
+        for name in ('busy-tone.wav', 'squelch-open.wav', 'squelch-close.wav', 'radio-noise.wav', 'LICENSE.md'):
             path = self.sound/name
             self.assertEqual(path.read_bytes(), (REPO/'assets/audio'/name).read_bytes())
             self.assertEqual(path.stat().st_mode & 0o777, 0o644)
@@ -58,10 +61,169 @@ class SquelchAdminTests(unittest.TestCase):
         # Staging must report its actual source, not pretend to be the feature head.
         branch = subprocess.check_output(['git', '-C', str(REPO), 'branch', '--show-current'], text=True).strip()
         self.assertIn('branch='+branch+'\n', info)
-        self.assertIn('experimental='+str(branch in ('dev', 'feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset', 'feature/audio-defaults')).lower()+'\n', info)
+        self.assertIn('experimental='+str(branch in ('dev', 'feature/squelch-audio', 'feature/audio-volume', 'feature/busy-tone-asset', 'feature/audio-defaults', 'feature/radio-noise')).lower()+'\n', info)
         revision = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
         self.assertIn('revision='+revision+'\n', info)
         self.assertFalse((self.root/'etc/systemd/system/mumble-funk-audio-engine.service').exists())
+
+    def test_noise_status_missing_values_preserves_all_legacy_fields(self):
+        # Explicit pre-existing schema: new fields must only extend this object.
+        legacy = {
+            'feedbackboostdb': '8', 'audiofeedback': 'false', 'busytone': 'false',
+            'busytonefile': '/etc/mumble-funk/sounds/custom-busy.wav', 'busytonevolume': '31',
+            'squelch': 'false', 'squelchopen': 'false', 'squelchclose': 'true',
+            'squelchclosetimeoutfallback': 'false',
+            'squelchopenfile': '/etc/mumble-funk/sounds/custom-open.wav',
+            'squelchclosefile': '/etc/mumble-funk/sounds/custom-close.wav',
+            'squelchopenvolume': '17', 'squelchclosevolume': '83',
+        }
+        self.config.write_text('[General]\n'+''.join(f'{key}={value}\n' for key,value in legacy.items()))
+        before = self.config.read_bytes()
+        self.assertEqual(self.status(), dict(legacy, radionoise='false', radionoisefile='', radionoisevolume='20'))
+        self.assertEqual(self.config.read_bytes(), before)
+
+    def test_noise_status_enabled_disabled_and_full_custom_file(self):
+        # Deliberately not a loadable WAV: status describes INI, not runtime success.
+        path = '/etc/mumble-funk/sounds/Eigenes Rauschen ä=Test.wav'
+        for enabled, volume in [('true','20'), ('false','77'), ('true','0')]:
+            with self.subTest(enabled=enabled, volume=volume):
+                self.config.write_text('[General]\nradionoise='+enabled+'\nradionoisefile='+json.dumps(path)+'\nradionoisevolume='+volume+'\n')
+                state = self.status()
+                self.assertEqual((state['radionoise'], state['radionoisefile'], state['radionoisevolume']),
+                                 (enabled, path, volume))
+                self.assertNotIn('loaded', state)
+                self.assertTrue(all(isinstance(value, str) for value in state.values()))
+
+    def test_noise_status_read_only_secret_whitelist_native_and_container(self):
+        secrets = {'serverpassword': 'TEST_ONLY_password', 'icesecret': 'TEST_ONLY_ice',
+                   'sqlpassword': 'TEST_ONLY_sql', 'sslkey': 'TEST_ONLY_key'}
+        # These inert sentinels exercise secret filtering, not authentication.
+        # Keep the INI in memory: no credential-shaped fixture reaches disk.
+        fixture = ('radionoise=false\nradionoisefile=/missing/kept.wav\nradionoisevolume=29\n'
+                   + ''.join(f'{key}={value}\n' for key,value in secrets.items())
+                   + '[Other]\nradionoise=true\nradionoisefile=/wrong-section.wav\n')
+        before, metadata = self.config.read_bytes(), self.config.stat()
+        # Exercise the production branch with a temporary root, never the host's /etc.
+        # A status request must bypass all service, lock, validation and write actions.
+        for container in (False, True):
+            output, errors = io.StringIO(), io.StringIO()
+            with mock.patch.object(AUDIO.Path, 'resolve', return_value=Path('/')), \
+                 mock.patch.object(AUDIO.os, 'geteuid', return_value=0), \
+                 mock.patch.object(AUDIO.Path, 'read_bytes', autospec=True,
+                                   return_value=fixture.encode('utf-8')) as config_read, \
+                 mock.patch.object(AUDIO.COMMON, 'checked', side_effect=AssertionError('Unexpected external command')), \
+                 mock.patch.object(AUDIO.COMMON, 'atomic_config', side_effect=AssertionError('Unexpected config write')), \
+                 mock.patch.object(AUDIO, 'installation_lock', side_effect=AssertionError('Unexpected install lock')), \
+                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                self.assertEqual(AUDIO.main(['status', '--root', str(self.root)], container=container), 0)
+            config_read.assert_called_once_with(self.config)
+            state = json.loads(output.getvalue())
+            self.assertEqual(state, dict(AUDIO.DEFAULTS, radionoise='false',
+                                        radionoisefile='/missing/kept.wav', radionoisevolume='29'))
+            self.assertEqual(errors.getvalue(), '')
+            for key, value in secrets.items():
+                self.assertNotIn(key, state)
+                self.assertNotIn(value, output.getvalue()+errors.getvalue())
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(self.config.stat().st_mtime_ns, metadata.st_mtime_ns)
+        self.assertFalse((self.config.parent/'server.ini.before-audio-change').exists())
+        self.assertFalse((self.root/'run/lock/mumble-funk-install.lock').exists())
+
+    def container_command(self,*args,ok=True):
+        out,err=io.StringIO(),io.StringIO()
+        with contextlib.redirect_stdout(out),contextlib.redirect_stderr(err):
+            code=AUDIO.main([*args,'--root',str(self.root),'--binary',str(BINARY)],container=True)
+        self.assertEqual(code==0,ok,out.getvalue()+err.getvalue())
+        return out.getvalue()
+
+    def test_container_noise_import_larger_than_short_assets_and_management(self):
+        import wave
+        source=self.root/'own noise.wav'
+        with wave.open(str(source),'wb') as wav:
+            wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(48000)
+            wav.writeframes(b'\x00\x01'*96000)  # 2s / 192044 bytes, above old 128 KiB limit.
+        self.container_command('disable-radio-noise')
+        before=self.status()
+        self.container_command('set-radio-noise',str(source))
+        state=self.status();selected=state['radionoisefile']
+        self.assertTrue(selected.startswith('/var/lib/mumble-funk/audio/radio-noise-'))
+        target=self.root/selected.lstrip('/')
+        self.assertEqual(target.read_bytes(),source.read_bytes())
+        self.assertEqual(target.stat().st_mode & 0o777,0o640)
+        self.assertEqual(state['radionoise'],'false')  # Import never enables effects.
+        self.container_command('set-radio-noise',str(source))  # idempotent immutable copy
+        self.container_command('enable-radio-noise')
+        self.assertEqual(self.status()['radionoise'],'true')
+        for value in ('0','20','100'):
+            self.container_command('radio-noise-volume',value)
+            self.assertEqual(self.status()['radionoisevolume'],value)
+        self.container_command('disable-radio-noise')
+        after=self.status()
+        for key in ('radionoise','radionoisefile','radionoisevolume'):after.pop(key);before.pop(key)
+        self.assertEqual(after,before)  # Busy, Simplex and Squelch not modified.
+        self.assertEqual(target.read_bytes(),source.read_bytes())
+        target.write_bytes(b'operator modified existing file')
+        original=self.config.read_bytes()
+        self.container_command('set-radio-noise',str(source),ok=False)
+        self.assertEqual(self.config.read_bytes(),original)
+        self.assertEqual(target.read_bytes(),b'operator modified existing file')
+
+    def test_container_noise_invalid_files_values_and_enable_do_not_change_settings(self):
+        import wave
+        # Legacy INI with no file must still refuse enable, despite new-install defaults.
+        self.config.write_bytes(AUDIO.COMMON.update_ini(self.config.read_text(),
+                               {'radionoise': 'false', 'radionoisefile': ''}).encode())
+        original=self.config.read_bytes()
+        self.container_command('enable-radio-noise',ok=False)
+        for name,channels,rate,frames in [('stereo',2,48000,960),('rate',1,44100,960),('short',1,48000,959),('long',1,48000,2880001)]:
+            source=self.root/(name+'.wav')
+            with wave.open(str(source),'wb') as wav:
+                wav.setnchannels(channels);wav.setsampwidth(2);wav.setframerate(rate);wav.writeframes(b'\x00\x01'*(frames*channels))
+            self.container_command('set-radio-noise',str(source),ok=False)
+            self.assertEqual(self.config.read_bytes(),original)
+        source=self.root/'huge.wav'
+        with source.open('wb') as wav:wav.truncate(8388609)
+        self.container_command('set-radio-noise',str(source),ok=False)
+        link=self.root/'link.wav';link.symlink_to(REPO/'assets/audio/squelch-close.wav')
+        self.container_command('set-radio-noise',str(link),ok=False)
+        for value in ('101','-1','NaN','1.5'):
+            self.container_command('radio-noise-volume',value,ok=False)
+        self.assertEqual(self.config.read_bytes(),original)
+        self.container_command('set-radio-noise',str(REPO/'assets/audio/squelch-close.wav'))
+        self.config.write_text(self.config.read_text().replace('audiofeedback=true','audiofeedback=false'))
+        # Legacy INI with no file must still refuse enable, despite new-install defaults.
+        self.config.write_bytes(AUDIO.COMMON.update_ini(self.config.read_text(),
+                               {'radionoise': 'false', 'radionoisefile': ''}).encode())
+        original=self.config.read_bytes()
+        self.container_command('enable-radio-noise',ok=False)
+        self.assertEqual(self.config.read_bytes(),original)
+
+
+    def test_standard_noise_selection_native_container_and_preservation(self):
+        for container in (False, True):
+            with self.subTest(container=container):
+                run = self.container_command if container else self.command
+                run('disable-radio-noise')
+                run('set-radio-noise', str(REPO/'assets/audio/radio-noise.wav'))
+                selected = self.status()['radionoisefile']
+                custom = self.root/selected.lstrip('/')
+                saved = custom.read_bytes()
+                run('radio-noise-volume', '0')
+                before = self.status()
+                run('use-standard-radio-noise')
+                self.assertEqual(self.status(), dict(before, radionoisefile=AUDIO.NOISE_STANDARD))
+                self.assertEqual(custom.read_bytes(), saved)
+                run('enable-radio-noise')
+                self.assertEqual(self.status()['radionoise'], 'true')
+                self.assertEqual(self.status()['radionoisevolume'], '0')
+                # A missing/damaged package must not replace a valid selection.
+                asset = self.sound/'radio-noise.wav'
+                original_asset = asset.read_bytes()
+                asset.write_bytes(b'invalid')
+                original = self.config.read_bytes()
+                run('use-standard-radio-noise', ok=False)
+                self.assertEqual(self.config.read_bytes(), original)
+                asset.write_bytes(original_asset)
 
     def test_master_and_independent_switches_keep_busy_settings(self):
         self.command('enable-squelch')

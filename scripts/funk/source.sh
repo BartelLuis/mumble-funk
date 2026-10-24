@@ -35,11 +35,20 @@ funk_require_supported_source() {
             }
             echo 'EXPERIMENTELL: dev-Testinstallation, keine Stable-Freigabe; Geräte-Hörtests erforderlich.' >&2
             ;;
-        feature/squelch-audio|feature/audio-volume|feature/busy-tone-asset|feature/audio-defaults)
+        feature/squelch-audio|feature/audio-volume|feature/busy-tone-asset|feature/audio-defaults|feature/radio-noise)
             local required=--experimental-squelch
             if [[ $branch == feature/audio-volume ]]; then required=--experimental-audio-volume; fi
             if [[ $branch == feature/busy-tone-asset ]]; then required=--experimental-busy-tone; fi
             if [[ $branch == feature/audio-defaults ]]; then required=--experimental-audio-defaults; fi
+            if [[ $branch == feature/radio-noise ]]; then
+                required=--experimental-radio-noise
+                # Ignored build outputs remain allowed; unpublished source files do not.
+                local untracked
+                untracked=$(git -C "$repo" ls-files --others --exclude-standard) || return 1
+                [[ -z $untracked ]] || {
+                    echo 'Nicht versionierte Dateien vorhanden. Bitte einen sauberen veröffentlichten Quellstand verwenden.' >&2; return 1;
+                }
+            fi
             [[ $experimental == "$required" ]] || {
                 echo "EXPERIMENTELL: $branch benötigt $required." >&2; return 1;
             }

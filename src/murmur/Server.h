@@ -114,6 +114,7 @@ protected:
 	bool m_busyEnabled = false;
 	bool m_squelchOpenEnabled = true, m_squelchCloseEnabled = true;
 	bool m_squelchTimeoutCloseEnabled = false;
+	bool m_noiseEnabled = false;
 	QTimer *m_audioFeedbackTimer = nullptr;
 	void deliverAudioFeedback();
 	void updateSimplexPermission(const ServerUser &user);
