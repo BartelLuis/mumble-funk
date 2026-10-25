@@ -2,8 +2,10 @@
 
 `dev` ist eine **experimentelle Entwicklungsversion**, keine Stable-Freigabe.
 Diese Anleitung verwendet den veröffentlichten `origin/dev` mit dem ausdrücklichen
-Schalter `--experimental-dev`. Feature-Branches benötigen ihre jeweils eigene
-Installationsfreigabe und Anleitung, beispielsweise für [Funkrauschen](radio-noise.md).
+Schalter `--experimental-dev`. Seit dem Merge von PR #9 enthält Dev auch
+kontinuierliches [Funkrauschen](radio-noise.md) und den gemeinsamen
+Open/Noise/Close-Effektstream. Ein Wechsel auf einen Feature-Branch ist dafür
+nicht erforderlich. Historische Feature-Branches behalten ihre eigenen Opt-ins.
 
 Verwende eine eigene Ubuntu-24.04- oder Ubuntu-26.04-LTS-Test-VM mit systemd und
 einem normalen Benutzer mit sudo-Rechten. Empfohlen: 4 GiB RAM, 2 CPU-Kerne,
@@ -31,8 +33,13 @@ Nicht in ein bereits vorhandenes Quellverzeichnis klonen. Das Setup installiert
 Abhängigkeiten, baut den Server, führt die Servertests aus und installiert erst
 bei Erfolg. Der normale Dienst heißt **`mumble-funk`**, der Port ist **64739 TCP/UDP**.
 Es gibt keinen zusätzlichen Preview-Dienst oder Preview-Port. Die vorhandenen
-Audio-Standardeinstellungen, Audiodateien und Verwaltungsbefehle werden durch
-diese Quellfreigabe nicht verändert. Zur Verbindung mit Windows-Mumble und
+Audio-Standardeinstellungen werden nur beim Erzeugen einer fehlenden INI
+gesetzt: Simplex, AudioFeedback, Busy, Open/Close, Timeout-Close und Funkrauschen
+aktiv; Busy/Open/Close bei 50 %, deren Boost +8 dB und Rauschen bei 20.
+Alle vier CC0-WAVs werden unter `/usr/local/share/mumble-funk/audio/` installiert.
+Vorhandene INIs einschließlich fehlender Schlüssel, eigene WAVs und bewusst
+deaktivierte Effekte bleiben erhalten. [Genaue Vorgaben](audio-defaults.md).
+Zur Verbindung mit Windows-Mumble und
 Android-Mumla siehe [Zugangsdaten und Verbindung](setup.md#zugangsdaten-und-verbindung).
 Das Passwort aus `mumble-funk-info` privat aufbewahren.
 
@@ -116,10 +123,12 @@ installierten Git-Stand und Serverlog. Sie gilt auch für die normale Installati
 auf der Snapshot-Test-VM. `sudo mumble-funk-info` zeigt das Zugangspasswort;
 für eine Ausgabe ohne Passwort `sudo mumble-funk-info --hide-password` verwenden.
 
-Diese Anleitung installiert weiterhin `dev`. Die aktuelle experimentelle
-Funkrauschfunktion auf `feature/radio-noise` wird nach der eigenen
-[Feature-Installationsanleitung](radio-noise.md) eingerichtet, nicht durch einen
-automatischen Wechsel dieser Dev-Installation.
+Diese Anleitung installiert `dev` einschließlich Funkrauschen; dessen
+[Audioverwaltung und Hörtest](radio-noise.md) verwenden dieselbe normale Installation.
+Für Docker gilt die [Dev-Docker-Anleitung](docker.md), ebenfalls ohne neue Audioports.
 
-Mit Windows-Mumble und Android-Mumla Sprache, Simplex, Busy Tone und Squelch testen.
+Mit Windows-Mumble und Android-Mumla Sprache, Simplex, Busy, Open, Rauschen, Close
+und Timeout-Close testen. Ein erfolgreiches Ende mit Marker darf keinen zweiten
+Timeout-Close auslösen. Für Status, WAV-Auswahl und Lautstärken die
+[gemeinsame Befehlsübersicht](ubuntu-commands.md) verwenden.
 Automatisierte Installer-Prüfungen ersetzen diese Geräte-Hörtests nicht.

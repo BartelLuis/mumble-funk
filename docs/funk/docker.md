@@ -5,7 +5,7 @@ Dieser Stand enthält den [Standard-Busy-Tone](busy-tone.md), Squelch und
 eigene WAVs werden bei Updates nicht automatisch geändert.
 
 
-Dieser Feature-Stand **`feature/radio-noise`** enthält die gemeinsame Audio-Engine
+Der aktuelle experimentelle **`dev`-Stand nach PR #9** enthält die gemeinsame Audio-Engine
 und die experimentelle Squelch-Vorschau auf Mumble Server 1.5.939. Das ist keine
 Stable-Freigabe. Neue Konfigurationen aktivieren Simplex, Busy, Squelch Open/Close
 bei 50 % und +8 dB; Mumla-Timeout-Close ist ebenfalls aktiv. Vorhandene INIs bleiben unverändert.
@@ -24,7 +24,7 @@ Ein Update wechselt keine Ports automatisch. Native Ubuntu-Installation: 64739.
 **Bereits installiert?** Im vorhandenen Projekt arbeiten und zuerst sichern.
 Die [Stable-Migration](docker-stable-migration.md) beschreibt den historischen
 Simplex-v0.2-Kandidaten; sie ist keine Freigabe, eine bestehende Stable-Installation
-ungefragt durch diesen experimentellen Feature-Branch zu ersetzen. Der damalige
+ungefragt durch den experimentellen Dev-Stand zu ersetzen. Der damalige
 Stand verwendete ohne explizite Einstellung noch Host-Port 64739. Historische
 Prüfberichte bleiben unverändert. Siehe [Bestandsschutz beim Update](#9-aktualisieren)
 und den [Prüfbericht zum Portstandard](DOCKER-PORT-DEFAULT-STATUS.md).
@@ -44,8 +44,8 @@ Ubuntu-VM. Es wird nichts automatisch auf einer anderen VM oder Proxmox installi
 - Empfohlen: **2 CPU-Kerne, 4 GiB RAM**, mindestens **12 GiB freier Docker-Speicher**,
   besser 20 GiB für Build-Cache und spätere Updates. Der Build verwendet standardmäßig
   zwei Prozesse; LTO und Unity-Build sind aus. Eine harte 4-GiB-Grenze wurde hier
-  nicht separat nachgestellt. Das Laufzeit-Image benötigt ungefähr **199 MB**
-  unkomprimiert; Build-Werkzeuge, Quellen, Zwischenstände und Cache mehrere GiB.
+  nicht separat nachgestellt. Die Laufzeit-Imagegröße hängt von Revision und Basisimage ab; Build-Werkzeuge,
+  Quellen, Zwischenstände und Cache benötigen zusätzlich mehrere GiB.
 - Internetzugriff auf Docker Hub, Ubuntu-Paketquellen und GitHub. Der erste Build
   lädt Pakete und die vorhandenen, auf konkrete Commits festgelegten Submodule.
 - Ein freier **Host-Port für TCP und UDP**, standardmäßig **64740** (dieser Entwicklungsstand).
@@ -69,7 +69,7 @@ installiert oder verändert Docker selbst nicht.
 
 | Eigenschaft | Ubuntu-Schnellinstallation | Docker-Installation |
 | --- | --- | --- |
-| Start | `scripts/funk/setup.sh --experimental-radio-noise` auf diesem Feature-Stand | `docker compose up -d --build`; Entwicklungsstand siehe unten |
+| Start | `scripts/funk/setup.sh --experimental-dev` auf Dev | `docker compose up -d --build`; Entwicklungsstand siehe unten |
 | Betrieb | Eigener systemd-Dienst | Eigener Container mit Neustartrichtlinie |
 | Dateien | Eigene Verzeichnisse direkt auf Ubuntu | Eigene benannte Docker-Volumes |
 | Port (TCP/UDP) | Standardmäßig 64739 | Hier Host-Standard 64740, frei wählbar; intern immer 64739 |
@@ -86,7 +86,7 @@ Benutze ein neues Quellverzeichnis, damit vorhandene v0.2-/v0.3-Quellen erhalten
 bleiben:
 
 ```bash
-git clone --branch feature/radio-noise \
+git clone --branch dev --single-branch \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-docker
 cd mumble-funk-docker
 ```
@@ -445,11 +445,17 @@ ausgeschlossen. Die Images selbst müssen nicht gesichert werden.
 
 Die Wiederherstellung akzeptiert absichtlich **nur leere Ziel-Volumes**. So kann ein
 falsches Archiv keine laufende Installation ersetzen. Verwende ein neues
-Verzeichnis, einen neuen Projektnamen und einen freien Port. Beispiel:
+Verzeichnis, einen neuen Projektnamen und einen freien Port. Der hier gezeigte
+64741 ist ausschließlich ein frei zu prüfender Wiederherstellungs-Testport, kein
+zusätzlicher Audioport und keine Änderung des regulären Standards 64740.
+Für identische Wiederherstellung den zur Sicherung notierten Dev-Quellcommit
+verwenden; nach dem Klonen gegebenenfalls mit `git switch --detach COMMIT_ID`
+auf genau diese vorhandene Revision wechseln, bevor das Image gebaut wird.
+Beispiel für einen zur Sicherung passenden Dev-Stand:
 
 ```bash
 cd ~
-git clone --branch stable \
+git clone --branch dev --single-branch \
   https://github.com/Shawna7han/mumble-funk.git mumble-funk-wiederherstellung
 cd mumble-funk-wiederherstellung
 if [ ! -e .env ]; then cp -n .env.example .env; fi
@@ -490,8 +496,10 @@ alter Volumes, keine automatische Migration und keine Freigabe eines belegten Po
 6. Falls du Netzwerkprobleme untersuchen möchtest, TCP-erzwungenen Clientbetrieb
    und normalen UDP-Betrieb getrennt testen; Client-Version und Netzweg notieren.
 
-Busy und Squelch sind zunächst ausgeschaltet. Für bewusst aktivierte Effekte
-zusätzlich die [Squelch-/Busy-Testanleitung](squelch-preview.md) verwenden.
+Bei einer neuen Dev-INI sind Busy, Squelch Open/Close, Timeout-Close und
+Funkrauschen bereits aktiv. Bei einer bestehenden INI zunächst `status` prüfen;
+Updates schalten keine Effekte ein. Für die Hörprüfung zusätzlich den
+[Funkrausch-Testplan](#hörtest-mit-windows-mumble-und-android-mumla) verwenden.
 Die bisherigen realen Mumla-/Windows-Erfahrungen mit v0.2 ersetzen keinen neuen
 Hörtest über deinen konkreten Docker-Host, Router und die Proxmox-Firewall.
 
@@ -517,7 +525,10 @@ Hörtest über deinen konkreten Docker-Host, Router und die Proxmox-Firewall.
 
 ## 15. Automatisierte Prüfung und bekannte Grenzen
 
-Die aktuellen Rauschprüfungen stehen im [Docker-Rausch-Prüfbericht](DOCKER-RADIO-NOISE-STATUS.md).
+Den letzten vor PR #9 geprüften Stand und seine Grenzen beschreibt die
+[aktuelle Entwicklungsübersicht](development.md#tests-und-praxiserfahrung).
+Der [Docker-Rausch-Prüfbericht](DOCKER-RADIO-NOISE-STATUS.md) bleibt der historische
+Nachweis seiner dort genannten Revision.
 Der [ursprüngliche Docker-Prüfbericht](DOCKER-STATUS.md) dokumentiert die damaligen Commits.
 Die Multi-Stage-Builds führen alle **33** CTest-Prüfungen einschließlich Audio und Squelch aus.
 Zusätzlich gibt es Docker-spezifische Tests für Initialisierung, sichere Rechte,
@@ -545,8 +556,8 @@ kritischen Nonce-Werte mehr. Alle Routing-Assertions bleiben bestehen; der
 zusätzliche Test der UDP-Ping-Warteschleife verlangt eine echte authentifizierte
 Antwort auch nach einem ungültigen Datagramm.
 
-Für die neue Integration gilt der
-[gemeinsame Prüfbericht](STABLE-INTEGRATION-STATUS.md). Der bisherige
+Für die ursprüngliche gemeinsame Simplex-/Installationsintegration gilt der
+[historische Prüfbericht](STABLE-INTEGRATION-STATUS.md). Der bisherige
 [Docker-Prüfbericht](DOCKER-STATUS.md) beschreibt ausdrücklich den historischen
 Feature-Branch. Seine dort genannten Testadapter sind kein Teil von Stable.
 
@@ -558,10 +569,12 @@ Netzweg bleiben Praxistests. Es wird **kein öffentliches Container-Image** ver�
 
 Die BSD-Projektlizenz und Copyright-Hinweise bleiben erhalten. Das Laufzeit-Image
 enthält die Projektlizenz, Drittanbieter-Hinweise und Ubuntu-Paket-Lizenzdateien.
-Die bereits integrierte Audio-Engine benötigt Opus auch zur Laufzeit. Für Phase 2C
-werden keine neuen Drittanbieter-Abhängigkeiten oder fremden Audioressourcen
-hinzugefügt. Die beiden unveränderten Squelch-WAVs und der neue Busy Tone stammen
-vom Projektinhaber; ihre CC0-Erklärung liegt zusammen mit ihnen im Image. Die
+Die integrierte Audio-Engine benötigt Opus auch zur Laufzeit. Die vier
+mitgelieferten Aufnahmen für Busy, Open, Close und Funkrauschen stammen vom
+Projektinhaber und sind ausdrücklich unter CC0 1.0 Universal freigegeben.
+Die [Audio-Lizenz](../../assets/audio/LICENSE.md) liegt zusammen mit ihnen im Image.
+Für die Dokumentationsaktualisierung werden keine Abhängigkeiten oder Aufnahmen
+hinzugefügt oder verändert. Die
 öffentliche Busy-WAV ist eine von optionalen Metadaten bereinigte Kopie mit
 bitgenau denselben PCM-Audiosamples; Format, Prüfsummen und Nachweis stehen in
 [busy-tone.md](busy-tone.md). Das private Original wird nicht veröffentlicht.

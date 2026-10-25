@@ -1,3 +1,9 @@
+> **Historische Phase-2C-Installation.** Squelch ist inzwischen in Dev integriert.
+> Für die aktuelle normale Ubuntu-Installation [Dev installieren](install-dev.md)
+> verwenden, nicht den unten erhaltenen Feature-Checkout. Aktuelle Vorgaben:
+> [Audio-Defaults](audio-defaults.md), [Verwaltung](ubuntu-commands.md),
+> [Open/Noise/Close](radio-noise.md). Die alten Phasenangaben bleiben zuordenbar.
+
 # Squelch auf einer frischen Ubuntu-Snapshot-VM testen (Phase 2C)
 
 **Neuer Nachfolgestand:** [Standard-Audioeinstellungen](audio-defaults.md) auf

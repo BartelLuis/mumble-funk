@@ -1,11 +1,8 @@
-> **Experimentelle Dev-Testinstallation:** [Anleitung und Schutzprüfungen](install-dev.md)
-> mit `bash scripts/funk/setup.sh --experimental-dev`. Keine Stable-Freigabe.
-
-> **Experimenteller Audio-Default-Branch:** Für `feature/audio-defaults` gelten
-> [diese neuen Defaults und Installationsbefehle](audio-defaults.md) mit
-> `--experimental-audio-defaults`. Neue Ubuntu-/Docker-Konfigurationen aktivieren
-> Simplex, Busy und Squelch bei 50 % und +8 dB; vorhandene INIs bleiben unverändert.
-> Die nachfolgenden Stable-/älteren Feature-Anleitungen sind davon getrennt.
+> **Stable oder Dev?** Die Befehle unten installieren den bisherigen
+> `stable`-Simplex-Kandidaten ohne neue Audiofunktionen. Für den aktuellen
+> experimentellen Dev-Stand einschließlich Busy, Squelch und Funkrauschen gilt
+> die [Dev-Anleitung](install-dev.md) mit `--experimental-dev`.
+> [Aktuelle Audio-Defaults und Bestandsschutz](audio-defaults.md).
 
 # Mumble-Funk mit wenigen Befehlen einrichten
 

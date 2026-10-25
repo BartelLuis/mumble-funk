@@ -1,3 +1,9 @@
+> **Aktueller Dev-Stand:** Der Boost ist seit PR #5 integriert. Für neue Dev-INIs
+> gilt +8 dB für Busy/Open/Close; Funkrauschen hat eine eigene Lautstärke und
+> wird nicht mitgeboostet. Unten bleiben die damaligen Feature-Tests erhalten.
+> [Dev installieren](install-dev.md) · [Audio-Defaults](audio-defaults.md) ·
+> [Verwaltung](ubuntu-commands.md).
+
 # Audio Boost: experimenteller Lautstärketest
 
 **Neuer Nachfolgestand:** [Standard-Audioeinstellungen](audio-defaults.md) auf

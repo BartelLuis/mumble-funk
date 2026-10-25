@@ -1,6 +1,8 @@
-# Experimentelles kontinuierliches Funkrauschen — B2b
+# Kontinuierliches Funkrauschen auf Dev — experimentell
 
-Diese Vorschau ergänzt den privaten AudioFeedback-Weg. Der Simplex-Controller und
+Seit PR #9 ist die Funkrauschfunktion in **`dev`** integriert. Der frühere
+`feature/radio-noise` bleibt als historischer Entwicklungsstand erhalten.
+Die Funktion ergänzt den privaten AudioFeedback-Weg. Der Simplex-Controller und
 Sprachpakete bleiben unverändert. Eine Freigabe setzt Hörtests mit Windows-Mumble
 und Android-Mumla voraus; automatisierte Paket-/Opus-Tests ersetzen diese nicht.
 
@@ -16,7 +18,7 @@ mit/ohne Passwort, Audio-Status, Dienststatus, installierten Commit und Serverlo
 
 ## Konfiguration
 
-**Neuinstallationen dieses Feature-Branches** erhalten in Ubuntu und Docker:
+**Neuinstallationen des aktuellen Dev-Stands** erhalten in Ubuntu und Docker:
 
 ```ini
 radionoise=true
@@ -129,116 +131,41 @@ Backup/Restore und Update/Rollback. Native Verwaltung und
 [Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) verwenden
 weiterhin dieselbe Audio-Engine.
 
-## B2c-1: Ubuntu-Snapshot-VM für den ersten Hörtest
+## Ubuntu-Testinstallation und Hörtest
 
-Diese Anleitung gilt ausdrücklich für **eine separate Ubuntu-24.04-LTS-Test-VM**
-mit systemd, einem normalen Benutzer mit sudo-Rechten, Internetzugang, empfohlenen
-4 GiB RAM / 2 CPU-Kernen und mindestens 10 GiB freiem Speicher. Den sauberen
-Proxmox-Snapshot erstellt bzw. restauriert der Betreiber selbst. Andere VMs und
-Produktivinstallationen bleiben unberührt. Die folgenden Befehle führt der
-Betreiber erst beim gewünschten Test aus, jeweils der Reihe nach; bei Fehlern
-anhalten. Das Setup installiert bzw. aktualisiert den **normalen** Dienst
-`mumble-funk`, keine parallele Vorschau.
-
-| Zweck | Wert |
-| --- | --- |
-| Experimenteller Branch / Auswahl | `feature/radio-noise` / `--experimental-radio-noise` |
-| Ubuntu-Port | **64739 TCP und UDP** |
-| Programm | `/opt/mumble-funk/current/mumble-server` |
-| INI | `/etc/mumble-funk/server.ini` |
-| Datenbank / Zertifikate | `/var/lib/mumble-funk/` |
-| Mitgelieferte CC0-Aufnahme | `/usr/local/share/mumble-funk/audio/radio-noise.wav` |
-| Eigene WAVs | `/etc/mumble-funk/sounds/radio-noise-<SHA256>.wav` |
-
-Docker bleibt außerhalb dieser Testinstallation: Host **64740**, Container
-**64739**, jeweils TCP/UDP, unverändert. Keine weiteren Ports und kein Port 64742.
+Die [Dev-Installationsanleitung](install-dev.md) ist der gemeinsame Einstieg für
+Ubuntu Server 24.04 und 26.04 LTS. Sie verwendet **`dev` mit `--experimental-dev`**,
+den normalen Dienst `mumble-funk` und **64739 TCP/UDP**. Funkrauschen benötigt
+keinen separaten Feature-Checkout, Preview-Dienst oder Port 64742. Docker nutzt
+weiterhin Host **64740** → Container **64739**, jeweils TCP/UDP.
 
 ### A. Frische Ubuntu-VM
 
-Per SSH auf der eigenen Test-VM als normaler Benutzer anmelden:
+Eine eigene Test-VM mit sauberem Proxmox-Snapshot verwenden; der Betreiber
+verwaltet Snapshots selbst. [Voraussetzungen und sämtliche Installationsbefehle](install-dev.md#frische-test-vm-installieren)
+stehen zentral in der Dev-Anleitung. Das Setup baut, testet und installiert erst
+bei Erfolg. Danach enthält `/opt/mumble-funk/current/BUILD-INFO` `branch=dev`,
+`experimental=true` und die vollständige Quellrevision.
 
-```bash
-sudo apt update
-sudo apt install --yes git ca-certificates openssh-client nano
-mkdir -p "$HOME/src"
-cd "$HOME/src"
-git clone --branch feature/radio-noise --single-branch --recurse-submodules \
-  https://github.com/Shawna7han/mumble-funk.git mumble-funk
-cd "$HOME/src/mumble-funk"
-bash scripts/funk/setup.sh --experimental-radio-noise
-sudo systemctl --no-pager --full status mumble-funk
-cat /opt/mumble-funk/current/BUILD-INFO
-```
-
-Nicht in einen bereits vorhandenen Ordner klonen; dann Abschnitt B verwenden.
-Das Setup installiert die übrigen Build-Abhängigkeiten, kompiliert, testet und
-installiert erst nach Erfolg. `BUILD-INFO` muss `branch=feature/radio-noise` und
-`experimental=true` nennen. Keine Stable-Freigabe. Falls Ubuntu-Pakete nicht
-gefunden werden, die `universe`-Hinweise in [installation-ubuntu.md](installation-ubuntu.md)
-beachten. **Neue INIs aktivieren Rauschen mit der mitgelieferten Aufnahme bei Lautstärke 20.**
-Vorhandene INIs werden nicht geändert.
-Die übrigen aktuellen Audio-Defaults für Neuinstallationen bleiben erhalten:
-Simplex, AudioFeedback, Busy, Open, Close und Timeout-Close aktiv, Effektlautstärken
-50 %, Audio-Boost +8 dB. Der Boost gilt nicht für Rauschen.
-
-`setup.sh`, `build.sh` und `install.sh` verlangen ausdrücklich denselben neuen
-Schalter. Mumble-1.5.939-Basis, offizielle GitHub-Herkunft, unveränderte versionierte
-Dateien sowie exakte Übereinstimmung mit lokalem `origin/feature/radio-noise`
-**und dem live veröffentlichten Feature-Commit** werden geprüft. Für diesen Branch
-werden auch nicht ignorierte unversionierte Dateien abgewiesen. Ignorierte
-Build-Ausgaben bleiben erlaubt. Ein anderer Opt-in-Schalter erlaubt diesen Branch
-nicht. `--experimental-dev`, Stable und die älteren Feature-Schalter bleiben gültig
-für ihre jeweiligen Quellen. Bei GitHub-/Netzwerkfehlern wird abgebrochen.
+Neue INIs aktivieren die mitgelieferte CC0-Rauschaufnahme bei 20, Busy/Open/Close
+bei 50 %, deren Boost bei +8 dB und den Timeout-Close. Der Boost gilt nicht für
+Rauschen. Bestehende INIs werden nicht ergänzt oder migriert.
 
 ### B. Vorhandene Ubuntu-Testinstallation aktualisieren
 
-Nur auf der vorgesehenen Test-VM verwenden. Vorher Snapshot oder externe Sicherung
-selbst anlegen. Das Setup erhält vorhandene INI-Einträge einschließlich fehlender
-oder deaktivierter Audiooptionen, Datenbanken, Passwörter, Zertifikate und eigene
-WAVs. Es aktiviert vorhandene Effekte nicht nachträglich.
+Vorher die eigene VM bzw. Konfiguration und Daten extern sichern. Der
+[Dev-Updateweg](install-dev.md#später-auf-den-aktuellen-dev-stand-aktualisieren)
+verlangt einen sauberen Dev-Checkout und den aktuell veröffentlichten Commit;
+Herkunfts-, Versions- und Live-Referenzprüfung bleiben aktiv. Ältere Feature-
+Installationen nicht mit falscher Branchbezeichnung als Dev ausgeben. Für einen
+bewussten Wechsel nach Sicherung einen separaten Dev-Quellordner nach der
+[Dev-Anleitung](install-dev.md) klonen; die normale Installation behält ihren
+Dienst und ihre bestehenden Datenpfade. Es entsteht keine parallele Instanz.
 
-Im **vorhandenen** Quellverzeichnis (Pfad bei Bedarf anpassen):
-
-```bash
-cd "$HOME/src/mumble-funk"
-git status --short --branch
-```
-
-Nur ohne eigene Änderungen fortfahren. Eigene Änderungen separat sichern; kein
-`reset --hard`, kein `clean`. Die private WAV gehört nicht in dieses Verzeichnis.
-Eine zusätzliche lokale INI-Sicherung außerhalb des Repositorys erstellen:
-
-```bash
-backup_dir="/var/backups/mumble-funk/manual-$(date -u +%Y%m%dT%H%M%S)-$$"
-sudo install -d -m 0700 "$backup_dir"
-sudo cp -a /etc/mumble-funk "$backup_dir/config"
-```
-
-Den veröffentlichten Feature-Stand explizit abrufen; das funktioniert auch bei
-älteren Single-Branch-Klonen:
-
-```bash
-git fetch origin refs/heads/feature/radio-noise:refs/remotes/origin/feature/radio-noise
-if git show-ref --verify --quiet refs/heads/feature/radio-noise; then
-  git switch --no-guess feature/radio-noise
-else
-  git switch --no-track -c feature/radio-noise refs/remotes/origin/feature/radio-noise
-fi
-git merge --ff-only origin/feature/radio-noise
-bash scripts/funk/setup.sh --experimental-radio-noise
-sudo systemctl --no-pager --full status mumble-funk
-cat /opt/mumble-funk/current/BUILD-INFO
-```
-
-Der erste Wechsel legt den Branch bei Bedarf ohne automatische Upstream-Zuordnung
-an; der explizite Fetch funktioniert weiterhin auch ohne diese Zuordnung.
-Ein bereits existierender, abweichender Branch darf nicht zurückgesetzt werden.
-Während des Builds läuft der bisherige Dienst weiter. Erst bei der Installation
-wird ausschließlich `mumble-funk` kurz gestoppt; Konfiguration und vollständiger
-Datenbankordner werden dabei konsistent unter `/var/backups/mumble-funk/` gesichert.
-Diese lokalen Sicherungen enthalten Geheimnisse; privat aufbewahren. Sie ersetzen
-keinen extern aufbewahrten Snapshot bzw. keine externe Sicherung. Rückkehr zum bisherigen Programm:
-[Setup-Update/Rollback](setup.md#updates).
+Das Setup erhält auch deaktivierte Effekte, fehlende INI-Einträge und eigene WAVs.
+Konfiguration und Datenbankordner werden bei der Bereitstellung gesichert; diese
+lokalen Sicherungen ersetzen kein externes Backup. Für eine Rückkehr zur
+vorherigen Programmversion siehe [Setup-Update/Rollback](setup.md#updates).
 
 ### C. Standardaufnahme und Status prüfen
 
@@ -352,11 +279,11 @@ Aufnahmen mitsenden. Bei zwei Geräten ist der blockierte Sender nicht zugleich
 Empfänger der angenommenen Übertragung; Busy-Unterbrechung eines bereits laufenden
 privaten Empfänger-Effektstreams wird zusätzlich automatisiert geprüft.
 
-Die ursprüngliche B2c-1-Anleitung war allein kein Nachweis erfolgreicher
+Die ursprünglichen Cloud-Prüfungen waren allein kein Nachweis erfolgreicher
 Geräte-Hörtests. Den inzwischen gemeldeten Ubuntu-Betreiber-Hörtest beschreibt
 der Anfang dieses Dokuments; Docker-Hörtests bleiben separat erforderlich.
-Die mitgelieferte CC0-Standardaufnahme ist jetzt auf diesem Feature-Branch
-enthalten. Persönliche Zusatzaufnahmen werden durch die
+Der Betreiber meldet außerdem eine erfolgreiche native Neuinstallation.
+Die mitgelieferte CC0-Standardaufnahme ist im aktuellen Dev enthalten. Persönliche Zusatzaufnahmen werden durch die
 [Docker-Rauschverwaltung](docker.md#17-eigenes-funkrauschen-einrichten) nur in
 das eigene persistente Volume importiert und nicht veröffentlicht.
 

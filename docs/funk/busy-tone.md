@@ -1,3 +1,9 @@
+> **Aktueller Dev-Stand:** Die Standard-Busy-Aufnahme ist seit PR #6 integriert.
+> Die Herkunfts- und Formatangaben unten bleiben gültig; Feature-Auswahl und
+> frühere deaktivierte Effekte beschreiben den damaligen Stand. Heute:
+> [Dev installieren](install-dev.md), [Audio-Defaults](audio-defaults.md) und
+> [Audioverwaltung](ubuntu-commands.md).
+
 # Neuer Standard-Busy-Tone — experimentelle Phase A
 
 **Neuer Nachfolgestand:** [Standard-Audioeinstellungen](audio-defaults.md) auf

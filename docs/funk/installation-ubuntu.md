@@ -1,37 +1,9 @@
-> **Experimentelles Funkrauschen (`feature/radio-noise`):**
-> [Ubuntu-Testinstallation und Audioverwaltung](radio-noise.md). Neue INIs
-> verwenden die mitgelieferte CC0-Aufnahme bei Lautstärke 20; bestehende INIs
-> und eigene WAVs bleiben unverändert. Keine Stable-Freigabe.
-
-> **Aktuellen `dev` auf einer Test-VM installieren:** [Experimentelle Dev-Anleitung](install-dev.md).
-> Die Stable-Befehle unten behalten ihr bisheriges Verhalten.
-
-> **Experimenteller Audio-Default-Branch:** Für `feature/audio-defaults` gelten
-> [diese neuen Defaults und Installationsbefehle](audio-defaults.md) mit
-> `--experimental-audio-defaults`. Neue Ubuntu-/Docker-Konfigurationen aktivieren
-> Simplex, Busy und Squelch bei 50 % und +8 dB; vorhandene INIs bleiben unverändert.
-> Die nachfolgenden Stable-/älteren Feature-Anleitungen sind davon getrennt.
-
-> Gemeinsamer Stable-Kandidat: Ubuntu und Docker verwenden denselben Commit.
-
-**Neuer experimenteller Standard-Busy-Tone:** Installation und Update aus
-`feature/busy-tone-asset` mit `--experimental-busy-tone` sowie Tonwahl, Fallback
-und Hörtest stehen in [busy-tone.md](busy-tone.md). Die folgenden Stable- und
-historischen Feature-Anleitungen ersetzen diese ausdrückliche Auswahl nicht.
-
-Für den experimentellen **Audio Boost (0–12 dB)** aus `feature/audio-volume`
-siehe [Audio-Boost-Anleitung mit Update und Hörtest](audio-volume.md).
-Die bisherigen branchspezifischen Anleitungen unten bleiben gültig.
-
-
-**Experimentelle Squelch-Version auf einer frischen Snapshot-Test-VM:**
-Bitte die [Phase-2C-Anleitung](squelch-ubuntu.md) verwenden. Sie nutzt ausdrücklich
-`feature/squelch-audio` mit `--experimental-squelch`, den normalen Dienst und Port
-64739; keine Stable-Freigabe und keine zusätzliche Preview-Installation.
-
-> Für die einfache Installation und den Wechsel aus `funk-v0.1` zuerst
-> [setup.md](setup.md) lesen. Die manuellen Schritte unten bleiben verfügbar;
-> Pfade und Dienstname sind unverändert. Kein neuer Release-Tag ist freigegeben.
+> **Diese technische Anleitung bezieht sich auf den bisherigen Stable-Kandidaten.**
+> Für den aktuellen experimentellen Dev-Stand mit integrierter Audio-Engine,
+> Busy, Squelch, Boost und Funkrauschen die [Dev-Anleitung](install-dev.md)
+> mit `setup.sh --experimental-dev` verwenden.
+> [Audio-Defaults](audio-defaults.md) · [Funkrauschen und WAV-Verwaltung](radio-noise.md).
+> Bestehende Einstellungen und eigene Dateien bleiben bei Updates erhalten.
 
 # Mumble-Funk parallel unter Ubuntu Server 24.04 oder 26.04 installieren
 
