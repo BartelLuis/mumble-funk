@@ -1,3 +1,9 @@
+> **Einordnung nach der Integration:** Die hier beschriebene Phase 1 wurde über PR #2
+> nach Dev übernommen. Der folgende Text beschreibt den damaligen Branch und
+> die alte getrennte Preview, nicht den heutigen Funktionsumfang. Aktuell:
+> [Dev installieren](install-dev.md), [Audio-Defaults](audio-defaults.md),
+> [Verwaltung](ubuntu-commands.md) und [gemeinsamer Effektstream](radio-noise.md).
+
 # Audio-Engine, Phase 1 — experimenteller Entwicklungsstand
 
 Branch: **`feature/audio-engine`**, aus `dev` Commit

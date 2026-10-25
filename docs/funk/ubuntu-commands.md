@@ -2,7 +2,7 @@
 
 Für die normale native Mumble-Funk-Installation auf der eigenen Ubuntu-Test-VM:
 Dienst `mumble-funk`, Konfiguration `/etc/mumble-funk/server.ini`, Standardport
-**64739 TCP/UDP**. Diese Übersicht beschreibt den Stand auf `feature/radio-noise`;
+**64739 TCP/UDP**. Diese Übersicht beschreibt den integrierten `dev`-Stand nach PR #9;
 sie ist keine Stable-Freigabe. Docker verwendet andere Verwaltungsbefehle:
 [Docker-Anleitung](docker.md).
 
@@ -26,12 +26,12 @@ gefilterten Audio-Statusausgaben.
 ## Funkrauschen in der Audio-Statusausgabe
 
 Die drei zusätzlichen Felder stehen im selben JSON-Objekt wie die bisherigen
-Einstellungen. Ein Ausschnitt mit eigener WAV-Datei sieht beispielsweise so aus:
+Einstellungen. Ein Ausschnitt einer neuen Dev-Installation sieht so aus:
 
 ```json
 {
   "radionoise": "true",
-  "radionoisefile": "/etc/mumble-funk/sounds/radio-noise.wav",
+  "radionoisefile": "/usr/local/share/mumble-funk/audio/radio-noise.wav",
   "radionoisevolume": "20"
 }
 ```

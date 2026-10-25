@@ -1,3 +1,10 @@
+> **Current Dev:** Squelch and timeout Close have been integrated since PR #4;
+> PR #9 added the common Open/Noise/Close stream and continuous noise. The phase
+> text below describes the earlier feature snapshot, including its old defaults.
+> For current installation, defaults and administration see
+> [Dev installation](install-dev.md), [audio defaults](audio-defaults.md),
+> [operator commands](ubuntu-commands.md) and [radio noise](radio-noise.md).
+
 # Squelch Phase 2C — experimental preview
 
 **Neuer Nachfolgestand:** [Standard-Audioeinstellungen](audio-defaults.md) auf
