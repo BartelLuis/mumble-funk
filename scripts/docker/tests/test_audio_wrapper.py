@@ -11,6 +11,9 @@ REPO = Path(__file__).resolve().parents[3]
 STUB = '''#!/usr/bin/env python3
 import json, os, sys
 args=sys.argv[1:]
+if os.environ.get('EXPECTED_COMPOSE'):
+    assert os.environ.get('COMPOSE_FILE')==os.environ['EXPECTED_COMPOSE']
+    assert os.environ.get('FUNK_IMAGE')==os.environ['EXPECTED_IMAGE']
 with open(os.environ['CALLS'], 'a') as log: log.write(json.dumps(args)+'\\n')
 if 'ps' in args: print('test-container' if os.environ.get('RUNNING')=='yes' else '')
 if 'exec' in args and os.environ.get('UNHEALTHY')=='yes': sys.exit(1)
@@ -109,6 +112,13 @@ class AudioWrapperTests(unittest.TestCase):
         self.assertIn(['compose','run','--rm','--no-deps','-T','mumble-funk','audio-rollback','a'*64],calls)
         self.assertEqual(sum(call==['compose','start','mumble-funk'] for call in calls),2)
 
+
+    def test_prebuilt_compose_selection_preserved_by_existing_commands(self):
+        selected=str(self.root/'compose.ghcr.yaml')
+        image='ghcr.io/shawna7han/mumble-funk@sha256:'+'a'*64
+        self.env.update(COMPOSE_FILE=selected,EXPECTED_COMPOSE=selected,FUNK_IMAGE=image,EXPECTED_IMAGE=image)
+        for command in ('status','disable-radio-noise','use-standard-radio-noise'):
+            self.run_command(command)
 
     def test_invalid_commands_do_not_stop_anything(self):
         for args in [('open-volume', '101'), ('disable-squelch', 'extra'), ('set-close', '/missing'), ('unknown',)]:

@@ -47,3 +47,5 @@ jobs:
           docker compose build
       - name: Verify TCP/UDP, Simplex, persistence and recovery
         run: python3 scripts/docker/tests/integration.py --probe "$PWD/build/funk/FunkDockerProbe" --native-server "$PWD/build/funk/mumble-server" --audio-feedback --radio-noise --host-port 64740
+      - name: Verify prebuilt image Compose, migration and rollback
+        run: python3 scripts/docker/tests/integration.py --probe "$PWD/build/funk/FunkDockerProbe" --native-server "$PWD/build/funk/mumble-server" --compose-file "$PWD/compose.ghcr.yaml" --previous-image mumble-funk-docker:local --audio-feedback --radio-noise --host-port 64740
