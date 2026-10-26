@@ -29,6 +29,12 @@ Stand verwendete ohne explizite Einstellung noch Host-Port 64739. Historische
 Prüfberichte bleiben unverändert. Siehe [Bestandsschutz beim Update](#9-aktualisieren)
 und den [Prüfbericht zum Portstandard](DOCKER-PORT-DEFAULT-STATUS.md).
 
+**Zusätzlicher Weg ohne lokalen Compiler:** Die [GHCR-Image-Anleitung](docker-image.md)
+beschreibt die vorbereitete `compose.ghcr.yaml`, denselben Datenbestand und den
+sicheren Wechsel/Rollback. Veröffentlichung nur nach gesonderter Freigabe; in
+diesem Auftrag wurde kein Registry-Image veröffentlicht. Die folgenden Befehle
+mit `compose.yaml` behalten den bestehenden lokalen Build bei.
+
 ## Voraussetzungen
 
 Führe die Befehle im Terminal deines **Docker-Hosts** aus, zum Beispiel auf einer
@@ -563,7 +569,8 @@ Feature-Branch. Seine dort genannten Testadapter sind kein Teil von Stable.
 
 Keine Behauptung von Produktionsreife, abgeschlossenem Langzeittest oder getesteter
 ARM-/Windows-/macOS-Hostunterstützung. Ein echter Host-Neustart und der externe
-Netzweg bleiben Praxistests. Es wird **kein öffentliches Container-Image** veröffentlicht.
+Netzweg bleiben Praxistests. Der zusätzliche [GHCR-Veröffentlichungsweg](docker-image.md) ist vorbereitet;
+ein tatsächlicher Upload und die öffentliche Freigabe stehen noch aus.
 
 ## 16. Audioassets, Verwaltung und Lizenz
 

@@ -91,6 +91,32 @@ def check_compose_env_ports():
         print('PASS: unpinned legacy port change detected; explicit pin preserves update/rollback')
 
 
+def check_prebuilt_compose():
+    current=os.environ.copy()
+    for key in ('COMPOSE_FILE','COMPOSE_PROJECT_NAME','FUNK_HOST_PORT','COMPOSE_ENV_FILES'):
+        current.pop(key,None)
+    current.update(COMPOSE_DISABLE_ENV_FILE='1',FUNK_IMAGE='ghcr.io/shawna7han/mumble-funk:dev-'+'a'*40)
+    def resolve(name):
+        result=subprocess.run(['docker','compose','-f',str(REPO/name),'config','--format','json'],
+                              env=current,capture_output=True,check=True)
+        return json.loads(result.stdout)
+    for port in (None,'64740','65001','64739'):
+        if port is None:current.pop('FUNK_HOST_PORT',None)
+        else:current['FUNK_HOST_PORT']=port
+        local=resolve('compose.yaml');prebuilt=resolve('compose.ghcr.yaml')
+        service=prebuilt['services']['mumble-funk']
+        assert 'build' not in service and service.pop('platform')=='linux/amd64'
+        assert service.pop('image')==current['FUNK_IMAGE']
+        local['services']['mumble-funk'].pop('image');local['services']['mumble-funk'].pop('build')
+        assert local==prebuilt,'Prebuilt Compose changed project, service, security, ports or volumes'
+    # No missing-variable fallback to latest or a locally built image.
+    current.pop('FUNK_IMAGE')
+    result=subprocess.run(['docker','compose','-f',str(REPO/'compose.ghcr.yaml'),'config'],
+                          env=current,capture_output=True)
+    assert result.returncode!=0
+    print('PASS: prebuilt Compose requires an explicit image; all existing identity/security/port/volume fields equal')
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--probe',type=Path,required=True)
@@ -100,10 +126,13 @@ def main():
     parser.add_argument('--audio-feedback',action='store_true',help='Also check private feedback in the isolated project')
     parser.add_argument('--radio-noise',action='store_true',help='Import synthetic persistent noise and verify shared effect stream')
     parser.add_argument('--image',default='mumble-funk-docker:local')
+    parser.add_argument('--compose-file',type=Path,default=REPO/'compose.yaml',
+                        help='Standalone local-build or prebuilt-image Compose configuration')
     parser.add_argument('--runtime-file',type=Path,help='Development-only read-only helper mount; omit for final image verification')
     parser.add_argument('--previous-image',help='Optional older local image for a real image-update retention test')
     args=parser.parse_args()
     check_compose_env_ports()
+    check_prebuilt_compose()
     project='funk-docker-check-'+str(os.getpid())
     restored=project+'-restored'
     upgrade=project+'-upgrade'
@@ -113,11 +142,14 @@ def main():
         env.pop(key,None)
     env['DOCKER_HOST']='unix:///var/run/docker.sock'
     # Never inherit an operator's alternate services, bind mounts or .env.
-    env['COMPOSE_FILE']=str(REPO/'compose.yaml')
+    env['COMPOSE_FILE']=str(args.compose_file.resolve())
+    compose_files={}
     env['COMPOSE_DISABLE_ENV_FILE']='1'
     def command(argv,check=True,input=None,project_name=project):
         current=env.copy();current['COMPOSE_PROJECT_NAME']=project_name
         current['FUNK_HOST_PORT']=str(port)
+        current['FUNK_IMAGE']=project_name+':local'
+        current['COMPOSE_FILE']=compose_files.get(project_name,env['COMPOSE_FILE'])
         result=subprocess.run(argv,cwd=REPO,env=current,input=input,capture_output=True)
         if check and result.returncode:
             raise RuntimeError(' '.join(map(str,argv[:6]))+'\n'+result.stderr.decode(errors='replace'))
@@ -160,7 +192,7 @@ def main():
         if args.runtime_file:
             override=directory/'runtime.compose.yaml'
             override.write_text('services:\n  mumble-funk:\n    volumes:\n      - '+json.dumps(str(args.runtime_file.resolve())+':/usr/local/bin/funk-container:ro')+'\n')
-            env['COMPOSE_FILE']=str(REPO/'compose.yaml')+os.pathsep+str(override)
+            env['COMPOSE_FILE']=str(args.compose_file.resolve())+os.pathsep+str(override)
         try:
             for name in projects:
                 if docker('ps','--all','--quiet','--filter','label=com.docker.compose.project='+name).stdout.strip():
@@ -458,6 +490,8 @@ def main():
             assert b'Shutting down' in logs and values['serverpassword'].encode() not in logs
             if args.previous_image:
                 docker('tag',args.previous_image,upgrade+':local')
+                # Begin on the EXISTING local-build Compose identity.
+                compose_files[upgrade]=str(REPO/'compose.yaml')
                 compose('up','-d','--no-build',project_name=upgrade);healthy(upgrade)
                 if args.radio_noise:
                     compose('stop',project_name=upgrade)
@@ -466,16 +500,29 @@ def main():
                     compose('up','-d','--no-build',project_name=upgrade);healthy(upgrade)
                 old=information(upgrade);old_certificate=certificate()
                 old_id=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
-                old_image=json.loads(docker('inspect',old_id).stdout)[0]['Image']
+                old_container=json.loads(docker('inspect',old_id).stdout)[0]
+                old_image=old_container['Image']
+                volume_identity=lambda info:sorted((m['Destination'],m['Name'],m['Source']) for m in info['Mounts'] if m['Type']=='volume')
+                old_volumes=volume_identity(old_container)
+                old_ports=old_container['HostConfig']['PortBindings']
                 compose('stop',project_name=upgrade)
                 compose('run','--rm','--no-deps','-T','--entrypoint','python3','mumble-funk','-c',code,project_name=upgrade)
                 compose('run','--rm','--no-deps','-T','mumble-funk','admin-password',input=((admin_password+'\n')*2).encode(),project_name=upgrade)
                 old_state=fingerprint(upgrade)
                 docker('tag',args.image,upgrade+':local')
+                compose_files[upgrade]=env['COMPOSE_FILE']
                 compose('up','-d','--no-build','--force-recreate',project_name=upgrade);healthy(upgrade)
                 new_id=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
-                assert old_image!=json.loads(docker('inspect',new_id).stdout)[0]['Image']
+                target_image=json.loads(docker('image','inspect',args.image).stdout)[0]['Id']
+                assert json.loads(docker('inspect',new_id).stdout)[0]['Image']==target_image
+                if args.previous_image!=args.image:
+                    assert old_image!=target_image  # Preserve the real-version-switch regression.
+                else:
+                    print('PASS: explicit same-image fixture tests Compose migration, not a version upgrade')
                 assert information(upgrade)==old and certificate()==old_certificate
+                container=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
+                actual=json.loads(docker('inspect',container).stdout)[0]
+                assert volume_identity(actual)==old_volumes and actual['HostConfig']['PortBindings']==old_ports
                 if args.radio_noise:
                     assert compose('exec','-T','mumble-funk','cat','/var/lib/mumble-funk/audio/radio-noise.wav',project_name=upgrade).stdout==noise_bytes
                 probe(old['serverpassword'])
@@ -484,13 +531,18 @@ def main():
                 # A true rollback to the previous binary, using the same named
                 # volumes, must retain all stored accounts/channels/ACLs/settings.
                 docker('tag',args.previous_image,upgrade+':local')
+                compose_files[upgrade]=str(REPO/'compose.yaml')
                 compose('up','-d','--no-build','--force-recreate',project_name=upgrade);healthy(upgrade)
                 assert information(upgrade)==old and certificate()==old_certificate
+                container=compose('ps','--quiet','mumble-funk',project_name=upgrade).stdout.decode().strip()
+                actual=json.loads(docker('inspect',container).stdout)[0]
+                assert volume_identity(actual)==old_volumes and actual['HostConfig']['PortBindings']==old_ports
                 if args.radio_noise:
                     assert compose('exec','-T','mumble-funk','cat','/var/lib/mumble-funk/audio/radio-noise.wav',project_name=upgrade).stdout==noise_bytes
                 compose('stop',project_name=upgrade)
                 assert fingerprint(upgrade)==old_state
-                print('PASS: real image update AND rollback preserve full SQLite state, password, configuration and certificate')
+                scenario='real image update AND rollback' if args.previous_image!=args.image else 'local/prebuilt Compose migration AND rollback'
+                print('PASS: '+scenario+' preserve full SQLite state, password, configuration and certificate')
             print('PASS: image startup, rootless isolation, published TCP/encrypted UDP, simplex, diagnostics off, restart/recreate, port conflicts, native parallel operation, consistent backup/restore, clean shutdown')
         except Exception:
             hidden=[v.get('serverpassword','') for v in (locals().get('values',{}),locals().get('old',{}))]

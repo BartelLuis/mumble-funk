@@ -90,6 +90,10 @@ und Volumes. Historische Stable-Compose-Vorgaben unterscheiden sich; bei einer
 Migration den tatsächlich verwendeten Port erhalten. Siehe
 [Bestandsschutz beim Update](docs/funk/docker.md#9-aktualisieren).
 
+**Vorbereiteter Weg mit fertigem Image:** [GHCR-Dev-Anleitung](docs/funk/docker-image.md).
+Die Veröffentlichung braucht eine gesonderte Freigabe; dieser Entwicklungsauftrag
+hat noch kein Image veröffentlicht. Der bisherige lokale Build bleibt erhalten.
+
 ## Audio-Standardeinstellungen
 
 **Nur neu erzeugte INIs über Ubuntu-Setup und Docker** aktivieren diese Funktionen:
