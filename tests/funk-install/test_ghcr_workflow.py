@@ -11,11 +11,11 @@ class WorkflowTests(unittest.TestCase):
         # BaseLoader preserves GitHub's 'on' key instead of YAML 1.1 boolean conversion.
         self.workflow=yaml.load((ROOT/'.github/workflows/publish-dev-image.yml').read_text(),Loader=yaml.BaseLoader)
 
-    def test_only_explicit_tag_push_no_pr_dispatch_or_branch_push(self):
-        self.assertEqual(self.workflow['on'],{'push':{'tags':['ghcr-dev-*']}})
+    def test_dev_and_explicit_tag_push_no_pr_or_dispatch(self):
+        self.assertEqual(self.workflow['on'],{'push':{'branches':['dev'],'tags':['ghcr-dev-*']}})
         self.assertEqual(self.workflow['permissions'],{'contents':'read'})
         self.assertEqual(self.workflow['concurrency']['cancel-in-progress'],'false')
-        self.assertEqual(self.workflow['concurrency']['group'],'ghcr-dev-publish')
+        self.assertEqual(self.workflow['concurrency']['group'],'ghcr-dev-publish-${{ github.sha }}')
 
     def test_write_token_only_in_dependent_publisher(self):
         jobs=self.workflow['jobs']

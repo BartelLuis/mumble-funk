@@ -43,9 +43,14 @@ class SourceGuardTests(unittest.TestCase):
         self.assertEqual(self.verify(),self.sha)
         self.assertEqual(self.verify(event_sha=self.git('rev-parse',self.ref)),self.sha)
 
+    def test_dev_branch_push_requires_exact_event_commit(self):
+        self.assertEqual(self.verify(ref='refs/heads/dev',event_sha=self.sha),self.sha)
+        with self.assertRaises(RuntimeError):
+            self.verify(ref='refs/heads/dev',event_sha='b'*40)
+
     def test_wrong_repository_event_ref_name_and_payload_refused(self):
         cases=[{'repository':'someone/fork'},{'event':'pull_request'},{'event':'pull_request_target'},
-               {'event':'workflow_dispatch'},{'ref':'refs/heads/dev'},{'ref':'refs/tags/latest'},
+               {'event':'workflow_dispatch'},{'ref':'refs/heads/stable'},{'ref':'refs/tags/latest'},
                {'ref':'refs/tags/stable'},{'ref':'refs/tags/funk-v0.3.0'},
                {'ref':'refs/tags/ghcr-dev-'+self.sha[:12]},{'ref':'refs/tags/ghcr-dev-'+'a'*40},
                {'event_sha':'b'*40}]

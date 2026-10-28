@@ -25,18 +25,22 @@ def git(root, *args):
 
 
 def verify_source(root, repository, event, ref, event_sha):
-    """Tag and payload must identify the exact clean commit already contained in Dev."""
+    """Push source must identify the exact clean commit already contained in Dev."""
     match = re.fullmatch(r'refs/tags/ghcr-dev-([0-9a-f]{40})', ref)
-    if repository != REPOSITORY or event != 'push' or not match:
-        raise RuntimeError('Only an explicit ghcr-dev-<full SHA> tag push in the project is allowed.')
+    branch_push = ref == 'refs/heads/dev'
+    if repository != REPOSITORY or event != 'push' or not (match or branch_push):
+        raise RuntimeError('Only a dev branch push or ghcr-dev-<full SHA> tag push in the project is allowed.')
     commit = git(root, 'rev-parse', 'HEAD^{commit}')
-    if match[1] != commit:
-        raise RuntimeError('Tag name does not identify the checked-out commit.')
-    if git(root, 'cat-file', '-t', ref) != 'tag' or git(root, 'rev-parse', ref+'^{commit}') != commit:
-        raise RuntimeError('An annotated publication tag on exactly this commit is required.')
-    tag_object = git(root, 'rev-parse', ref)
-    if event_sha not in (commit, tag_object):
-        raise RuntimeError('GitHub event SHA does not identify this tag/commit.')
+    if match:
+        if match[1] != commit:
+            raise RuntimeError('Tag name does not identify the checked-out commit.')
+        if git(root, 'cat-file', '-t', ref) != 'tag' or git(root, 'rev-parse', ref+'^{commit}') != commit:
+            raise RuntimeError('An annotated publication tag on exactly this commit is required.')
+        tag_object = git(root, 'rev-parse', ref)
+        if event_sha not in (commit, tag_object):
+            raise RuntimeError('GitHub event SHA does not identify this tag/commit.')
+    elif event_sha != commit:
+        raise RuntimeError('GitHub event SHA does not identify the checked-out Dev commit.')
     # A feature commit descending FROM dev is insufficient: it must be IN dev.
     git(root, 'rev-parse', '--verify', 'refs/remotes/origin/dev^{commit}')
     if subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor',
