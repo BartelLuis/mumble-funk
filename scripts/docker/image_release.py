@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 REPOSITORY = 'Shawna7han/mumble-funk'
 IMAGE = 'ghcr.io/shawna7han/mumble-funk'
+DEV_TAG = IMAGE+':Dev'
 ROOT = Path(__file__).resolve().parents[2]
 SHA = re.compile(r'[0-9a-f]{40}')
 DIGEST = re.compile(r'sha256:[0-9a-f]{64}')
@@ -110,8 +111,8 @@ def registry_token(actor, credential):
 
 
 def manifest_digest(version, token):
-    if not re.fullmatch(r'dev-[0-9a-f]{40}', version):
-        raise ValueError('Only commit-specific Dev manifests are permitted.')
+    if version != 'Dev' and not re.fullmatch(r'dev-[0-9a-f]{40}', version):
+        raise ValueError('Only commit-specific Dev manifests and the Dev alias are permitted.')
     request = Request('https://ghcr.io/v2/shawna7han/mumble-funk/manifests/'+version, method='HEAD',
                       headers={'Authorization': 'Bearer '+token,
                                'Accept': 'application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'})
@@ -143,7 +144,11 @@ def publish(value, expected_id, actor, credential):
     pinned = IMAGE+'@'+digest
     if pinned not in info.get('RepoDigests', []):
         raise RuntimeError('Remote manifest digest differs from the pushed local image.')
-    return dict(value, digest=digest, pinned_image=pinned)
+    subprocess.run(['docker', 'tag', value['image'], DEV_TAG], check=True)
+    subprocess.run(['docker', 'push', DEV_TAG], check=True)
+    if manifest_digest('Dev', token) != digest:
+        raise RuntimeError('The mutable Dev alias does not identify the tested image.')
+    return dict(value, digest=digest, pinned_image=pinned, dev_image=DEV_TAG)
 
 
 def main(argv=None):
@@ -188,7 +193,8 @@ def main(argv=None):
                 if summary:
                     with open(summary, 'a') as target:
                         target.write('## Verified experimental Dev image\n\nSource: `'+value['commit']+'`\n\n'
-                                     'Image: `'+value['image']+'`\n\nDigest pin: `'+result['pinned_image']+'`\n')
+                                     'Image: `'+value['image']+'`\n\nDev alias: `'+result['dev_image']+
+                                     '`\n\nDigest pin: `'+result['pinned_image']+'`\n')
                 print('Verified published digest: '+result['pinned_image'])
         return 0
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.CalledProcessError, URLError):

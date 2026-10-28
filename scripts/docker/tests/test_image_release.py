@@ -162,6 +162,8 @@ class ImageTests(unittest.TestCase):
             RELEASE.manifest_digest(self.value['version'],'in-memory-sentinel')
         for version in ('latest','stable','dev-a','funk-v0.2.1'):
             with self.assertRaises(ValueError):RELEASE.manifest_digest(version,'in-memory-sentinel')
+        with patch.object(RELEASE,'urlopen',return_value=self.response(self.digest)):
+            self.assertEqual(RELEASE.manifest_digest('Dev','in-memory-sentinel'),self.digest)
 
     def test_existing_tag_and_network_errors_never_log_in_or_push(self):
         for result in (self.digest,RuntimeError('denied'),URLError('offline')):
@@ -176,11 +178,12 @@ class ImageTests(unittest.TestCase):
     def test_publish_uses_tested_image_stdin_auth_and_verifies_digest(self):
         with patch.object(RELEASE,'inspect_image',return_value=self.info), \
              patch.object(RELEASE,'registry_token',return_value='in-memory-sentinel'), \
-             patch.object(RELEASE,'manifest_digest',side_effect=[None,self.digest]), \
+             patch.object(RELEASE,'manifest_digest',side_effect=[None,self.digest,self.digest]), \
              patch.object(RELEASE.subprocess,'run') as run:
             result=RELEASE.publish(self.value,self.ident,'fixture','not-a-credential')
             self.assertEqual(result['pinned_image'],RELEASE.IMAGE+'@'+self.digest)
-            self.assertEqual([c.args[0][1] for c in run.call_args_list],['login','push'])
+            self.assertEqual(result['dev_image'],RELEASE.IMAGE+':Dev')
+            self.assertEqual([c.args[0][1] for c in run.call_args_list],['login','push','tag','push'])
             self.assertNotIn('not-a-credential',' '.join(run.call_args_list[0].args[0]))
             self.assertEqual(run.call_args_list[0].kwargs['input'],'not-a-credential\n')
 
@@ -191,6 +194,14 @@ class ImageTests(unittest.TestCase):
                  patch.object(RELEASE,'registry_token',return_value='in-memory-sentinel'), \
                  patch.object(RELEASE,'manifest_digest',side_effect=[None,digest]), \
                  patch.object(RELEASE.subprocess,'run'),self.assertRaises(RuntimeError):
+                RELEASE.publish(self.value,self.ident,'fixture','not-a-credential')
+
+    def test_dev_alias_must_resolve_to_the_tested_commit_image(self):
+        with patch.object(RELEASE,'inspect_image',return_value=self.info), \
+             patch.object(RELEASE,'registry_token',return_value='in-memory-sentinel'), \
+             patch.object(RELEASE,'manifest_digest',side_effect=[None,self.digest,'sha256:'+'d'*64]), \
+             patch.object(RELEASE.subprocess,'run'):
+            with self.assertRaises(RuntimeError):
                 RELEASE.publish(self.value,self.ident,'fixture','not-a-credential')
 
 

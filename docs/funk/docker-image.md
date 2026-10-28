@@ -36,13 +36,16 @@ kein zusätzliches Override über `compose.yaml`.
 | --- | --- |
 | Dev-Commit | Vollständige Git-ID der freigegebenen Quellrevision, nicht nur „Mumble 1.5.939“. |
 | Git-Freigabetag | Annotiertes `ghcr-dev-<40-stellige Commit-ID>`; kontrollierter Auslöser, kein offizieller Release-Tag. |
-| Image-Tag | `ghcr.io/shawna7han/mumble-funk:dev-<40-stellige Commit-ID>`. Identifiziert den Quellstand. |
+| Image-Tag | `ghcr.io/shawna7han/mumble-funk:dev-<40-stellige Commit-ID>`. Unveränderliche Kennung des Quellstands. |
+| Beweglicher Dev-Alias | `ghcr.io/shawna7han/mumble-funk:Dev`. Zeigt auf das zuletzt erfolgreich veröffentlichte und geprüfte Dev-Image. |
 | Image-Digest | `ghcr.io/shawna7han/mumble-funk@sha256:<64 Hexzeichen>`. Unveränderliche Identität des tatsächlich gebauten Manifests. |
 | Spätere Stable-Version | Braucht eine gesonderte Abnahme, Versionsentscheidung und Veröffentlichung. |
 
-Der Workflow lehnt das Überschreiben eines bereits vorhandenen Dev-Image-Tags ab.
-Registry-Tags sind technisch trotzdem verschiebbare Namen; **für reproduzierbare
-Installationen den verifizierten Digest verwenden**. Unterschiedliche Bibliotheken
+Der Workflow lehnt das Überschreiben eines bereits vorhandenen commit-spezifischen
+Dev-Image-Tags ab. Der bewegliche Tag `Dev` wird nach erfolgreicher Veröffentlichung
+auf dasselbe geprüfte Image gesetzt; Veröffentlichungen laufen dafür nacheinander.
+Registry-Tags sind technisch verschiebbare Namen; **für reproduzierbare Installationen
+den verifizierten Digest verwenden**. Unterschiedliche Bibliotheken
 oder Basisimage-Aktualisierungen können aus demselben Quellcommit unterschiedliche
 Binärdateien erzeugen. Der Digest beschreibt genau das veröffentlichte Ergebnis.
 
@@ -293,11 +296,12 @@ Der Ablauf trennt Berechtigungen:
    getestete Image sein; verschiedene Image-Versionen werden zusätzlich lokal geprüft.
 3. **Publish:** erst nach Erfolg; `contents: read`, `packages: write`. Dasselbe
    getestete Image wird als Artefakt geladen, seine Image-ID/OCI-Metadaten erneut
-   geprüft und ohne Neubuild gepusht. Nur `GITHUB_TOKEN`, kein persönlicher Token.
-4. Der Workflow verweigert vorhandene Image-Tags. Netzwerk-/Berechtigungsfehler
-   werden nicht als „Tag fehlt“ gewertet. Nach dem Push wird der Registry-Digest
-   mit dem lokalen gepushten Image verglichen. Summary und Artefakt
-   `published-dev-image-identity` enthalten Quellcommit, Tag und Digest.
+   geprüft und ohne Neubuild gepusht. Neben dem unveränderlichen Commit-Tag wird
+   `Dev` auf dasselbe Image gesetzt. Nur `GITHUB_TOKEN`, kein persönlicher Token.
+4. Der Workflow verweigert vorhandene commit-spezifische Image-Tags. Netzwerk-/
+   Berechtigungsfehler werden nicht als „Tag fehlt“ gewertet. Nach dem Push werden
+   Registry-Digests mit dem lokalen gepushten Image verglichen. Summary und Artefakt
+   `published-dev-image-identity` enthalten Quellcommit, beide Tags und Digest.
 
 Scheitert die Prüfung **nach** einem Push, kann das Image bereits vorhanden sein,
 obwohl der Job fehlschlägt: erst Registry/Logs prüfen, nicht blind überschreiben.
