@@ -1,11 +1,9 @@
 # Fertiges experimentelles Dev-Image aus GHCR
 
-**Vorbereitung, noch keine Veröffentlichung:** Dieser Feature-Stand richtet den
-Veröffentlichungsweg ein. In diesem Auftrag wird kein Image zu GHCR gepusht und
-kein Veröffentlichungs-Tag erzeugt. Die folgenden Installationsbefehle sind erst
-nach separater Betreiberfreigabe, Merge des Workflows nach Dev, erfolgreichem
+Jeder Push nach `dev` baut, testet und veröffentlicht automatisch ein Image zu GHCR.
+Die folgenden Installationsbefehle sind nach einem erfolgreichen
 Veröffentlichungslauf und Freischaltung des Packages auf **Public** verwendbar.
-Ein derzeit nicht vorhandenes Image ist kein Installationsfehler deiner VM.
+Ein Image wird nicht veröffentlicht, wenn Guard, Tests oder Build fehlschlagen.
 
 Vorgesehener Name: **`ghcr.io/shawna7han/mumble-funk`**, zunächst ausschließlich
 **Linux/AMD64**. Es bleibt experimentell; kein `latest`, `stable` oder Release-Tag.
@@ -35,7 +33,7 @@ kein zusätzliches Override über `compose.yaml`.
 | Bezeichnung | Bedeutung |
 | --- | --- |
 | Dev-Commit | Vollständige Git-ID der freigegebenen Quellrevision, nicht nur „Mumble 1.5.939“. |
-| Git-Freigabetag | Annotiertes `ghcr-dev-<40-stellige Commit-ID>`; kontrollierter Auslöser, kein offizieller Release-Tag. |
+| Workflow-Auslöser | Jeder Push nach `dev`; ein annotierter `ghcr-dev-<40-stellige Commit-ID>`-Tag bleibt als zusätzlicher manueller Auslöser verfügbar. |
 | Image-Tag | `ghcr.io/shawna7han/mumble-funk:dev-<40-stellige Commit-ID>`. Unveränderliche Kennung des Quellstands. |
 | Beweglicher Dev-Alias | `ghcr.io/shawna7han/mumble-funk:Dev`. Zeigt auf das zuletzt erfolgreich veröffentlichte und geprüfte Dev-Image. |
 | Image-Digest | `ghcr.io/shawna7han/mumble-funk@sha256:<64 Hexzeichen>`. Unveränderliche Identität des tatsächlich gebauten Manifests. |
@@ -43,7 +41,8 @@ kein zusätzliches Override über `compose.yaml`.
 
 Der Workflow lehnt das Überschreiben eines bereits vorhandenen commit-spezifischen
 Dev-Image-Tags ab. Der bewegliche Tag `Dev` wird nach erfolgreicher Veröffentlichung
-auf dasselbe geprüfte Image gesetzt; Veröffentlichungen laufen dafür nacheinander.
+auf dasselbe geprüfte Image gesetzt. Unveränderliche Commit-Tags bleiben die
+eindeutige Auswahl für jeden einzelnen Push.
 Registry-Tags sind technisch verschiebbare Namen; **für reproduzierbare Installationen
 den verifizierten Digest verwenden**. Unterschiedliche Bibliotheken
 oder Basisimage-Aktualisierungen können aus demselben Quellcommit unterschiedliche
@@ -262,16 +261,14 @@ docker image inspect "$(docker inspect "$container" --format '{{.Image}}')" --fo
 Quellcommit, Image-Digest und Clientversionen im Testbericht notieren. Keine
 Passwörter oder privaten WAVs veröffentlichen.
 
-## 7. Veröffentlichung — nur nach separater Freigabe
+## 7. Automatische Veröffentlichung bei Dev-Pushes
 
-Die Workflowdatei muss zunächst regulär per PR nach Dev integriert sein. Stable
-bleibt Standardbranch und wird dafür **nicht** verändert. Es gibt absichtlich
-keinen neuen `workflow_dispatch`: Ein Tag-Push verwendet den Workflow im getaggten
-Commit und benötigt seine Datei nicht auf dem Standardbranch.
-
-Ausschließlich nach ausdrücklicher Betreiberfreigabe auf einer sauberen eigenen
-Git-Kopie den konkreten Dev-Commit wählen und einen **neuen annotierten** Auslöser
-setzen. Die folgenden Befehle werden durch diesen Entwicklungsauftrag nicht ausgeführt:
+Der Workflow läuft bei jedem Push auf `dev`. Stable bleibt Standardbranch. Das
+Image erhält den unveränderlichen Tag `dev-<vollständige Commit-ID>`; zusätzlich
+wird der bewegliche Alias `Dev` aktualisiert. Der Workflow prüft und testet den
+exakten Push-Commit, bevor er das bereits getestete Image ohne Neubuild veröffentlicht.
+Ein annotierter `ghcr-dev-<vollständige Commit-ID>`-Tag kann weiterhin manuell
+einen zusätzlichen Lauf für einen Commit auf `dev` auslösen:
 
 ```bash
 git fetch origin refs/heads/dev:refs/remotes/origin/dev
@@ -281,11 +278,10 @@ git tag -a "ghcr-dev-$SOURCE_SHA" "$SOURCE_SHA" -m "Approved experimental Dev im
 git push origin "refs/tags/ghcr-dev-$SOURCE_SHA"
 ```
 
-Bei bestehendem Tag anhalten; weder löschen noch verschieben oder erzwingen.
-Die Workflowprüfung verlangt vollständige SHA, identischen annotierten Tag und
-Checkout, saubere versionierte Dateien und Mitgliedschaft im live geholten Dev.
-Ein Feature-Nachfolger von Dev reicht nicht aus. Normale Branch-Pushes, PRs und
-Forks veröffentlichen nichts; `latest`, `stable` und Release-Tags sind ausgeschlossen.
+Der Tag-Auslöser verlangt eine vollständige SHA, einen identischen annotierten Tag
+und Commit, saubere versionierte Dateien sowie Mitgliedschaft im live geholten Dev.
+Ein Feature-Nachfolger von Dev reicht nicht aus. PRs und Forks veröffentlichen
+nichts; `latest`, `stable` und Release-Tags sind ausgeschlossen.
 
 Der Ablauf trennt Berechtigungen:
 
@@ -315,10 +311,9 @@ zur Freigabe offen.
   `actions/checkout`, `actions/upload-artifact`, `actions/download-artifact` erlauben.
   Nicht pauschal alle Workflows mit Schreibrechten ausstatten; nur der Publish-Job
   fordert `packages: write` an.
-- Veröffentlichungstags `ghcr-dev-*` nur kontrolliert erzeugen lassen; ein passender
-  Tag-Ruleset mit eingeschränkten Erstellern ist empfehlenswert und wird hier nicht
-  automatisch eingerichtet. Ein solcher Tag-Push ist die ausdrückliche Auslösung.
-- Nach der ersten genehmigten Veröffentlichung: GitHub-Profil → **Packages** →
+- Repository-Push-Berechtigungen für `dev` kontrolliert vergeben. Ein optionaler
+  `ghcr-dev-*`-Tag-Ruleset kann zusätzliche manuelle Auslöser einschränken.
+- Nach der ersten erfolgreichen Veröffentlichung: GitHub-Profil → **Packages** →
   **mumble-funk** → **Package settings** → **Change visibility** → **Public**.
   Die Repository-Sichtbarkeit dabei nicht verändern.
 - Repository-Verknüpfung und unter **Manage Actions access** den Zugriff für
@@ -326,5 +321,4 @@ zur Freigabe offen.
 - Den erfolgreichen Workflow und Digest dokumentieren und erst danach einen
   anonymen `docker pull`/Hörtest auf der separaten Betreiber-Testinstanz freigeben.
 
-Bis dahin: **implementierter Veröffentlichungsweg, lokal geprüfte Images und Tests,
-aber keine behauptete GHCR-Veröffentlichung, kein Release und kein Deployment**.
+Der Workflow erstellt GHCR-Images, aber kein Stable-Release und kein Deployment.

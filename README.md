@@ -87,9 +87,9 @@ Custom host ports remain supported. Updates preserve existing `.env`, project
 names and volumes. Historical Stable Compose defaults differ; its existing port
 must be retained when migrating. See [update protection](docs/funk/docker.md#9-aktualisieren).
 
-**Prepared prebuilt-image route:** [GHCR Dev image guide (German)](docs/funk/docker-image.md).
-This feature prepares an explicitly approved publication; no image has been
-published by this development task. The existing local build remains available.
+**Prebuilt-image route:** [GHCR Dev image guide (German)](docs/funk/docker-image.md).
+Each push to `dev` builds, tests and publishes a commit-specific GHCR image; the
+existing local build remains available.
 
 ## Audio defaults
 
