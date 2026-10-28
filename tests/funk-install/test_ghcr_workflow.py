@@ -15,6 +15,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.workflow['on'],{'push':{'tags':['ghcr-dev-*']}})
         self.assertEqual(self.workflow['permissions'],{'contents':'read'})
         self.assertEqual(self.workflow['concurrency']['cancel-in-progress'],'false')
+        self.assertEqual(self.workflow['concurrency']['group'],'ghcr-dev-publish')
 
     def test_write_token_only_in_dependent_publisher(self):
         jobs=self.workflow['jobs']
